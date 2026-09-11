@@ -26,4 +26,12 @@ urlpatterns = [
     path('api/actions/create/', views.create_action, name='create_action'),
     path('api/actions/<int:action_id>/toggle/', views.toggle_action, name='toggle_action'),
     path('api/actions/<int:action_id>/delete/', views.delete_action, name='delete_action'),
+
+    # Voice, Dialect & Persona Profiles APIs
+    path('api/profiles/', views.list_profiles, name='list_profiles'),
+    path('api/profiles/create/', views.create_profile, name='create_profile'),
+    path('api/profiles/<int:profile_id>/activate/', views.activate_profile, name='activate_profile'),
+    path('api/profiles/<int:profile_id>/update/', views.update_profile, name='update_profile'),
+    path('api/profiles/<int:profile_id>/delete/', views.delete_profile, name='delete_profile'),
 ]
+

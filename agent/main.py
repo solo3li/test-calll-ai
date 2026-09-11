@@ -185,7 +185,134 @@ def execute_http_action_sync(action_def: dict, args: dict) -> str:
         logger.error(f"Error executing HTTP action to {url}: {e}")
         return f"حدث خطأ أثناء الاتصال بالخدمة: {str(e)}"
 
-async def run_agent_session(room_name: str, user_id: int = None):
+def fetch_user_active_profile_sync(user_id: int) -> dict:
+    """Fetch active agent profile for user from PostgreSQL."""
+    default_profile = {
+        "name": "نورهان - خدمة عملاء مصرية",
+        "voice_name": "Aoede",
+        "gender": "female",
+        "dialect": "egyptian",
+        "persona_role": "customer_support",
+        "speaking_style": "friendly",
+        "custom_instructions": ""
+    }
+    if not user_id:
+        return default_profile
+    try:
+        conn = psycopg2.connect(
+            dbname=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT
+        )
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT voice_name, gender, dialect, persona_role, speaking_style, custom_instructions, name
+                FROM voice_assistant_agentprofile
+                WHERE user_id = %s AND is_active = TRUE
+                LIMIT 1;
+            """, (user_id,))
+            row = cur.fetchone()
+        conn.close()
+
+        if row:
+            voice_name, gender, dialect, role, style, custom, name = row
+            return {
+                "voice_name": voice_name or "Aoede",
+                "gender": gender or "female",
+                "dialect": dialect or "egyptian",
+                "persona_role": role or "customer_support",
+                "speaking_style": style or "friendly",
+                "custom_instructions": custom or "",
+                "name": name or "المساعد"
+            }
+        return default_profile
+    except Exception as e:
+        logger.error(f"Error fetching active profile for user {user_id}: {e}")
+        return default_profile
+
+def build_dynamic_system_instruction(profile: dict) -> str:
+    """Construct dynamic prompt incorporating dialect, gender, role, style, and strict guardrails."""
+    gender = profile.get("gender", "female")
+    dialect = profile.get("dialect", "egyptian")
+    role = profile.get("persona_role", "customer_support")
+    style = profile.get("speaking_style", "friendly")
+    custom = (profile.get("custom_instructions") or "").strip()
+    name = profile.get("name", "المساعد")
+
+    # 1. Gender & pronouns
+    if gender == "male":
+        identity_gender = "أنت مساعد ذكي وصوتك وهوية حديثك رجل / شاب، وتتحدث دائماً بصيغة المذكر عن نفسك (زي: 'أنا جاهز ومستعد أساعدك'، 'أنا هفحصلك الأوردر حالا')."
+    else:
+        identity_gender = "أنتِ مساعدة ذكية وصوتك وهوية حديثك بنت / أنثى، وتتحدثين دائماً بصيغة المؤنث عن نفسك (زي: 'أنا جاهزة ومستعدة أساعدك'، 'أنا هفحصلك الأوردر حالا')."
+
+    # 2. Dialect rules & explicit apology text
+    if dialect == "saudi":
+        dialect_rules = (
+            "التحدث باللهجة السعودية والخليجية الدارجة فقط: كل كلامك بدون أي استثناء يكون باللهجة السعودية اللطيفة الطبيعية "
+            "(زي: 'يا هلا والله ومسهلا'، 'أبشر طال عمرك'، 'سمّ آمرني'، 'على هالخشم'، 'ولا يهمك'). ممنوع منعاً باتاً الفصحى أو لهجات أخرى.\n"
+            "صيغة الاعتذار الإلزامية: 'عذراً طال عمرك، أنا متخصص في مساعدة متجرك ومستنداتك بس، وما أقدر أفيدك في أسئلة خارج نطاقهم.'"
+        )
+    elif dialect == "levantine":
+        dialect_rules = (
+            "التحدث باللهجة الشامية اللطيفة المحببة فقط: كل كلامك يكون باللهجة الشامية الدارجة العفوية "
+            "(زي: 'يا هلا فيك'، 'تكرم عينك'، 'على راسي'، 'كيف فيني ساعدك اليوم؟'). ممنوع منعاً باتاً الفصحى أو لهجات أخرى.\n"
+            "صيغة الاعتذار الإلزامية: 'بعتذر منك كتير، أنا مخصص لمساعدتك بالمتجر ومستنداتك بس، وما بقدر جاوب على شي براتهن.'"
+        )
+    elif dialect == "fusha":
+        dialect_rules = (
+            "التحدث باللغة العربية الفصحى المعاصرة: تحدث بلغة عربية فصحى أنيقة وميسرة وسلسة وواضحة جداً.\n"
+            "صيغة الاعتذار الإلزامية: 'أعتذر منك يا سيدي، أنا مخصص حصرياً لمساعدتك في متجرك ومستنداتك، ولا يمكنني الإجابة عن أسئلة خارج نطاقهما.'"
+        )
+    elif dialect == "english":
+        dialect_rules = (
+            "Speak exclusively in natural, professional English.\n"
+            "Mandatory apology: 'I apologize, I am designated exclusively to assist with your store and uploaded documents, and cannot answer topics outside this scope.'"
+        )
+    else: # egyptian default
+        dialect_rules = (
+            "التحدث باللهجة المصرية العامية فقط: كل كلامك بدون أي استثناء لازم يكون باللهجة المصرية الدارجة الطبيعية "
+            "(زي: 'أهلاً بيك يا فندم'، 'إزيك عامل إيه؟'، 'أنا تمام أهو معاك'، 'تحت أمرك'، 'عيني حاضر'). ممنوع منعاً باتاً الفصحى أو أي لهجة تانية.\n"
+            "صيغة الاعتذار الإلزامية: 'معلش يا فندم، أنا متخصصة في مساعدة متجرك ومستنداتك بس، ومقدرش أجاوبك على أسئلة برة نطاقهم.'"
+        )
+
+    # 3. Role
+    role_map = {
+        "customer_support": "دورك هو ممثل خدمة عملاء محترف لمتجر المستخدم: تساعد في الرد على استفسارات المنتجات وتتبع الشحنات وحل المشكلات بلباقة وسرعة.",
+        "sales_advisor": "دورك هو مستشار مبيعات خبير وشاطر: تشرح مزايا ومواصفات المنتجات بأسلوب مقنع وجذاب وتشجع العميل بلطف على إتمام الشراء.",
+        "personal_assistant": "دورك هو مساعد شخصي ذكي وودود: تنظم الأمور وتجيب على الأسئلة بوضوح ومرونة وسرعة.",
+        "technical_consultant": "دورك هو مستشار فني ورسمي: تقدم إجابات دقيقة واحترافية وتركز على التفاصيل والمواصفات بحرفية عالية."
+    }
+    role_text = role_map.get(role, role_map["customer_support"])
+
+    # 4. Speaking style
+    style_map = {
+        "friendly": "أسلوب الإلقاء: ودود ولطيف ومرح، يبعث على الراحة والابتسامة في الحديث.",
+        "formal": "أسلوب الإلقاء: رسمي ومهني وجاد، خالٍ من المزاح المفرط، ويركز على الوقار والاحترام.",
+        "concise": "أسلوب الإلقاء: مباشر وسريع وموجز، يقدم الإجابة بكلمات قليلة ومفيدة دون مقدمات طويلة.",
+        "enthusiastic": "أسلوب الإلقاء: حماسي ونشيط ومتفائل، يظهر طاقة إيجابية عالية في الرد."
+    }
+    style_text = style_map.get(style, style_map["friendly"])
+
+    custom_text = f"\nتعليمات خاصة إضافية من المستخدم:\n{custom}\n" if custom else ""
+
+    prompt = f"""أنت مسجل في النظام كبروفايل: {name}.
+{identity_gender}
+{role_text}
+{style_text}
+
+قواعد أساسية صارمة ملزمة لا تقبل الاستثناء:
+1. {dialect_rules}
+2. التحيات والمجاملات الخفيفة: تبادل التحيات بلباقة واختصار حسب اللهجة المحددة.
+3. أدوات المتجر والـ API: عندما يسألك المستخدم عن المنتجات، الأسعار، الطلبات، أو يطلب عمل أوردر، استدعِ فوراً الأداة المناسبة المتاحة لديك (مثل search_store_products أو get_order_status أو create_store_order).
+4. أدوات المستندات (RAG): لما يسألك عن أي معلومة تخص مستنداته أو ملفاته المرفوعة، استدعِ أداة search_knowledge_base.
+5. الإجابة من نتائج الأدوات: لخص نتائج الأداة للمستخدم بأسلوبك ولهجتك المحددة، بوضوح وأرقام دقيقة ومباشرة.
+6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{custom_text}
+7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط."""
+    return prompt
+
+async def run_agent_session(room_name: str, user_id: int = None, profile_data: dict = None):
     channel_name = f"rooms:{room_name}"
     logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name} (user_id={user_id})")
     notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعدة الصوتية وتجهيز قاعدة المستندات والإجراءات...")
@@ -234,10 +361,31 @@ async def run_agent_session(room_name: str, user_id: int = None):
     if user_id:
         user_actions = await asyncio.to_thread(fetch_user_actions_sync, user_id)
 
+    # Fetch User Active Profile dynamically
+    active_profile = None
+    if profile_data and isinstance(profile_data, dict):
+        active_profile = profile_data
+    elif user_id:
+        active_profile = await asyncio.to_thread(fetch_user_active_profile_sync, user_id)
+
+    if not active_profile:
+        active_profile = {
+            "name": "نورهان - خدمة عملاء مصرية",
+            "voice_name": "Aoede",
+            "gender": "female",
+            "dialect": "egyptian",
+            "persona_role": "customer_support",
+            "speaking_style": "friendly",
+            "custom_instructions": ""
+        }
+
+    chosen_voice = active_profile.get("voice_name") or "Aoede"
+    logger.info(f"Using Google voice '{chosen_voice}', dialect '{active_profile.get('dialect')}', gender '{active_profile.get('gender')}' for user {user_id}")
+
     speech_config = types.SpeechConfig(
         voice_config=types.VoiceConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                voice_name="Aoede"  # Female voice
+                voice_name=chosen_voice
             )
         )
     )
@@ -270,6 +418,9 @@ async def run_agent_session(room_name: str, user_id: int = None):
 
     tools = [{"function_declarations": func_decls}]
 
+    system_instruction_text = build_dynamic_system_instruction(active_profile)
+    logger.info(f"Dynamic system instruction compiled (length={len(system_instruction_text)} chars)")
+
     live_config = types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],
         speech_config=speech_config,
@@ -277,18 +428,7 @@ async def run_agent_session(room_name: str, user_id: int = None):
         output_audio_transcription=types.AudioTranscriptionConfig(),
         tools=tools,
         system_instruction=types.Content(
-            parts=[types.Part(text=(
-                "أنتِ مساعدة صوتية ذكية وودودة ولطيفة، هويتك وصوتك بنت مصرية.\n"
-                "قواعد صارمة وإلزامية لا تقبل الاستثناء:\n"
-                "1. التحدث باللهجة المصرية العامية فقط: كل كلامك بدون أي استثناء لازم يكون باللهجة المصرية الدارجة الطبيعية (زي: 'أهلاً بيك يا فندم'، 'إزيك عامل إيه؟'، 'أنا تمام أهو معاك'، 'تحت أمرك'). ممنوع منعاً باتاً الفصحى أو أي لهجة تانية.\n"
-                "2. هويتك: أنتِ بنت، وتتحدثين بصيغة المؤنث عن نفسك دائماً (زي: 'أنا مساعدة ذكية'، 'أنا جاهزة أهو').\n"
-                "3. التحيات والترحيب: تبادلي التحيات والمجاملات الخفيفة بلهجة مصرية ودودة ومختصرة.\n"
-                "4. أدوات المتجر والـ API: عندما يسألك المستخدم عن المنتجات، الأسعار، الطلبات، أو يطلب عمل أوردر، استدعي فوراً الأداة المناسبة المتاحة لديكِ (زي search_store_products أو get_order_status أو create_store_order).\n"
-                "5. أدوات المستندات (RAG): لما يسألك عن أي معلومة تخص مستنداته أو ملفاته المرفوعة، استدعي أداة search_knowledge_base.\n"
-                "6. الإجابة من نتائج الأدوات: لخصي نتائج الأداة للمستخدم بأسلوب مصري بسيط ومباشر وموجز وبأرقام وتفاصيل واضحة.\n"
-                "7. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات (زي أسئلة عامة خارج الشغل): اعتذري فوراً بلباقة وبلهجة مصرية وقولي: 'معلش يا فندم، أنا متخصصة في مساعدة متجرك ومستنداتك بس، ومقدرش أجاوبك على أسئلة برة نطاقهم.' ممنوع تفتي أو تخمني.\n"
-                "8. الإيجاز: كلامك يكون مختصر ومفيد وعلى قد السؤال بالظبط."
-            ))]
+            parts=[types.Part(text=system_instruction_text)]
         )
     )
 
@@ -602,10 +742,12 @@ async def main():
 
                 room_name = raw_data
                 user_id = None
+                profile_data = None
                 try:
                     parsed = json.loads(raw_data)
                     room_name = parsed.get("room_name", raw_data)
                     user_id = parsed.get("user_id")
+                    profile_data = parsed.get("profile")
                 except Exception:
                     pass
 
@@ -618,7 +760,7 @@ async def main():
                     logger.info(f"Session for room '{room_name}' is already running. Skipping duplicate dispatch.")
                     continue
 
-                logger.info(f"Received new agent dispatch for room: {room_name} (user_id={user_id})")
+                logger.info(f"Received new agent dispatch for room: {room_name} (user_id={user_id}, profile={profile_data.get('name') if profile_data else 'None'})")
 
                 def make_cleanup(rm):
                     def _cleanup(fut):
@@ -626,7 +768,7 @@ async def main():
                         active_sessions.pop(rm, None)
                     return _cleanup
 
-                task = asyncio.create_task(run_agent_session(room_name, user_id=user_id))
+                task = asyncio.create_task(run_agent_session(room_name, user_id=user_id, profile_data=profile_data))
                 task.add_done_callback(make_cleanup(room_name))
                 active_sessions[room_name] = task
 

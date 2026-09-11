@@ -72,3 +72,76 @@ class UserAction(models.Model):
         if self.parameters_schema and isinstance(self.parameters_schema, dict) and self.parameters_schema.get("properties"):
             decl["parameters"] = self.parameters_schema
         return decl
+
+class AgentProfile(models.Model):
+    GENDER_CHOICES = [
+        ('female', 'أنثى'),
+        ('male', 'ذكر'),
+    ]
+
+    DIALECT_CHOICES = [
+        ('egyptian', 'لهجة مصرية عامية'),
+        ('saudi', 'لهجة خليجية / سعودية'),
+        ('levantine', 'لهجة شامية'),
+        ('fusha', 'عربية فصحى معاصرة'),
+        ('english', 'English'),
+    ]
+
+    ROLE_CHOICES = [
+        ('customer_support', 'خدمة عملاء ومبيعات المتجر'),
+        ('sales_advisor', 'مستشار تسويق ومبيعات شاطر'),
+        ('personal_assistant', 'مساعد شخصي ذكي وودود'),
+        ('technical_consultant', 'مستشار فني ورسمي'),
+    ]
+
+    STYLE_CHOICES = [
+        ('friendly', 'ودود ولطيف ومرح'),
+        ('formal', 'رسمي وهادئ ورصين'),
+        ('concise', 'مباشر وسريع وموجز'),
+        ('enthusiastic', 'حماسي وتشجيعي'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='agent_profiles')
+    name = models.CharField(max_length=100, default='البروفايل الافتراضي')
+    voice_name = models.CharField(max_length=50, default='Aoede')
+    gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default='female')
+    dialect = models.CharField(max_length=50, choices=DIALECT_CHOICES, default='egyptian')
+    persona_role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='customer_support')
+    speaking_style = models.CharField(max_length=50, choices=STYLE_CHOICES, default='friendly')
+    custom_instructions = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        active_str = " [نشط]" if self.is_active else ""
+        return f"{self.name} ({self.voice_name}/{self.dialect}){active_str}"
+
+    def save(self, *args, **kwargs):
+        if self.is_active:
+            # Ensure only one active profile per user
+            AgentProfile.objects.filter(user=self.user, is_active=True).exclude(pk=self.pk).update(is_active=False)
+        super().save(*args, **kwargs)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "voice_name": self.voice_name,
+            "gender": self.gender,
+            "gender_display": self.get_gender_display(),
+            "dialect": self.dialect,
+            "dialect_display": self.get_dialect_display(),
+            "persona_role": self.persona_role,
+            "persona_role_display": self.get_persona_role_display(),
+            "speaking_style": self.speaking_style,
+            "speaking_style_display": self.get_speaking_style_display(),
+            "custom_instructions": self.custom_instructions,
+            "is_active": self.is_active,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M"),
+        }
+

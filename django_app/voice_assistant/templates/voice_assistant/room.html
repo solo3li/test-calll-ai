@@ -137,6 +137,185 @@
       <div id="transcript-box" class="flex-1 overflow-y-auto space-y-2 pr-2 text-sm">
         <p class="text-slate-600 text-center italic mt-10 text-xs">ستظهر نصوص المحادثة هنا أثناء التحدث مباشرة...</p>
       </div>
+    <!-- Voice, Dialect & Persona Studio Section -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
+      <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center text-lg shadow-lg shadow-purple-500/20">
+            🎙️
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-slate-100 flex items-center gap-2">
+              استوديو تخصيص الشخصية واللهجة وأصوات Google
+            </h2>
+            <p class="text-xs text-slate-400">
+              اختر بروفايلك المفضل أو خصص الصوت (30 خامة صوتية من جوجل) واللهجة والدور وأسلوب الإلقاء للمكالمات الحية
+            </p>
+          </div>
+        </div>
+
+        <!-- Profile Selector & Create Button -->
+        <div class="flex items-center gap-2">
+          <select id="profile-select" onchange="handleProfileSelect(this.value)" class="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 focus:outline-none focus:border-purple-500 font-sans">
+            <option value="">جاري تحميل البروفايلات...</option>
+          </select>
+          <button type="button" onclick="openNewProfileModal()" class="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            بروفايل جديد
+          </button>
+        </div>
+      </div>
+
+      <!-- Current Profile Summary / Editor -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+        <!-- Gender & Dialect -->
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-3.5 space-y-2">
+          <label class="block font-semibold text-slate-300">النوع واللهجة</label>
+          <div class="grid grid-cols-2 gap-2">
+            <select id="field-gender" onchange="syncGenderVoiceOptions()" class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200">
+              <option value="female">أنثى (بنت)</option>
+              <option value="male">ذكر (شاب)</option>
+            </select>
+            <select id="field-dialect" class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200">
+              <option value="egyptian">مصرية عامية</option>
+              <option value="saudi">سعودية / خليجية</option>
+              <option value="levantine">شامية</option>
+              <option value="fusha">فصحى معاصرة</option>
+              <option value="english">English</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Google Voice Selector -->
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-3.5 space-y-2">
+          <div class="flex justify-between items-center">
+            <label class="font-semibold text-slate-300">صوت Google الرسمي</label>
+            <span id="voice-tag-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800">طبيعي وهادئ</span>
+          </div>
+          <select id="field-voice" onchange="updateVoiceTag()" class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 font-mono text-xs">
+          </select>
+        </div>
+
+        <!-- Persona Role -->
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-3.5 space-y-2">
+          <label class="block font-semibold text-slate-300">الدور والشخصية</label>
+          <select id="field-role" class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200">
+            <option value="customer_support">خدمة عملاء ومبيعات المتجر</option>
+            <option value="sales_advisor">مستشار تسويق ومبيعات شاطر</option>
+            <option value="personal_assistant">مساعد شخصي ذكي وودود</option>
+            <option value="technical_consultant">مستشار فني ورسمي</option>
+          </select>
+        </div>
+
+        <!-- Speaking Style & Pacing -->
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-3.5 space-y-2">
+          <label class="block font-semibold text-slate-300">أسلوب الإلقاء والنبرة</label>
+          <select id="field-style" class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200">
+            <option value="friendly">ودود ولطيف ومرح</option>
+            <option value="formal">رسمي وهادئ ورصين</option>
+            <option value="concise">مباشر وسريع وموجز</option>
+            <option value="enthusiastic">حماسي وتشجيعي</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Custom Instructions & Action Buttons -->
+      <div class="space-y-2 text-xs">
+        <label class="block font-semibold text-slate-300">تعليمات وتوجيهات خاصة إضافية للشخصية (Custom Prompt Instructions - اختياري):</label>
+        <textarea id="field-custom" rows="2" placeholder="مثال: ناديني دائماً بـ 'يا باشا'، وركز على تشجيعي لتجربة المنتجات الجديدة..." class="w-full px-3 py-2 bg-slate-800/70 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-purple-500"></textarea>
+      </div>
+
+      <div class="flex flex-wrap justify-between items-center gap-3 pt-3 border-t border-slate-800/80">
+        <div id="profile-status-msg" class="text-xs text-slate-400"></div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="saveActiveProfileChanges()" id="btn-save-profile" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-md shadow-purple-600/20">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            حفظ وتطبيق على المكالمات
+          </button>
+          <button type="button" onclick="deleteCurrentProfile()" id="btn-delete-profile" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-red-950/80 hover:text-rose-300 text-slate-400 text-xs font-medium border border-slate-700 transition">
+            حذف البروفايل
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- New Profile Modal -->
+    <div id="profile-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <span>✨</span> إنشاء بروفايل شخصية جديد
+          </h3>
+          <button type="button" onclick="closeNewProfileModal()" class="text-slate-400 hover:text-slate-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form id="new-profile-form" onsubmit="createNewProfile(event)" class="space-y-3">
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">اسم البروفايل (مثل: فهد - مبيعات سعودي)</label>
+            <input type="text" id="new-prof-name" required placeholder="فهد - مبيعات سعودي" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-purple-500" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">النوع</label>
+              <select id="new-prof-gender" onchange="syncNewProfileVoices()" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100">
+                <option value="female">أنثى (بنت)</option>
+                <option value="male">ذكر (شاب)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">اللهجة</label>
+              <select id="new-prof-dialect" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100">
+                <option value="egyptian">مصرية عامية</option>
+                <option value="saudi">سعودية / خليجية</option>
+                <option value="levantine">شامية</option>
+                <option value="fusha">فصحى معاصرة</option>
+                <option value="english">English</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">صوت Google المفضل</label>
+            <select id="new-prof-voice" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 font-mono">
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">الدور</label>
+              <select id="new-prof-role" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100">
+                <option value="customer_support">خدمة عملاء المتجر</option>
+                <option value="sales_advisor">مستشار مبيعات</option>
+                <option value="personal_assistant">مساعد شخصي</option>
+                <option value="technical_consultant">مستشار فني</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">أسلوب الإلقاء</label>
+              <select id="new-prof-style" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100">
+                <option value="friendly">ودود ولطيف</option>
+                <option value="formal">رسمي ورصين</option>
+                <option value="concise">موجز وسريع</option>
+                <option value="enthusiastic">حماسي</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            <button type="button" onclick="closeNewProfileModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">إلغاء</button>
+            <button type="submit" id="btn-create-prof" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold transition">حفظ البروفايل</button>
+          </div>
+        </form>
+      </div>
     </div>
 
     <!-- RAG Knowledge Base Management Section -->
@@ -891,9 +1070,266 @@
       }
     }
 
+    // ==================== Agent Voice & Persona Profiles Handling ====================
+    let userProfiles = [];
+    let activeProfile = null;
+    let googleVoices = [];
+
+    const profileSelect = document.getElementById('profile-select');
+    const fieldGender = document.getElementById('field-gender');
+    const fieldDialect = document.getElementById('field-dialect');
+    const fieldVoice = document.getElementById('field-voice');
+    const fieldRole = document.getElementById('field-role');
+    const fieldStyle = document.getElementById('field-style');
+    const fieldCustom = document.getElementById('field-custom');
+    const voiceTagBadge = document.getElementById('voice-tag-badge');
+    const profileStatusMsg = document.getElementById('profile-status-msg');
+
+    const profileModal = document.getElementById('profile-modal');
+    const newProfVoice = document.getElementById('new-prof-voice');
+    const newProfGender = document.getElementById('new-prof-gender');
+
+    async function loadProfiles() {
+      try {
+        const res = await fetch('/api/profiles/');
+        const data = await res.json();
+        if (data.status === 'success') {
+          userProfiles = data.profiles;
+          activeProfile = data.active_profile;
+          googleVoices = data.google_voices;
+
+          renderProfileDropdown();
+          syncGenderVoiceOptions();
+          if (activeProfile) {
+            populateProfileForm(activeProfile);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading profiles:', err);
+      }
+    }
+
+    function renderProfileDropdown() {
+      if (!userProfiles || userProfiles.length === 0) {
+        profileSelect.innerHTML = '<option value="">لا توجد بروفايلات</option>';
+        return;
+      }
+      profileSelect.innerHTML = userProfiles.map(p => `
+        <option value="${p.id}" ${p.is_active ? 'selected' : ''}>
+          ${p.name} ${p.is_active ? '⭐ [نشط للمكالمات]' : ''}
+        </option>
+      `).join('');
+    }
+
+    function populateVoiceSelect(selectElem, targetGender, selectedVoice) {
+      if (!googleVoices || googleVoices.length === 0) return;
+      
+      const filtered = targetGender 
+        ? googleVoices.filter(v => v.gender === targetGender)
+        : googleVoices;
+      const other = targetGender
+        ? googleVoices.filter(v => v.gender !== targetGender)
+        : [];
+
+      let html = '';
+      if (filtered.length > 0) {
+        html += `<optgroup label="أصوات (${targetGender === 'female' ? 'نسائية' : 'رجالية'})">`;
+        filtered.forEach(v => {
+          html += `<option value="${v.name}" ${v.name === selectedVoice ? 'selected' : ''}>${v.name} - ${v.style}</option>`;
+        });
+        html += '</optgroup>';
+      }
+
+      if (other.length > 0) {
+        html += `<optgroup label="أصوات أخرى">`;
+        other.forEach(v => {
+          html += `<option value="${v.name}" ${v.name === selectedVoice ? 'selected' : ''}>${v.name} - ${v.style}</option>`;
+        });
+        html += '</optgroup>';
+      }
+
+      selectElem.innerHTML = html;
+    }
+
+    function syncGenderVoiceOptions() {
+      const g = fieldGender.value;
+      const currentVoice = fieldVoice.value || (activeProfile ? activeProfile.voice_name : 'Aoede');
+      populateVoiceSelect(fieldVoice, g, currentVoice);
+      updateVoiceTag();
+    }
+
+    function syncNewProfileVoices() {
+      const g = newProfGender.value;
+      populateVoiceSelect(newProfVoice, g, g === 'female' ? 'Aoede' : 'Puck');
+    }
+
+    function updateVoiceTag() {
+      const selectedName = fieldVoice.value;
+      const v = googleVoices.find(x => x.name === selectedName);
+      if (v && voiceTagBadge) {
+        voiceTagBadge.innerText = `${v.tag} | ${v.style.split('(')[0].trim()}`;
+      }
+    }
+
+    function populateProfileForm(p) {
+      fieldGender.value = p.gender;
+      fieldDialect.value = p.dialect;
+      populateVoiceSelect(fieldVoice, p.gender, p.voice_name);
+      fieldRole.value = p.persona_role;
+      fieldStyle.value = p.speaking_style;
+      fieldCustom.value = p.custom_instructions || '';
+      updateVoiceTag();
+      profileStatusMsg.innerText = `البروفايل المطبق: "${p.name}" (${p.voice_name})`;
+      profileStatusMsg.className = 'text-xs text-emerald-400 font-semibold';
+    }
+
+    async function handleProfileSelect(profileId) {
+      if (!profileId) return;
+      try {
+        const res = await fetch(`/api/profiles/${profileId}/activate/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          activeProfile = data.profile;
+          userProfiles = userProfiles.map(p => ({ ...p, is_active: p.id === activeProfile.id }));
+          renderProfileDropdown();
+          populateProfileForm(activeProfile);
+          profileStatusMsg.innerText = `✅ تم تفعيل بروفايل "${activeProfile.name}"! ستتحدث المساعدة بهذا الصوت واللهجة.`;
+          profileStatusMsg.className = 'text-xs text-emerald-400 font-semibold';
+        }
+      } catch (err) {
+        console.error('Error activating profile:', err);
+      }
+    }
+
+    async function saveActiveProfileChanges() {
+      if (!activeProfile) return;
+      const btn = document.getElementById('btn-save-profile');
+      btn.disabled = true;
+      btn.innerText = 'جاري الحفظ...';
+
+      const payload = {
+        gender: fieldGender.value,
+        dialect: fieldDialect.value,
+        voice_name: fieldVoice.value,
+        persona_role: fieldRole.value,
+        speaking_style: fieldStyle.value,
+        custom_instructions: fieldCustom.value.trim()
+      };
+
+      try {
+        const res = await fetch(`/api/profiles/${activeProfile.id}/update/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          activeProfile = data.profile;
+          userProfiles = userProfiles.map(p => p.id === activeProfile.id ? activeProfile : p);
+          profileStatusMsg.innerText = `✅ تم حفظ وتطبيق إعدادات "${activeProfile.name}" بنجاح!`;
+          profileStatusMsg.className = 'text-xs text-emerald-400 font-semibold';
+        } else {
+          profileStatusMsg.innerText = 'فشل الحفظ: ' + (data.message || '');
+          profileStatusMsg.className = 'text-xs text-rose-400 font-semibold';
+        }
+      } catch (err) {
+        profileStatusMsg.innerText = 'حدث خطأ أثناء حفظ البروفايل.';
+        profileStatusMsg.className = 'text-xs text-rose-400 font-semibold';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> حفظ وتطبيق على المكالمات`;
+      }
+    }
+
+    function openNewProfileModal() {
+      document.getElementById('new-profile-form').reset();
+      syncNewProfileVoices();
+      profileModal.classList.remove('hidden');
+    }
+
+    function closeNewProfileModal() {
+      profileModal.classList.add('hidden');
+    }
+
+    async function createNewProfile(e) {
+      e.preventDefault();
+      const name = document.getElementById('new-prof-name').value.trim();
+      const gender = document.getElementById('new-prof-gender').value;
+      const dialect = document.getElementById('new-prof-dialect').value;
+      const voice_name = document.getElementById('new-prof-voice').value;
+      const persona_role = document.getElementById('new-prof-role').value;
+      const speaking_style = document.getElementById('new-prof-style').value;
+
+      const btn = document.getElementById('btn-create-prof');
+      btn.disabled = true;
+      btn.innerText = 'جاري الحفظ...';
+
+      try {
+        const res = await fetch('/api/profiles/create/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            name,
+            gender,
+            dialect,
+            voice_name,
+            persona_role,
+            speaking_style,
+            is_active: true
+          })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          closeNewProfileModal();
+          await loadProfiles();
+        } else {
+          alert('فشل إنشاء البروفايل: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ في الاتصال بالخادم.');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'حفظ البروفايل';
+      }
+    }
+
+    async function deleteCurrentProfile() {
+      if (!activeProfile) return;
+      if (userProfiles.length <= 1) {
+        alert('لا يمكنك حذف البروفايل الوحيد لديك.');
+        return;
+      }
+      if (!confirm(`هل أنت متأكد من حذف بروفايل "${activeProfile.name}"؟`)) return;
+
+      try {
+        const res = await fetch(`/api/profiles/${activeProfile.id}/delete/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          await loadProfiles();
+        } else {
+          alert('فشل الحذف: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء حذف البروفايل.');
+      }
+    }
+
     // Initialize lists on load
     loadDocuments();
     loadActions();
+    loadProfiles();
   </script>
 </body>
 </html>

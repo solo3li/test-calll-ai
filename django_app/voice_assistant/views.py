@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk, UserAction
+from .models import Document, DocumentChunk, UserAction, AgentProfile
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -121,10 +121,25 @@ def get_tokens(request):
     user_identity = f"user_{request.user.id}_{request.user.username}"
     channel_name = f"rooms:{room_name}"
 
-    # 1. Generate LiveKit Token with user metadata
+    # 1. Fetch or create active AgentProfile for user
+    active_profile = AgentProfile.objects.filter(user=request.user, is_active=True).first()
+    if not active_profile:
+        active_profile = AgentProfile.objects.create(
+            user=request.user,
+            name="نورهان - خدمة عملاء مصرية",
+            voice_name="Aoede",
+            gender="female",
+            dialect="egyptian",
+            persona_role="customer_support",
+            speaking_style="friendly",
+            is_active=True
+        )
+
+    # 2. Generate LiveKit Token with user metadata
     metadata = json.dumps({
         "user_id": request.user.id,
-        "username": request.user.username
+        "username": request.user.username,
+        "profile": active_profile.to_dict()
     })
 
     token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
@@ -162,6 +177,7 @@ def get_tokens(request):
         "livekit_token": livekit_jwt,
         "centrifugo_ws_url": settings.CENTRIFUGO_WS_URL,
         "centrifugo_token": centrifugo_jwt,
+        "active_profile": active_profile.to_dict(),
     })
 
 @csrf_exempt
@@ -203,12 +219,14 @@ def livekit_webhook(request):
                 "timestamp": time.time(),
             })
         else:
-            # Extract user_id from participant metadata or identity
+            # Extract user_id and profile from participant metadata or identity
             user_id = None
+            profile = None
             if event.participant.metadata:
                 try:
                     meta = json.loads(event.participant.metadata)
                     user_id = meta.get("user_id")
+                    profile = meta.get("profile")
                 except Exception:
                     pass
 
@@ -224,12 +242,13 @@ def livekit_webhook(request):
                 "timestamp": time.time(),
             })
 
-            # Dispatch to standalone Agent service via Redis queue with user_id
+            # Dispatch to standalone Agent service via Redis queue with user_id and profile
             try:
                 r = redis.Redis.from_url(settings.REDIS_URL)
                 job_payload = json.dumps({
                     "room_name": room_name,
-                    "user_id": user_id
+                    "user_id": user_id,
+                    "profile": profile
                 })
                 r.rpush("agent_jobs", job_payload)
                 logger.info(f"Dispatched job {job_payload} to Redis 'agent_jobs' queue.")
@@ -468,3 +487,177 @@ def delete_action(request, action_id):
     name = action.name
     action.delete()
     return JsonResponse({"status": "success", "message": f"تم حذف الإجراء '{name}' بنجاح."})
+
+# ==================== Agent Voice & Persona Profiles ====================
+
+GOOGLE_VOICES = [
+    # Feminine Voices
+    {"name": "Aoede", "gender": "female", "style": "Breezy (نسيم هادئ ولطيف)", "tag": "طبيعي وهادئ"},
+    {"name": "Kore", "gender": "female", "style": "Firm (واثق ورسمي)", "tag": "رسمي ومتمكن"},
+    {"name": "Leda", "gender": "female", "style": "Youthful (شبابي ومشرق)", "tag": "شبابي وحيوي"},
+    {"name": "Callirrhoe", "gender": "female", "style": "Easy-going (مسترخي ومريح)", "tag": "ودود ومسترخي"},
+    {"name": "Autonoe", "gender": "female", "style": "Bright (مشرق ومتفاعل)", "tag": "مشرق"},
+    {"name": "Despina", "gender": "female", "style": "Smooth (ناعم ورقيق)", "tag": "رقيق وناعم"},
+    {"name": "Erinome", "gender": "female", "style": "Clear (نقي ومحدد)", "tag": "واضح جداً"},
+    {"name": "Laomedeia", "gender": "female", "style": "Upbeat (مرح ومتفائل)", "tag": "مرح ومتفائل"},
+    {"name": "Vindemiatrix", "gender": "female", "style": "Gentle (لطيف ودافئ)", "tag": "لطيف"},
+    {"name": "Sulafat", "gender": "female", "style": "Warm (دافئ ومطمئن)", "tag": "دافئ"},
+    {"name": "Pulcherrima", "gender": "female", "style": "Forward (مباشر وجريء)", "tag": "مباشر وحاسم"},
+
+    # Masculine Voices
+    {"name": "Puck", "gender": "male", "style": "Upbeat (مرح ومتحمس)", "tag": "حماسي وودود"},
+    {"name": "Charon", "gender": "male", "style": "Informative (إخباري ورسمي)", "tag": "إخباري ومتقن"},
+    {"name": "Fenrir", "gender": "male", "style": "Excitable (نشيط ومتحمس)", "tag": "حماسي جداً"},
+    {"name": "Orus", "gender": "male", "style": "Firm (حازم ورصين)", "tag": "حازم وواثق"},
+    {"name": "Algieba", "gender": "male", "style": "Smooth (انسيابي ورخيم)", "tag": "رخيم وهادئ"},
+    {"name": "Algenib", "gender": "male", "style": "Gravelly (أجش وعميق)", "tag": "أجش ورجولي"},
+    {"name": "Achird", "gender": "male", "style": "Friendly (ودود وأليف)", "tag": "ودود ومريح"},
+    {"name": "Gacrux", "gender": "male", "style": "Mature (ناضج ووقور)", "tag": "ناضج ووقور"},
+    {"name": "Sadaltager", "gender": "male", "style": "Knowledgeable (خبير ومتمكن)", "tag": "خبير ومقنع"},
+    {"name": "Iapetus", "gender": "male", "style": "Clear (واضح وصريح)", "tag": "واضح"},
+    {"name": "Umbriel", "gender": "male", "style": "Easy-going (عفوي ومرن)", "tag": "عفوي"},
+    {"name": "Enceladus", "gender": "male", "style": "Breathy (نَفَسي وعميق)", "tag": "نَفَسي"},
+    {"name": "Rasalgethi", "gender": "male", "style": "Informative (معلوماتي ورسمي)", "tag": "رسمي"},
+    {"name": "Achernar", "gender": "male", "style": "Soft (ناعم وهادئ)", "tag": "ناعم وهادئ"},
+    {"name": "Alnilam", "gender": "male", "style": "Firm (صلب وقوي)", "tag": "حازم"},
+    {"name": "Schedar", "gender": "male", "style": "Even (متزن ومستقر)", "tag": "متزن"},
+    {"name": "Zubenelgenubi", "gender": "male", "style": "Casual (تلقائي وعادي)", "tag": "تلقائي"},
+    {"name": "Sadachbia", "gender": "male", "style": "Lively (حيوي ومتفاعل)", "tag": "حيوي"},
+    {"name": "Zephyr", "gender": "male", "style": "Bright (منعش ومشرق)", "tag": "منعش"},
+]
+
+@login_required(login_url='/login/')
+def list_profiles(request):
+    """List all agent profiles for user, active profile, and options metadata."""
+    profiles = list(AgentProfile.objects.filter(user=request.user))
+    if not profiles:
+        default_prof = AgentProfile.objects.create(
+            user=request.user,
+            name="نورهان - خدمة عملاء مصرية",
+            voice_name="Aoede",
+            gender="female",
+            dialect="egyptian",
+            persona_role="customer_support",
+            speaking_style="friendly",
+            is_active=True
+        )
+        profiles = [default_prof]
+
+    active_p = next((p for p in profiles if p.is_active), profiles[0])
+
+    return JsonResponse({
+        "status": "success",
+        "profiles": [p.to_dict() for p in profiles],
+        "active_profile": active_p.to_dict(),
+        "google_voices": GOOGLE_VOICES,
+        "dialects": [{"id": d[0], "label": d[1]} for d in AgentProfile.DIALECT_CHOICES],
+        "roles": [{"id": r[0], "label": r[1]} for r in AgentProfile.ROLE_CHOICES],
+        "styles": [{"id": s[0], "label": s[1]} for s in AgentProfile.STYLE_CHOICES],
+        "genders": [{"id": g[0], "label": g[1]} for g in AgentProfile.GENDER_CHOICES],
+    })
+
+@login_required(login_url='/login/')
+def create_profile(request):
+    """Create a new agent persona profile for user."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        name = data.get('name', '').strip() or 'بروفايل مخصص'
+        voice_name = data.get('voice_name', 'Aoede').strip()
+        gender = data.get('gender', 'female')
+        dialect = data.get('dialect', 'egyptian')
+        persona_role = data.get('persona_role', 'customer_support')
+        speaking_style = data.get('speaking_style', 'friendly')
+        custom_instructions = data.get('custom_instructions', '').strip()
+        is_active = bool(data.get('is_active', True))
+
+        profile = AgentProfile.objects.create(
+            user=request.user,
+            name=name,
+            voice_name=voice_name,
+            gender=gender,
+            dialect=dialect,
+            persona_role=persona_role,
+            speaking_style=speaking_style,
+            custom_instructions=custom_instructions,
+            is_active=is_active
+        )
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم حفظ البروفايل '{profile.name}' بنجاح.",
+            "profile": profile.to_dict()
+        }, status=201)
+    except Exception as e:
+        logger.error(f"Error creating agent profile: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+@login_required(login_url='/login/')
+def update_profile(request, profile_id):
+    """Update an existing agent persona profile."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, user=request.user)
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        if 'name' in data and data['name'].strip():
+            profile.name = data['name'].strip()
+        if 'voice_name' in data and data['voice_name'].strip():
+            profile.voice_name = data['voice_name'].strip()
+        if 'gender' in data:
+            profile.gender = data['gender']
+        if 'dialect' in data:
+            profile.dialect = data['dialect']
+        if 'persona_role' in data:
+            profile.persona_role = data['persona_role']
+        if 'speaking_style' in data:
+            profile.speaking_style = data['speaking_style']
+        if 'custom_instructions' in data:
+            profile.custom_instructions = data['custom_instructions'].strip()
+        if 'is_active' in data:
+            profile.is_active = bool(data['is_active'])
+
+        profile.save()
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم تحديث البروفايل '{profile.name}' بنجاح.",
+            "profile": profile.to_dict()
+        })
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+@login_required(login_url='/login/')
+def activate_profile(request, profile_id):
+    """Set a specific profile as the active one for future calls."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, user=request.user)
+    profile.is_active = True
+    profile.save()
+    return JsonResponse({
+        "status": "success",
+        "message": f"تم تفعيل البروفايل '{profile.name}' للمكالمات القادمة.",
+        "profile": profile.to_dict()
+    })
+
+@login_required(login_url='/login/')
+def delete_profile(request, profile_id):
+    """Delete an agent persona profile."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, user=request.user)
+    was_active = profile.is_active
+    name = profile.name
+    profile.delete()
+
+    if was_active:
+        fallback = AgentProfile.objects.filter(user=request.user).first()
+        if fallback:
+            fallback.is_active = True
+            fallback.save()
+
+    return JsonResponse({"status": "success", "message": f"تم حذف البروفايل '{name}' بنجاح."})
