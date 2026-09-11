@@ -1,0 +1,39 @@
+{
+  "client": {
+    "token": {
+      "hmac_secret_key": "centrifugo_secret_key_1234567890"
+    },
+    "allowed_origins": [
+      "https://app.localhost",
+      "http://app.localhost",
+      "https://localhost",
+      "http://localhost"
+    ]
+  },
+  "http_api": {
+    "key": "centrifugo_api_key_1234567890"
+  },
+  "engine": {
+    "type": "redis",
+    "redis": {
+      "address": "redis:6379"
+    }
+  },
+  "channel": {
+    "without_namespace": {
+      "allow_subscribe_for_client": true,
+      "presence": true,
+      "history_size": 50,
+      "history_ttl": "300s"
+    },
+    "namespaces": [
+      {
+        "name": "rooms",
+        "allow_subscribe_for_client": true,
+        "presence": true,
+        "history_size": 50,
+        "history_ttl": "300s"
+      }
+    ]
+  }
+}

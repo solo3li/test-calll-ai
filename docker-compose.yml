@@ -1,0 +1,80 @@
+services:
+  traefik:
+    build:
+      context: ./traefik
+      dockerfile: Dockerfile
+    container_name: voice_traefik
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "443:443"
+    networks:
+      - voice_net
+
+  livekit:
+    build:
+      context: ./livekit
+      dockerfile: Dockerfile
+    container_name: voice_livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    ports:
+      - "50000-50020:50000-50020/udp"
+      - "7881:7881"
+      - "7882:7882/udp"
+    networks:
+      - voice_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: voice_redis
+    restart: unless-stopped
+    networks:
+      - voice_net
+
+  centrifugo:
+    build:
+      context: ./centrifugo
+      dockerfile: Dockerfile
+    container_name: voice_centrifugo
+    restart: unless-stopped
+    command: centrifugo -c /centrifugo/config.json
+    depends_on:
+      - redis
+    networks:
+      - voice_net
+
+  django:
+    build:
+      context: ./django_app
+      dockerfile: Dockerfile
+    container_name: voice_django
+    restart: unless-stopped
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - centrifugo
+      - livekit
+    networks:
+      - voice_net
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: voice_agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - livekit
+      - centrifugo
+    networks:
+      - voice_net
+
+networks:
+  voice_net:
+    driver: bridge
