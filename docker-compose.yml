@@ -44,6 +44,19 @@ services:
     networks:
       - voice_net
 
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: voice_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-voice_db}
+      POSTGRES_USER: ${POSTGRES_USER:-voice_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voice_password_123}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - voice_net
+
   django:
     build:
       context: ./django_app
@@ -54,6 +67,7 @@ services:
     env_file:
       - .env
     depends_on:
+      - postgres
       - redis
       - centrifugo
       - livekit
@@ -69,11 +83,15 @@ services:
     env_file:
       - .env
     depends_on:
+      - postgres
       - redis
       - livekit
       - centrifugo
     networks:
       - voice_net
+
+volumes:
+  pgdata:
 
 networks:
   voice_net:

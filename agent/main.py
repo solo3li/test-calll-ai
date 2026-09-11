@@ -2,9 +2,12 @@ import asyncio
 import os
 import sys
 import time
+import json
 import logging
 import signal
 import requests
+import psycopg2
+from pgvector.psycopg2 import register_vector
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from google import genai
@@ -27,6 +30,12 @@ CENTRIFUGO_API_KEY = os.getenv("CENTRIFUGO_API_KEY", "centrifugo_api_key_1234567
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
+POSTGRES_DB = os.getenv("POSTGRES_DB", "voice_db")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "voice_user")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "voice_password_123")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+
 def notify_centrifugo(channel: str, event: str, message: str, extra: dict = None):
     """Notify web client via Centrifugo WebSocket channel."""
     try:
@@ -48,10 +57,59 @@ def notify_centrifugo(channel: str, event: str, message: str, extra: dict = None
     except Exception as e:
         logger.warning(f"Could not notify Centrifugo: {e}")
 
-async def run_agent_session(room_name: str):
+def query_knowledge_base_sync(query: str, user_id: int, genai_client, top_k: int = 4) -> str:
+    """Query PostgreSQL pgvector database for user's documents semantically matching query."""
+    if not user_id:
+        return "لا توجد مستندات مرفوعة لهذا المستخدم."
+    try:
+        # 1. Embed query with Gemini gemini-embedding-001 (768 dimensions)
+        embed_res = genai_client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=query,
+            config=types.EmbedContentConfig(output_dimensionality=768)
+        )
+        if not embed_res or not embed_res.embeddings:
+            return "تعذر استخراج التضمين الدلالي للاستعلام."
+        query_vec = embed_res.embeddings[0].values
+
+        # 2. Query PostgreSQL pgvector
+        conn = psycopg2.connect(
+            dbname=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT
+        )
+        register_vector(conn)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT content, (embedding <=> %s::vector) AS distance
+                FROM voice_assistant_documentchunk
+                WHERE user_id = %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s;
+            """, (query_vec, user_id, query_vec, top_k))
+            rows = cur.fetchall()
+        conn.close()
+
+        if not rows:
+            return "لا توجد أي مستندات مرفوعة في قاعدة المعرفة الخاصة بك."
+
+        # Filter chunks by cosine distance <= 0.50 (similarity >= 0.50)
+        relevant = [r[0] for r in rows if r[1] <= 0.50]
+        if not relevant:
+            return "لم يتم العثور على أي معلومات متعلقة بهذا السؤال في المستندات المرفوعة الخاصة بك."
+
+        return "المعلومات الموثقة المستخرجة من مستنداتك:\n" + "\n---\n".join(relevant)
+
+    except Exception as e:
+        logger.error(f"Database knowledge retrieval error: {e}", exc_info=True)
+        return f"حدث خطأ أثناء البحث في المستندات: {e}"
+
+async def run_agent_session(room_name: str, user_id: int = None):
     channel_name = f"rooms:{room_name}"
-    logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name}")
-    notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعد الصوتي والاتصال بـ Gemini...")
+    logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name} (user_id={user_id})")
+    notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعدة الصوتية وتجهيز قاعدة المستندات...")
 
     # 1. Create LiveKit Access Token for Agent
     token = api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET) \
@@ -82,7 +140,7 @@ async def run_agent_session(room_name: str):
     await room.local_participant.publish_track(audio_track, publish_options)
     logger.info(f"Published agent audio track to room '{room_name}'")
 
-    # 4. Prepare Gemini Live Client
+    # 4. Prepare Gemini Live Client with RAG Tools and Strict Guardrails
     if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("your_"):
         err = "GEMINI_API_KEY is not configured properly in .env"
         logger.error(err)
@@ -91,12 +149,52 @@ async def run_agent_session(room_name: str):
         return
 
     client = genai.Client(api_key=GEMINI_API_KEY)
+
+    speech_config = types.SpeechConfig(
+        voice_config=types.VoiceConfig(
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                voice_name="Aoede"  # Female voice
+            )
+        )
+    )
+
+    rag_tool = {
+        "function_declarations": [
+            {
+                "name": "search_knowledge_base",
+                "description": "البحث في المستندات والملفات المرفقة الخاصة بالمستخدم للإجابة عن أسئلته واستفساراته وحقائقه المطلوبة.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {
+                            "type": "STRING",
+                            "description": "نص السؤال أو الاستفسار أو الكلمات المفتاحية للبحث عنها في المستندات"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        ]
+    }
+
     live_config = types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],
+        speech_config=speech_config,
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
+        tools=[rag_tool],
         system_instruction=types.Content(
-            parts=[types.Part(text="أنت مساعد صوتي ذكي وودود وسريع البديهة. تتحدث باللغة العربية بطلاقة وبشكل طبيعي وموجز دون إطالة غير ضرورية. تجيب دائماً على كل سؤال يطرحه المستخدم.")]
+            parts=[types.Part(text=(
+                "أنتِ مساعدة صوتية ذكية وودودة ولطيفة، هويتك وصوتك بنت مصرية.\n"
+                "قواعد صارمة وإلزامية لا تقبل الاستثناء:\n"
+                "1. التحدث باللهجة المصرية العامية فقط: كل كلامك بدون أي استثناء لازم يكون باللهجة المصرية العامية الدارجة الطبيعية (زي: 'أهلاً بيك يا فندم'، 'إزيك عامل إيه؟'، 'أنا تمام أهو معاك'، 'تحت أمرك يا فندم'). ممنوع منعاً باتاً التحدث باللغة العربية الفصحى أو بأي لهجة تانية.\n"
+                "2. أنتِ أنثى (بنت): تتحدثين بصيغة المؤنث عن نفسك دائماً (زي: 'أنا مساعدة ذكية'، 'أنا جاهزة أهو'، 'أنا دورت في الملفات').\n"
+                "3. التحيات والترحيب: تبادلي التحيات والمجاملات الخفيفة بلهجة مصرية ودودة ومختصرة جداً.\n"
+                "4. البحث الإجباري في المستندات (RAG): لما المستخدم يسألك عن أي سؤال أو معلومة أو استفسار، لازم تستدعي فوراً أداة search_knowledge_base للبحث في ملفات ومستندات المستخدم المرفوعة.\n"
+                "5. الإجابة حصرياً من الملفات: لو المعلومة موجودة في نتائج البحث بالملفات، جاوبي عليها باللهجة المصرية بوضوح واختصار شديد وبطريقة طبيعية.\n"
+                "6. الاعتذار الإجباري الصارم: لو المعلومة مش موجودة في نتائج البحث، أو لو المستخدم مرفعش ملفات، أو لو سألك عن أي حاجة عامة أو سؤال برة الملفات: لازم فوراً وبدون تردد تعتذري باللهجة المصرية وتقولي: 'معلش، المعلومة دي مش موجودة خالص في الملفات اللي انت رفعتها، ومقدرش أجاوبك من برة ملفاتك.' ممنوع تفتي أو تخمني أو تجاوبي من معلوماتك العامة نهائياً.\n"
+                "7. الإيجاز: كلامك يكون مختصر وفي صلب الموضوع وبدون رغي زيادة."
+            ))]
         )
     )
 
@@ -151,7 +249,7 @@ async def run_agent_session(room_name: str):
         logger.info(f"Connecting to Gemini Live API (gemini-3.1-flash-live-preview) for room {room_name}...")
         async with client.aio.live.connect(model="gemini-3.1-flash-live-preview", config=live_config) as session:
             logger.info(f"Gemini Live session connected for room '{room_name}'!")
-            notify_centrifugo(channel_name, "agent_ready", "المساعد الصوتي متصل وجاهز للاستماع الآن!")
+            notify_centrifugo(channel_name, "agent_ready", "المساعدة الصوتية وقاعدة المستندات جاهزة للاستماع إليك الآن!")
 
             # Worker 1: Stream user PCM audio frames to Gemini Live (continuous 40ms chunks with echo gating)
             async def send_audio_worker():
@@ -191,13 +289,40 @@ async def run_agent_session(room_name: str):
                             logger.error(f"Error sending audio to Gemini: {ex}")
                             await asyncio.sleep(0.05)
 
-            # Worker 2: Receive audio & transcripts from Gemini Live across multiple turns
+            # Worker 2: Receive audio, transcripts & handle tool calls from Gemini Live across multiple turns
             async def receive_audio_worker():
                 while not stop_event.is_set():
                     try:
                         async for response in session.receive():
                             if stop_event.is_set():
                                 break
+
+                            # Handle Tool Calls (RAG Search)
+                            if response.tool_call:
+                                logger.info(f"Gemini requested tool call in room {room_name}: {response.tool_call}")
+                                notify_centrifugo(channel_name, "agent_searching_rag", "جاري البحث الدلالي في مستنداتك...")
+                                function_responses = []
+                                for fc in response.tool_call.function_calls:
+                                    if fc.name == "search_knowledge_base":
+                                        query_text = fc.args.get("query", "") if fc.args else ""
+                                        logger.info(f"Executing search_knowledge_base for user_id={user_id}, query='{query_text}'")
+                                        search_result = await asyncio.to_thread(
+                                            query_knowledge_base_sync, query_text, user_id, client
+                                        )
+                                        logger.info(f"Search result retrieved: {search_result[:100]}...")
+                                        function_responses.append(types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={"result": search_result}
+                                        ))
+                                    else:
+                                        function_responses.append(types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={"result": "Unknown tool"}
+                                        ))
+                                await session.send_tool_response(function_responses=function_responses)
+                                continue
 
                             content = response.server_content
                             if not content:
@@ -231,7 +356,7 @@ async def run_agent_session(room_name: str):
                             if content.model_turn:
                                 if not state["is_agent_speaking"]:
                                     state["is_agent_speaking"] = True
-                                    notify_centrifugo(channel_name, "agent_speaking", "المساعد يتحدث...")
+                                    notify_centrifugo(channel_name, "agent_speaking", "المساعدة تتحدث الآن...")
                                 state["turn_complete"] = False
                                 state["agent_last_audio_time"] = time.time()
                                 for part in content.model_turn.parts:
@@ -297,7 +422,7 @@ async def run_agent_session(room_name: str):
                                         break
                                 state["is_agent_speaking"] = False
                                 logger.info(f"Agent playback finished for room {room_name}. Mic listening active.")
-                                notify_centrifugo(channel_name, "agent_listening", "المساعد يستمع إليك الآن...")
+                                notify_centrifugo(channel_name, "agent_listening", "المساعدة تستمع إليكِ الآن...")
                         continue
                     except Exception as ex:
                         if not stop_event.is_set():
@@ -319,7 +444,7 @@ async def run_agent_session(room_name: str):
     finally:
         logger.info(f"Cleaning up and disconnecting from room '{room_name}'...")
         await room.disconnect()
-        notify_centrifugo(channel_name, "agent_disconnected", "تم إنهاء جلسة المساعد الصوتي.")
+        notify_centrifugo(channel_name, "agent_disconnected", "تم إنهاء جلسة المساعدة الصوتية.")
 
 async def stream_user_audio_to_queue(audio_stream: rtc.AudioStream, queue: asyncio.Queue, stop_event: asyncio.Event, identity: str):
     """Read user audio frames from LiveKit stream and push to queue."""
@@ -334,10 +459,11 @@ async def stream_user_audio_to_queue(audio_stream: rtc.AudioStream, queue: async
         logger.debug(f"Audio stream for {identity} ended: {e}")
 
 async def main():
-    logger.info("Starting Standalone Voice Agent Service (Listening on Redis queue: agent_jobs)...")
+    logger.info("Starting Standalone Voice Agent Service (with RAG & pgvector Support)...")
     logger.info(f"LiveKit Internal URL: {LIVEKIT_INTERNAL_URL}")
     logger.info(f"Centrifugo API URL: {CENTRIFUGO_HTTP_API_URL}")
     logger.info(f"Redis URL: {REDIS_URL}")
+    logger.info(f"Postgres: {POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
 
     r = aioredis.from_url(REDIS_URL, decode_responses=True)
     active_sessions: dict[str, asyncio.Task] = {}
@@ -353,14 +479,27 @@ async def main():
         try:
             loop.add_signal_handler(sig, handle_signal)
         except NotImplementedError:
-            pass  # Windows may not implement signal handlers for all signals
+            pass
 
     while not shutdown_event.is_set():
         try:
             # Non-blocking pop with 1s timeout
             item = await r.brpop("agent_jobs", timeout=1.0)
             if item:
-                _, room_name = item
+                _, raw_data = item
+                raw_data = raw_data.strip()
+                if not raw_data:
+                    continue
+
+                room_name = raw_data
+                user_id = None
+                try:
+                    parsed = json.loads(raw_data)
+                    room_name = parsed.get("room_name", raw_data)
+                    user_id = parsed.get("user_id")
+                except Exception:
+                    pass
+
                 room_name = room_name.strip()
                 if not room_name:
                     continue
@@ -370,7 +509,7 @@ async def main():
                     logger.info(f"Session for room '{room_name}' is already running. Skipping duplicate dispatch.")
                     continue
 
-                logger.info(f"Received new agent dispatch for room: {room_name}")
+                logger.info(f"Received new agent dispatch for room: {room_name} (user_id={user_id})")
 
                 def make_cleanup(rm):
                     def _cleanup(fut):
@@ -378,7 +517,7 @@ async def main():
                         active_sessions.pop(rm, None)
                     return _cleanup
 
-                task = asyncio.create_task(run_agent_session(room_name))
+                task = asyncio.create_task(run_agent_session(room_name, user_id=user_id))
                 task.add_done_callback(make_cleanup(room_name))
                 active_sessions[room_name] = task
 

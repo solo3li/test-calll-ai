@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>المساعد الصوتي الذكي | Gemini Live + LiveKit</title>
+  <title>المساعد الصوتي الذكي | Gemini Live + LiveKit + RAG</title>
   
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -30,71 +30,98 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
 
   <!-- Header -->
-  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex justify-between items-center">
+  <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur px-6 py-4 flex flex-wrap justify-between items-center gap-4">
     <div class="flex items-center gap-3">
       <div class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></div>
-      <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-        مساعد Gemini Live الصوتي
+      <h1 class="text-xl font-bold bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">
+        المساعدة الصوتية الذكية (Gemini Live RAG)
       </h1>
     </div>
-    <div class="flex items-center gap-4 text-sm text-slate-400">
-      <span id="centrifugo-status" class="flex items-center gap-1.5">
+
+    <div class="flex items-center gap-4 text-sm">
+      <span id="centrifugo-status" class="flex items-center gap-1.5 text-slate-400">
         <span class="w-2 h-2 rounded-full bg-gray-500"></span> Centrifugo: غير متصل
       </span>
-      <span id="livekit-status" class="flex items-center gap-1.5">
+      <span id="livekit-status" class="flex items-center gap-1.5 text-slate-400">
         <span class="w-2 h-2 rounded-full bg-gray-500"></span> LiveKit: غير متصل
       </span>
+
+      <!-- User Profile & Logout -->
+      <div class="flex items-center gap-3 pl-2 border-r border-slate-800">
+        <span class="px-3 py-1 rounded-full bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+          </svg>
+          {{ request.user.username }}
+        </span>
+        <a href="{% url 'voice_assistant:logout' %}" class="text-xs text-rose-400 hover:text-rose-300 transition flex items-center gap-1 font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          تسجيل الخروج
+        </a>
+      </div>
     </div>
   </header>
 
   <!-- Main Content -->
-  <main class="flex-1 max-w-4xl w-full mx-auto p-6 flex flex-col gap-6">
+  <main class="flex-1 max-w-5xl w-full mx-auto p-6 flex flex-col gap-6">
+
+    <!-- Guardrail Notice -->
+    <div class="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-900/60 text-xs text-indigo-200 flex items-center gap-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <span>
+        <strong>نطاق الإجابة الحصري (RAG):</strong> المساعد الصوتي يستند دلالياً وحصرياً إلى المستندات المرفوعة أدناه في قاعدة المعرفة الخاصة بك، ويعتذر فوراً عن الإجابة عن أي أسئلة خارج نطاق هذه المستندات.
+      </span>
+    </div>
 
     <!-- Visualizer / Orb -->
-    <div class="flex-1 flex flex-col items-center justify-center py-6">
-      <div id="visualizer-orb" class="w-36 h-36 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center transition-all duration-300 shadow-xl shadow-blue-500/10">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-white opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div class="flex flex-col items-center justify-center py-4">
+      <div id="visualizer-orb" class="w-32 h-32 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center transition-all duration-300 shadow-xl shadow-blue-500/10">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-white opacity-85" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
         </svg>
       </div>
-      <p id="call-status" class="mt-5 text-lg font-medium text-slate-200">
+      <p id="call-status" class="mt-4 text-base font-semibold text-slate-200">
         جاهز لبدء المحادثة الصوتية الفورية
       </p>
-      <p id="sub-status" class="text-sm text-slate-400 mt-1">
-        اضغط على زر "بدء المحادثة" لتفعيل الصوت اللحظي
+      <p id="sub-status" class="text-xs text-slate-400 mt-1">
+        اضغط على زر "بدء المحادثة" لتفعيل الصوت والتواصل المباشر مع مستنداتك
       </p>
 
       <!-- Live Mic Volume Indicator -->
-      <div id="mic-level-container" class="mt-4 w-64 flex flex-col items-center gap-1 hidden">
+      <div id="mic-level-container" class="mt-3 w-56 flex flex-col items-center gap-1 hidden">
         <div class="flex justify-between w-full text-xs text-slate-400">
           <span>المايكروفون</span>
           <span id="mic-level-text">0%</span>
         </div>
-        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+        <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
           <div id="mic-level-bar" class="h-full bg-emerald-500 rounded-full transition-all duration-75" style="width: 0%;"></div>
         </div>
       </div>
     </div>
 
-    <!-- Controls -->
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex justify-center items-center gap-4">
-      <button id="btn-start" onclick="startCall()" class="px-6 py-3 rounded-xl font-semibold bg-blue-600 hover:bg-blue-500 transition text-white flex items-center gap-2 shadow-lg shadow-blue-600/30">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <!-- Call Controls -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex justify-center items-center gap-4">
+      <button id="btn-start" onclick="startCall()" class="px-6 py-2.5 rounded-xl font-semibold bg-blue-600 hover:bg-blue-500 transition text-white flex items-center gap-2 shadow-lg shadow-blue-600/30 text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         بدء المحادثة
       </button>
 
-      <button id="btn-mute" onclick="toggleMute()" disabled class="px-5 py-3 rounded-xl font-medium bg-slate-800 hover:bg-slate-700 transition text-slate-300 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
-        <svg id="icon-mic" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <button id="btn-mute" onclick="toggleMute()" disabled class="px-5 py-2.5 rounded-xl font-medium bg-slate-800 hover:bg-slate-700 transition text-slate-300 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed text-sm">
+        <svg id="icon-mic" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
         </svg>
         <span id="txt-mute">كتم المايك</span>
       </button>
 
-      <button id="btn-end" onclick="endCall()" disabled class="px-5 py-3 rounded-xl font-medium bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <button id="btn-end" onclick="endCall()" disabled class="px-5 py-2.5 rounded-xl font-medium bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
         إنهاء المكالمة
@@ -102,15 +129,75 @@
     </div>
 
     <!-- Live Transcripts Panel -->
-    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col h-60">
-      <div class="flex justify-between items-center pb-3 border-b border-slate-800 mb-3">
-        <h3 class="text-sm font-semibold text-slate-300">النصوص الحية (Live Subtitles via Centrifugo)</h3>
-        <span class="text-xs text-slate-500">مزامنة فورية</span>
+    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col h-48">
+      <div class="flex justify-between items-center pb-2 border-b border-slate-800 mb-2">
+        <h3 class="text-xs font-semibold text-slate-300">نصوص المحادثة الحية (Live Subtitles)</h3>
+        <span class="text-xs text-slate-500">تحديث فوري عبر Centrifugo</span>
       </div>
-      <div id="transcript-box" class="flex-1 overflow-y-auto space-y-3 pr-2 text-sm">
-        <p class="text-slate-600 text-center italic mt-14">ستظهر نصوص المحادثة هنا أثناء التحدث مباشرة...</p>
+      <div id="transcript-box" class="flex-1 overflow-y-auto space-y-2 pr-2 text-sm">
+        <p class="text-slate-600 text-center italic mt-10 text-xs">ستظهر نصوص المحادثة هنا أثناء التحدث مباشرة...</p>
       </div>
     </div>
+
+    <!-- RAG Knowledge Base Management Section -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl">
+      <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
+        <div>
+          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+            مستندات قاعدة المعرفة (RAG Knowledge Base)
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">
+            ارفع ملفاتك (PDF, DOCX, TXT) ليتم تضمينها وفهرستها دلالياً في PostgreSQL باستخدام Gemini text-embedding-004.
+          </p>
+        </div>
+
+        <!-- Upload Form -->
+        <form id="upload-form" onsubmit="uploadDocument(event)" class="flex items-center gap-2">
+          {% csrf_token %}
+          <label class="cursor-pointer px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center gap-2 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <span id="upload-file-label">اختر ملفاً (PDF/DOCX/TXT)</span>
+            <input type="file" id="file-input" name="file" accept=".pdf,.docx,.doc,.txt,.md" class="hidden" onchange="handleFileSelect(event)" />
+          </label>
+          <button 
+            type="submit" 
+            id="btn-upload" 
+            disabled
+            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5"
+          >
+            <span>رفع ومعالجة</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Upload Status Notification -->
+      <div id="upload-status" class="mt-4 hidden p-3 rounded-xl text-xs flex items-center gap-2"></div>
+
+      <!-- Documents List Table -->
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full text-right text-xs">
+          <thead>
+            <tr class="text-slate-400 border-b border-slate-800/80">
+              <th class="py-2.5 px-3">اسم المستند</th>
+              <th class="py-2.5 px-3">النوع</th>
+              <th class="py-2.5 px-3">المقاطع الدلالية (Chunks)</th>
+              <th class="py-2.5 px-3">تاريخ الفهرسة</th>
+              <th class="py-2.5 px-3 text-center">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="docs-tbody" class="divide-y divide-slate-800/40">
+            <tr>
+              <td colspan="5" class="text-center py-6 text-slate-500">جاري تحميل المستندات...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
   </main>
 
@@ -138,6 +225,27 @@
     const micBar = document.getElementById('mic-level-bar');
     const micText = document.getElementById('mic-level-text');
 
+    const fileInput = document.getElementById('file-input');
+    const uploadLabel = document.getElementById('upload-file-label');
+    const btnUpload = document.getElementById('btn-upload');
+    const uploadStatus = document.getElementById('upload-status');
+    const docsTbody = document.getElementById('docs-tbody');
+
+    function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+
     function appendTranscript(speaker, text) {
       if (transcriptBox.querySelector('.italic')) {
         transcriptBox.innerHTML = '';
@@ -147,7 +255,7 @@
         ? 'p-2.5 rounded-lg bg-blue-950/60 border border-blue-900 text-blue-200 self-end ml-12'
         : 'p-2.5 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-200 mr-12';
       
-      const label = speaker === 'user' ? 'أنت:' : 'Gemini:';
+      const label = speaker === 'user' ? 'أنت:' : 'المساعد الصوتي:';
       div.innerHTML = `<span class="font-bold block text-xs opacity-75 mb-1">${label}</span><span>${text}</span>`;
       transcriptBox.appendChild(div);
       transcriptBox.scrollTop = transcriptBox.scrollHeight;
@@ -207,7 +315,7 @@
 
         callStatus.innerText = 'جاري الاتصال بـ LiveKit...';
 
-        // 2. Try connecting to Centrifugo (App WebSockets)
+        // 2. Connect to Centrifugo (App WebSockets)
         try {
           centrifugeClient = new Centrifuge(data.centrifugo_ws_url, {
             token: data.centrifugo_token
@@ -243,7 +351,7 @@
 
         livekitRoom.on(LivekitClient.RoomEvent.Connected, () => {
           lkStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> LiveKit: متصل';
-          callStatus.innerText = 'تم الانضمام للغرفة. جاري تشغيل المساعد الذكي...';
+          callStatus.innerText = 'تم الانضمام للغرفة. جاري تشغيل المساعد الذكي وقاعدة المستندات...';
           subStatus.innerText = 'المساعد الصوتي ينضم الآن...';
         });
 
@@ -251,7 +359,7 @@
           console.log('[LiveKit] Participant connected:', participant.identity);
           if (participant.identity === 'pipecat-agent') {
             callStatus.innerText = 'المساعد متصل في الغرفة!';
-            subStatus.innerText = 'تحدث الآن بصوتك، المساعد يستمع إليك';
+            subStatus.innerText = 'تحدث الآن بصوتك، المساعد يستمع إليك ويجيب من مستنداتك';
           }
         });
 
@@ -306,6 +414,8 @@
         subStatus.innerText = 'المساعد يتحدث الآن...';
       } else if (data.event === 'agent_interrupted') {
         subStatus.innerText = 'المساعد استمع لمقاطعتك...';
+      } else if (data.event === 'agent_searching_rag') {
+        subStatus.innerText = 'جاري البحث الدلالي في مستنداتك...';
       } else if (data.event === 'transcription_user') {
         appendTranscript('user', data.message);
       } else if (data.event === 'transcription_agent') {
@@ -345,6 +455,136 @@
       callStatus.innerText = 'تم إنهاء المكالمة';
       subStatus.innerText = 'اضغط بدء المحادثة للاتصال مجدداً';
     }
+
+    // ==================== Document Ingestion Handling ====================
+
+    function handleFileSelect(e) {
+      if (fileInput.files && fileInput.files.length > 0) {
+        uploadLabel.innerText = fileInput.files[0].name;
+        btnUpload.disabled = false;
+      } else {
+        uploadLabel.innerText = 'اختر ملفاً (PDF/DOCX/TXT)';
+        btnUpload.disabled = true;
+      }
+    }
+
+    async function loadDocuments() {
+      try {
+        const res = await fetch('/api/documents/');
+        const data = await res.json();
+        if (data.status === 'success') {
+          renderDocuments(data.documents);
+        }
+      } catch (err) {
+        console.error('Error fetching documents:', err);
+      }
+    }
+
+    function renderDocuments(docs) {
+      if (!docs || docs.length === 0) {
+        docsTbody.innerHTML = `
+          <tr>
+            <td colspan="5" class="text-center py-6 text-slate-500">
+              لا توجد مستندات مرفوعة بعد. ارفع أول ملف لبدء الإجابة منه!
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      docsTbody.innerHTML = docs.map(d => `
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="py-3 px-3 font-medium text-slate-200 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            ${d.title}
+          </td>
+          <td class="py-3 px-3 text-slate-400 uppercase">${d.file_type}</td>
+          <td class="py-3 px-3 text-indigo-400 font-semibold">${d.chunks_count} مقطع</td>
+          <td class="py-3 px-3 text-slate-400">${d.created_at}</td>
+          <td class="py-3 px-3 text-center">
+            <button onclick="deleteDocument(${d.id})" class="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-950/40 transition">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function uploadDocument(e) {
+      e.preventDefault();
+      if (!fileInput.files || fileInput.files.length === 0) return;
+
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      btnUpload.disabled = true;
+      btnUpload.innerHTML = `
+        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        جاري المعالجة والتضمين...
+      `;
+
+      uploadStatus.className = 'mt-4 p-3 rounded-xl text-xs bg-indigo-950/80 border border-indigo-800 text-indigo-300 flex items-center gap-2';
+      uploadStatus.innerHTML = 'جاري استخراج النصوص وتوليد التضمينات الدلالية عبر Gemini...';
+      uploadStatus.classList.remove('hidden');
+
+      try {
+        const res = await fetch('/api/documents/upload/', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: formData,
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+          uploadStatus.className = 'mt-4 p-3 rounded-xl text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-300 flex items-center gap-2';
+          uploadStatus.innerHTML = result.message;
+          fileInput.value = '';
+          uploadLabel.innerText = 'اختر ملفاً (PDF/DOCX/TXT)';
+          await loadDocuments();
+        } else {
+          uploadStatus.className = 'mt-4 p-3 rounded-xl text-xs bg-red-950/80 border border-red-800 text-red-300 flex items-center gap-2';
+          uploadStatus.innerHTML = 'فشل الرفع: ' + (result.message || 'خطأ غير معروف');
+        }
+      } catch (err) {
+        uploadStatus.className = 'mt-4 p-3 rounded-xl text-xs bg-red-950/80 border border-red-800 text-red-300 flex items-center gap-2';
+        uploadStatus.innerHTML = 'خطأ في الاتصال بالخادم أثناء الرفع.';
+      } finally {
+        btnUpload.disabled = false;
+        btnUpload.innerHTML = '<span>رفع ومعالجة</span>';
+      }
+    }
+
+    async function deleteDocument(docId) {
+      if (!confirm('هل أنت متأكد من رغبتك في حذف هذا المستند وحذف جميع مقاطعه الدلالية؟')) return;
+      try {
+        const res = await fetch(`/api/documents/${docId}/delete/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+          }
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+          await loadDocuments();
+        } else {
+          alert('فشل الحذف: ' + (result.message || 'خطأ غير معروف'));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء الاتصال بالخادم لحذف المستند.');
+      }
+    }
+
+    // Initialize document list on load
+    loadDocuments();
   </script>
 </body>
 </html>
