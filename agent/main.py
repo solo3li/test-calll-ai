@@ -106,10 +106,89 @@ def query_knowledge_base_sync(query: str, user_id: int, genai_client, top_k: int
         logger.error(f"Database knowledge retrieval error: {e}", exc_info=True)
         return f"حدث خطأ أثناء البحث في المستندات: {e}"
 
+def fetch_user_actions_sync(user_id: int) -> dict[str, dict]:
+    """Fetch active custom HTTP actions for user from PostgreSQL."""
+    if not user_id:
+        return {}
+    try:
+        conn = psycopg2.connect(
+            dbname=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT
+        )
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT name, description, url, method, headers, parameters_schema
+                FROM voice_assistant_useraction
+                WHERE user_id = %s AND is_active = TRUE;
+            """, (user_id,))
+            rows = cur.fetchall()
+        conn.close()
+
+        actions = {}
+        for r in rows:
+            name, desc, url, method, headers, schema = r
+            actions[name] = {
+                "name": name,
+                "description": desc,
+                "url": url,
+                "method": method or "GET",
+                "headers": headers or {},
+                "parameters_schema": schema or {}
+            }
+        logger.info(f"Loaded {len(actions)} custom HTTP actions for user {user_id}: {list(actions.keys())}")
+        return actions
+    except Exception as e:
+        logger.error(f"Error fetching user actions from DB: {e}")
+        return {}
+
+def execute_http_action_sync(action_def: dict, args: dict) -> str:
+    """Execute custom HTTP action with parameter substitution."""
+    url = action_def.get("url", "")
+    method = (action_def.get("method") or "GET").upper()
+    headers = dict(action_def.get("headers") or {})
+    remaining_args = dict(args or {})
+
+    # Replace path parameters like {order_id} in URL
+    import re
+    path_vars = re.findall(r'\{([a-zA-Z0-9_]+)\}', url)
+    for v in path_vars:
+        if v in remaining_args:
+            val = str(remaining_args.pop(v))
+            url = url.replace(f"{{{v}}}", val)
+
+    logger.info(f"Executing {method} {url} with remaining args: {remaining_args}")
+    try:
+        if method == "GET":
+            resp = requests.get(url, params=remaining_args, headers=headers, timeout=3.5)
+        elif method == "POST":
+            resp = requests.post(url, json=remaining_args, headers=headers, timeout=3.5)
+        elif method == "PUT":
+            resp = requests.put(url, json=remaining_args, headers=headers, timeout=3.5)
+        elif method == "DELETE":
+            resp = requests.delete(url, params=remaining_args, headers=headers, timeout=3.5)
+        else:
+            return f"طريقة HTTP غير مدعومة: {method}"
+
+        try:
+            data = resp.json()
+            return json.dumps(data, ensure_ascii=False)
+        except Exception:
+            return resp.text[:500]
+
+    except requests.Timeout:
+        logger.warning(f"HTTP Action timed out for URL: {url}")
+        return "عذراً، استغرق الخادم وقتاً أطول من المتوقع للرد على الطلب."
+    except Exception as e:
+        logger.error(f"Error executing HTTP action to {url}: {e}")
+        return f"حدث خطأ أثناء الاتصال بالخدمة: {str(e)}"
+
 async def run_agent_session(room_name: str, user_id: int = None):
     channel_name = f"rooms:{room_name}"
     logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name} (user_id={user_id})")
-    notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعدة الصوتية وتجهيز قاعدة المستندات...")
+    notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعدة الصوتية وتجهيز قاعدة المستندات والإجراءات...")
 
     # 1. Create LiveKit Access Token for Agent
     token = api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET) \
@@ -140,7 +219,7 @@ async def run_agent_session(room_name: str, user_id: int = None):
     await room.local_participant.publish_track(audio_track, publish_options)
     logger.info(f"Published agent audio track to room '{room_name}'")
 
-    # 4. Prepare Gemini Live Client with RAG Tools and Strict Guardrails
+    # 4. Prepare Gemini Live Client with User Actions & RAG Tools
     if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("your_"):
         err = "GEMINI_API_KEY is not configured properly in .env"
         logger.error(err)
@@ -150,6 +229,11 @@ async def run_agent_session(room_name: str, user_id: int = None):
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
+    # Fetch User Actions dynamically
+    user_actions = {}
+    if user_id:
+        user_actions = await asyncio.to_thread(fetch_user_actions_sync, user_id)
+
     speech_config = types.SpeechConfig(
         voice_config=types.VoiceConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -158,42 +242,52 @@ async def run_agent_session(room_name: str, user_id: int = None):
         )
     )
 
-    rag_tool = {
-        "function_declarations": [
-            {
-                "name": "search_knowledge_base",
-                "description": "البحث في المستندات والملفات المرفقة الخاصة بالمستخدم للإجابة عن أسئلته واستفساراته وحقائقه المطلوبة.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "query": {
-                            "type": "STRING",
-                            "description": "نص السؤال أو الاستفسار أو الكلمات المفتاحية للبحث عنها في المستندات"
-                        }
-                    },
-                    "required": ["query"]
+    rag_decl = {
+        "name": "search_knowledge_base",
+        "description": "البحث في المستندات والملفات المرفقة الخاصة بالمستخدم للإجابة عن أسئلته واستفساراته وحقائقه المطلوبة.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {
+                    "type": "STRING",
+                    "description": "نص السؤال أو الاستفسار أو الكلمات المفتاحية للبحث عنها في المستندات"
                 }
-            }
-        ]
+            },
+            "required": ["query"]
+        }
     }
+
+    func_decls = [rag_decl]
+    for act_name, act_data in user_actions.items():
+        decl = {
+            "name": act_name,
+            "description": act_data["description"]
+        }
+        params = act_data.get("parameters_schema")
+        if params and isinstance(params, dict) and params.get("properties"):
+            decl["parameters"] = params
+        func_decls.append(decl)
+
+    tools = [{"function_declarations": func_decls}]
 
     live_config = types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],
         speech_config=speech_config,
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
-        tools=[rag_tool],
+        tools=tools,
         system_instruction=types.Content(
             parts=[types.Part(text=(
                 "أنتِ مساعدة صوتية ذكية وودودة ولطيفة، هويتك وصوتك بنت مصرية.\n"
                 "قواعد صارمة وإلزامية لا تقبل الاستثناء:\n"
-                "1. التحدث باللهجة المصرية العامية فقط: كل كلامك بدون أي استثناء لازم يكون باللهجة المصرية العامية الدارجة الطبيعية (زي: 'أهلاً بيك يا فندم'، 'إزيك عامل إيه؟'، 'أنا تمام أهو معاك'، 'تحت أمرك يا فندم'). ممنوع منعاً باتاً التحدث باللغة العربية الفصحى أو بأي لهجة تانية.\n"
-                "2. أنتِ أنثى (بنت): تتحدثين بصيغة المؤنث عن نفسك دائماً (زي: 'أنا مساعدة ذكية'، 'أنا جاهزة أهو'، 'أنا دورت في الملفات').\n"
-                "3. التحيات والترحيب: تبادلي التحيات والمجاملات الخفيفة بلهجة مصرية ودودة ومختصرة جداً.\n"
-                "4. البحث الإجباري في المستندات (RAG): لما المستخدم يسألك عن أي سؤال أو معلومة أو استفسار، لازم تستدعي فوراً أداة search_knowledge_base للبحث في ملفات ومستندات المستخدم المرفوعة.\n"
-                "5. الإجابة حصرياً من الملفات: لو المعلومة موجودة في نتائج البحث بالملفات، جاوبي عليها باللهجة المصرية بوضوح واختصار شديد وبطريقة طبيعية.\n"
-                "6. الاعتذار الإجباري الصارم: لو المعلومة مش موجودة في نتائج البحث، أو لو المستخدم مرفعش ملفات، أو لو سألك عن أي حاجة عامة أو سؤال برة الملفات: لازم فوراً وبدون تردد تعتذري باللهجة المصرية وتقولي: 'معلش، المعلومة دي مش موجودة خالص في الملفات اللي انت رفعتها، ومقدرش أجاوبك من برة ملفاتك.' ممنوع تفتي أو تخمني أو تجاوبي من معلوماتك العامة نهائياً.\n"
-                "7. الإيجاز: كلامك يكون مختصر وفي صلب الموضوع وبدون رغي زيادة."
+                "1. التحدث باللهجة المصرية العامية فقط: كل كلامك بدون أي استثناء لازم يكون باللهجة المصرية الدارجة الطبيعية (زي: 'أهلاً بيك يا فندم'، 'إزيك عامل إيه؟'، 'أنا تمام أهو معاك'، 'تحت أمرك'). ممنوع منعاً باتاً الفصحى أو أي لهجة تانية.\n"
+                "2. هويتك: أنتِ بنت، وتتحدثين بصيغة المؤنث عن نفسك دائماً (زي: 'أنا مساعدة ذكية'، 'أنا جاهزة أهو').\n"
+                "3. التحيات والترحيب: تبادلي التحيات والمجاملات الخفيفة بلهجة مصرية ودودة ومختصرة.\n"
+                "4. أدوات المتجر والـ API: عندما يسألك المستخدم عن المنتجات، الأسعار، الطلبات، أو يطلب عمل أوردر، استدعي فوراً الأداة المناسبة المتاحة لديكِ (زي search_store_products أو get_order_status أو create_store_order).\n"
+                "5. أدوات المستندات (RAG): لما يسألك عن أي معلومة تخص مستنداته أو ملفاته المرفوعة، استدعي أداة search_knowledge_base.\n"
+                "6. الإجابة من نتائج الأدوات: لخصي نتائج الأداة للمستخدم بأسلوب مصري بسيط ومباشر وموجز وبأرقام وتفاصيل واضحة.\n"
+                "7. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات (زي أسئلة عامة خارج الشغل): اعتذري فوراً بلباقة وبلهجة مصرية وقولي: 'معلش يا فندم، أنا متخصصة في مساعدة متجرك ومستنداتك بس، ومقدرش أجاوبك على أسئلة برة نطاقهم.' ممنوع تفتي أو تخمني.\n"
+                "8. الإيجاز: كلامك يكون مختصر ومفيد وعلى قد السؤال بالظبط."
             ))]
         )
     )
@@ -297,13 +391,13 @@ async def run_agent_session(room_name: str, user_id: int = None):
                             if stop_event.is_set():
                                 break
 
-                            # Handle Tool Calls (RAG Search)
+                            # Handle Tool Calls (RAG Search & Custom Actions)
                             if response.tool_call:
                                 logger.info(f"Gemini requested tool call in room {room_name}: {response.tool_call}")
-                                notify_centrifugo(channel_name, "agent_searching_rag", "جاري البحث الدلالي في مستنداتك...")
                                 function_responses = []
                                 for fc in response.tool_call.function_calls:
                                     if fc.name == "search_knowledge_base":
+                                        notify_centrifugo(channel_name, "agent_searching_rag", "جاري البحث الدلالي في مستنداتك...")
                                         query_text = fc.args.get("query", "") if fc.args else ""
                                         logger.info(f"Executing search_knowledge_base for user_id={user_id}, query='{query_text}'")
                                         search_result = await asyncio.to_thread(
@@ -315,11 +409,26 @@ async def run_agent_session(room_name: str, user_id: int = None):
                                             name=fc.name,
                                             response={"result": search_result}
                                         ))
-                                    else:
+                                    elif fc.name in user_actions:
+                                        act_def = user_actions[fc.name]
+                                        notify_centrifugo(channel_name, "agent_action_executing", f"جاري استدعاء إجراء: {act_def['description'][:30]}...")
+                                        act_args = dict(fc.args or {})
+                                        logger.info(f"Executing custom HTTP action '{fc.name}' with args {act_args} for user {user_id}")
+                                        action_result = await asyncio.to_thread(
+                                            execute_http_action_sync, act_def, act_args
+                                        )
+                                        logger.info(f"Action '{fc.name}' response: {action_result[:150]}")
                                         function_responses.append(types.FunctionResponse(
                                             id=fc.id,
                                             name=fc.name,
-                                            response={"result": "Unknown tool"}
+                                            response={"result": action_result}
+                                        ))
+                                    else:
+                                        logger.warning(f"Unknown tool requested by Gemini: {fc.name}")
+                                        function_responses.append(types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={"result": "عذراً، هذه الأداة غير معرفة."}
                                         ))
                                 await session.send_tool_response(function_responses=function_responses)
                                 continue

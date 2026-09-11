@@ -74,6 +74,20 @@ services:
     networks:
       - voice_net
 
+  mock_store:
+    build:
+      context: ./mock_store
+      dockerfile: Dockerfile
+    container_name: voice_mock_store
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    networks:
+      voice_net:
+        aliases:
+          - mock-store
+          - mockstore
+
   agent:
     build:
       context: ./agent
@@ -87,6 +101,7 @@ services:
       - redis
       - livekit
       - centrifugo
+      - mock_store
     networks:
       - voice_net
 

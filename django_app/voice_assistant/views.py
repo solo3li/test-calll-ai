@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk
+from .models import Document, DocumentChunk, UserAction
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -351,3 +351,120 @@ def delete_document(request, doc_id):
     doc.delete()
     logger.info(f"Deleted document '{title}' (id={doc_id}) for user {request.user.username}")
     return JsonResponse({"status": "success", "message": f"تم حذف المستند '{title}' بنجاح."})
+
+# ==================== User Custom Actions Management ====================
+
+@login_required(login_url='/login/')
+def list_actions(request):
+    """List all custom HTTP actions defined by the current user."""
+    actions = UserAction.objects.filter(user=request.user).order_by('-created_at')
+    data = []
+    for a in actions:
+        data.append({
+            "id": a.id,
+            "name": a.name,
+            "description": a.description,
+            "url": a.url,
+            "method": a.method,
+            "headers": a.headers,
+            "parameters_schema": a.parameters_schema,
+            "is_active": a.is_active,
+            "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
+        })
+    return JsonResponse({"status": "success", "actions": data})
+
+@login_required(login_url='/login/')
+def create_action(request):
+    """Create a new custom HTTP action for the current user."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST
+
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        url = data.get('url', '').strip()
+        method = data.get('method', 'GET').upper().strip()
+
+        if not name or not description or not url:
+            return JsonResponse({"status": "error", "message": "الاسم والوصف والرابط حقول مطلوبة."}, status=400)
+
+        # Sanitize name to valid identifier
+        import re
+        clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', name).lower().strip('_')
+        if not clean_name:
+            clean_name = "custom_action"
+
+        headers = data.get('headers', {})
+        if isinstance(headers, str):
+            try:
+                headers = json.loads(headers) if headers.strip() else {}
+            except Exception:
+                headers = {}
+
+        parameters_schema = data.get('parameters_schema', {})
+        if isinstance(parameters_schema, str):
+            try:
+                parameters_schema = json.loads(parameters_schema) if parameters_schema.strip() else {}
+            except Exception:
+                parameters_schema = {}
+
+        action = UserAction.objects.create(
+            user=request.user,
+            name=clean_name,
+            description=description,
+            url=url,
+            method=method,
+            headers=headers,
+            parameters_schema=parameters_schema,
+            is_active=True
+        )
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تمت إضافة الإجراء '{clean_name}' بنجاح.",
+            "action": {
+                "id": action.id,
+                "name": action.name,
+                "description": action.description,
+                "url": action.url,
+                "method": action.method,
+                "is_active": action.is_active,
+                "created_at": action.created_at.strftime("%Y-%m-%d %H:%M"),
+            }
+        }, status=201)
+
+    except Exception as e:
+        logger.error(f"Error creating user action: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": f"حدث خطأ أثناء حفظ الإجراء: {str(e)}"}, status=400)
+
+@login_required(login_url='/login/')
+def toggle_action(request, action_id):
+    """Toggle the active state of an action."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    action = get_object_or_404(UserAction, id=action_id, user=request.user)
+    action.is_active = not action.is_active
+    action.save()
+    status_text = "تفعيل" if action.is_active else "إيقاف"
+    return JsonResponse({
+        "status": "success",
+        "is_active": action.is_active,
+        "message": f"تم {status_text} الإجراء '{action.name}' بنجاح."
+    })
+
+@login_required(login_url='/login/')
+def delete_action(request, action_id):
+    """Delete an action owned by the current user."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    action = get_object_or_404(UserAction, id=action_id, user=request.user)
+    name = action.name
+    action.delete()
+    return JsonResponse({"status": "success", "message": f"تم حذف الإجراء '{name}' بنجاح."})

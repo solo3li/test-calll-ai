@@ -20,4 +20,10 @@ urlpatterns = [
     path('api/documents/', views.list_documents, name='list_documents'),
     path('api/documents/upload/', views.upload_document, name='upload_document'),
     path('api/documents/<int:doc_id>/delete/', views.delete_document, name='delete_document'),
+
+    # Actions Management APIs
+    path('api/actions/', views.list_actions, name='list_actions'),
+    path('api/actions/create/', views.create_action, name='create_action'),
+    path('api/actions/<int:action_id>/toggle/', views.toggle_action, name='toggle_action'),
+    path('api/actions/<int:action_id>/delete/', views.delete_action, name='delete_action'),
 ]
