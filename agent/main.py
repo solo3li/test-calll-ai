@@ -544,6 +544,7 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
         "is_agent_speaking": False,
         "turn_complete": True,
         "agent_last_audio_time": 0.0,
+        "interrupted": False,
     }
 
     subscribed_sids = set()
@@ -589,7 +590,7 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
             logger.info(f"Gemini Live session connected for room '{room_name}'!")
             notify_centrifugo(channel_name, "agent_ready", "المساعدة الصوتية وقاعدة المستندات جاهزة للاستماع إليك الآن!")
 
-            # Worker 1: Stream user PCM audio frames to Gemini Live (continuous 40ms chunks with echo gating)
+            # Worker 1: Stream user PCM audio frames to Gemini Live (continuous full-duplex streaming)
             async def send_audio_worker():
                 buffer = bytearray()
                 CHUNK_SIZE = 1280  # 40ms at 16kHz 16-bit mono
@@ -597,12 +598,6 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                 while not stop_event.is_set():
                     try:
                         chunk = await asyncio.wait_for(in_audio_queue.get(), timeout=0.05)
-
-                        # Echo suppression: if agent is currently speaking, discard mic audio
-                        if state["is_agent_speaking"]:
-                            buffer.clear()
-                            continue
-
                         buffer.extend(chunk)
 
                         while len(buffer) >= CHUNK_SIZE:
@@ -613,7 +608,7 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                             )
 
                     except asyncio.TimeoutError:
-                        if buffer and not state["is_agent_speaking"]:
+                        if buffer:
                             to_send = bytes(buffer)
                             buffer.clear()
                             try:
@@ -699,17 +694,18 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                             if not content:
                                 continue
 
-                            # Interruption handling
+                            # Interruption handling (Barge-in triggered by Gemini Live)
                             if content.interrupted:
                                 logger.info(f"Gemini playback interrupted by user in room {room_name}")
+                                state["interrupted"] = True
+                                state["is_agent_speaking"] = False
+                                state["turn_complete"] = True
                                 while not out_audio_queue.empty():
                                     try:
                                         out_audio_queue.get_nowait()
                                     except asyncio.QueueEmpty:
                                         break
-                                state["is_agent_speaking"] = False
-                                state["turn_complete"] = True
-                                notify_centrifugo(channel_name, "agent_interrupted", "تمت المقاطعة...")
+                                notify_centrifugo(channel_name, "agent_interrupted", "المساعد استمع لمقاطعتك...")
                                 continue
 
                             # Transcriptions
@@ -753,9 +749,26 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
 
                 while not stop_event.is_set():
                     try:
+                        # If barge-in interruption occurred, dump local buffer immediately
+                        if state.get("interrupted"):
+                            buffer.clear()
+                            state["interrupted"] = False
+
                         while len(buffer) < FRAME_BYTES:
                             chunk = await asyncio.wait_for(out_audio_queue.get(), timeout=0.02)
+                            if state.get("interrupted"):
+                                buffer.clear()
+                                state["interrupted"] = False
+                                break
                             buffer.extend(chunk)
+
+                        if state.get("interrupted"):
+                            buffer.clear()
+                            state["interrupted"] = False
+                            continue
+
+                        if len(buffer) < FRAME_BYTES:
+                            continue
 
                         frame_bytes = bytes(buffer[:FRAME_BYTES])
                         del buffer[:FRAME_BYTES]
@@ -770,6 +783,11 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                         state["agent_last_audio_time"] = time.time()
                         await asyncio.sleep(0.019)
                     except asyncio.TimeoutError:
+                        if state.get("interrupted"):
+                            buffer.clear()
+                            state["interrupted"] = False
+                            continue
+
                         if buffer:
                             pad = FRAME_BYTES - len(buffer)
                             frame_bytes = bytes(buffer + b'\x00' * pad)
@@ -785,12 +803,6 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                         else:
                             # If queue and buffer are empty and turn is complete and 250ms have passed:
                             if state["is_agent_speaking"] and state.get("turn_complete", True) and (time.time() - state["agent_last_audio_time"] > 0.25):
-                                # Drain any residual mic frames from queue before opening mic
-                                while not in_audio_queue.empty():
-                                    try:
-                                        in_audio_queue.get_nowait()
-                                    except asyncio.QueueEmpty:
-                                        break
                                 state["is_agent_speaking"] = False
                                 logger.info(f"Agent playback finished for room {room_name}. Mic listening active.")
                                 notify_centrifugo(channel_name, "agent_listening", "المساعدة تستمع إليكِ الآن...")

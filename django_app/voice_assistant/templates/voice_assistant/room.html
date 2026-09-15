@@ -867,7 +867,8 @@
       } else if (data.event === 'agent_speaking') {
         subStatus.innerText = 'المساعد يتحدث الآن...';
       } else if (data.event === 'agent_interrupted') {
-        subStatus.innerText = 'المساعد استمع لمقاطعتك...';
+        callStatus.innerText = 'المساعد يستمع إليك الآن';
+        subStatus.innerText = 'المساعد استمع لمقاطعتك وتوقف عن الحديث...';
       } else if (data.event === 'agent_searching_rag') {
         subStatus.innerText = 'جاري البحث الدلالي في مستنداتك...';
         appendTranscript('system', '🔍 جاري البحث الدلالي في مستندات قاعدة المعرفة...');
