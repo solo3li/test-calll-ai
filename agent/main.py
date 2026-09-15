@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 import time
+import datetime
 import json
 import logging
 import signal
@@ -305,8 +306,196 @@ def fetch_user_active_profile_sync(user_id: int) -> dict:
         logger.error(f"Error fetching active profile for user {user_id}: {e}")
         return default_profile
 
-def build_dynamic_system_instruction(profile: dict) -> str:
-    """Construct dynamic prompt incorporating dialect, gender, role, style, and strict guardrails."""
+def fetch_customer_memory_sync(user_id: int) -> dict:
+    """Fetch customer memory (permanent profile + immediate summary) from PostgreSQL."""
+    if not user_id:
+        return {}
+    try:
+        conn = psycopg2.connect(
+            dbname=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT
+        )
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT permanent_profile, last_interaction_summary, last_interaction_at, total_calls_count
+                FROM voice_assistant_customermemory
+                WHERE user_id = %s LIMIT 1;
+            """, (user_id,))
+            row = cur.fetchone()
+        conn.close()
+
+        if not row:
+            return {"permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
+
+        profile_raw, summary, last_at, count = row
+        prof = profile_raw if isinstance(profile_raw, dict) else (json.loads(profile_raw) if profile_raw else {})
+        summary = summary or ""
+
+        # Format compact memory card (~100-150 tokens max)
+        parts = []
+        if prof:
+            items = []
+            if prof.get("customer_name"):
+                items.append(f"اسم العميل المفضل: {prof['customer_name']}")
+            if prof.get("phone"):
+                items.append(f"الهاتف: {prof['phone']}")
+            if prof.get("city") or prof.get("address"):
+                items.append(f"العنوان/المدينة: {prof.get('city') or prof.get('address')}")
+            if prof.get("preferences"):
+                prefs = prof['preferences']
+                if isinstance(prefs, list):
+                    prefs = "، ".join(str(p) for p in prefs)
+                items.append(f"تفضيلات واهتمامات العميل: {prefs}")
+            if prof.get("notes"):
+                items.append(f"ملاحظات هامة: {prof['notes']}")
+            if items:
+                parts.append("البيانات الدائمة للعميل:\n- " + "\n- ".join(items))
+
+        if summary:
+            time_str = last_at.strftime("%Y-%m-%d %H:%M") if last_at else "مكالمة سابقة"
+            parts.append(f"الذاكرة اللحظية من آخر تواصل ({time_str}):\n{summary}")
+
+        card_text = ""
+        if parts:
+            card_text = "ذاكرة وسياق العميل من المكالمات السابقة (استخدمها بذكاء وعفوية للتذكر والترحيب بالمتابعة):\n" + "\n\n".join(parts)
+
+        return {
+            "permanent_profile": prof,
+            "last_interaction_summary": summary,
+            "card_text": card_text,
+            "total_calls_count": count or 0
+        }
+    except Exception as e:
+        logger.error(f"Error fetching customer memory for user {user_id}: {e}")
+        return {"permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
+
+def save_call_session_and_update_memory_sync(user_id: int, room_name: str, started_at: float, transcript_text: str, summary: str, updated_profile: dict):
+    """Persist completed CallSession and update CustomerMemory in PostgreSQL."""
+    if not user_id:
+        return
+    try:
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        start_dt = datetime.datetime.fromtimestamp(started_at, tz=datetime.timezone.utc)
+        duration = max(0, int((now_dt - start_dt).total_seconds()))
+
+        conn = psycopg2.connect(
+            dbname=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT
+        )
+        with conn.cursor() as cur:
+            # 1. Insert CallSession
+            cur.execute("""
+                INSERT INTO voice_assistant_callsession 
+                (user_id, room_name, started_at, ended_at, duration_seconds, transcript_text, summary)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
+            """, (user_id, room_name, start_dt, now_dt, duration, transcript_text, summary))
+
+            # 2. Upsert CustomerMemory
+            cur.execute("""
+                INSERT INTO voice_assistant_customermemory
+                (user_id, permanent_profile, last_interaction_summary, last_interaction_at, total_calls_count, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, 1, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    permanent_profile = EXCLUDED.permanent_profile,
+                    last_interaction_summary = EXCLUDED.last_interaction_summary,
+                    last_interaction_at = EXCLUDED.last_interaction_at,
+                    total_calls_count = voice_assistant_customermemory.total_calls_count + 1,
+                    updated_at = EXCLUDED.updated_at;
+            """, (user_id, json.dumps(updated_profile, ensure_ascii=False), summary, now_dt, now_dt, now_dt))
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Successfully saved CallSession & updated CustomerMemory for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error saving CallSession and updating memory: {e}", exc_info=True)
+
+async def distill_and_update_memory(user_id: int, room_name: str, started_at: float, messages: list[dict], current_profile: dict, genai_client):
+    """Background task to extract permanent profile facts and distill short-term episode summary."""
+    try:
+        user_msgs = [m for m in messages if m.get("speaker") == "user"]
+        if not user_msgs or len(messages) < 2:
+            logger.info(f"Call in room {room_name} had insufficient speech turns ({len(messages)}). Skipping memory distillation.")
+            return
+
+        lines = []
+        for m in messages:
+            speaker_label = "العميل" if m.get("speaker") == "user" else "المساعد"
+            lines.append(f"{speaker_label}: {m.get('text', '')}")
+        transcript_text = "\n".join(lines)
+
+        distillation_prompt = f"""أنت محلل ذكاء اصطناعي متخصص في استخلاص ذاكرة العملاء لمساعد صوتي ذكي.
+المطلوب منك تحليل نص هذه المكالمة الصوتية واستخراج نقطتين فقط بدقة وإيجاز شديد:
+1. "summary": ملخص دقيق ومركز جداً في سطرين فقط (لا يتعدى 50 كلمة) لما دار في المكالمة، والأسئلة أو المنتجات التي سأل عنها، وما إذا كان هناك أي أمر معلق يحتاج متابعة في المكالمة القادمة.
+2. "new_permanent_facts": أي حقائق دائمة جديدة ذكرها العميل صراحةً (اسمه، هاتفه، عنوانه/مدينته، اهتمامات وتفضيلات محددة بالمنتجات، ملاحظات). إذا لم يذكر أي حقيقة جديدة، اترك الحقل فارغاً.
+
+البروفايل الدائم الحالي للعميل:
+{json.dumps(current_profile, ensure_ascii=False)}
+
+نص المكالمة:
+{transcript_text}
+
+أجب بصيغة JSON فقط بهذا الشكل:
+{{
+  "summary": "...",
+  "new_permanent_facts": {{
+    "customer_name": "...",
+    "phone": "...",
+    "address": "...",
+    "preferences": ["..."],
+    "notes": "..."
+  }}
+}}"""
+
+        response = await genai_client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=distillation_prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+        )
+
+        resp_text = response.text or "{}"
+        data = json.loads(resp_text)
+        summary = data.get("summary", "").strip()
+        new_facts = data.get("new_permanent_facts", {})
+
+        updated_profile = dict(current_profile or {})
+        if new_facts and isinstance(new_facts, dict):
+            for k in ["customer_name", "phone", "address", "notes"]:
+                val = new_facts.get(k)
+                if val and str(val).strip() and str(val).strip().lower() not in ["null", "none", "..."]:
+                    updated_profile[k] = str(val).strip()
+
+            if new_facts.get("preferences") and isinstance(new_facts["preferences"], list):
+                existing_prefs = list(updated_profile.get("preferences") or [])
+                for p in new_facts["preferences"]:
+                    p_str = str(p).strip()
+                    if p_str and p_str not in existing_prefs:
+                        existing_prefs.append(p_str)
+                updated_profile["preferences"] = existing_prefs[:6]
+
+        logger.info(f"Distillation complete for user {user_id}. Summary: {summary[:80]}...")
+
+        await asyncio.to_thread(
+            save_call_session_and_update_memory_sync,
+            user_id,
+            room_name,
+            started_at,
+            transcript_text,
+            summary,
+            updated_profile
+        )
+    except Exception as e:
+        logger.error(f"Error in distill_and_update_memory for user {user_id}: {e}", exc_info=True)
+
+def build_dynamic_system_instruction(profile: dict, memory_card: str = "") -> str:
+    """Construct dynamic prompt incorporating dialect, gender, role, style, memory, and strict guardrails."""
     gender = profile.get("gender", "female")
     dialect = profile.get("dialect", "egyptian")
     role = profile.get("persona_role", "customer_support")
@@ -370,6 +559,8 @@ def build_dynamic_system_instruction(profile: dict) -> str:
 
     custom_text = f"\nتعليمات خاصة إضافية من المستخدم:\n{custom}\n" if custom else ""
 
+    memory_text = f"\n8. {memory_card}\nتوجيه للمساعد: وظف الذاكرة السابقة بشكل طبيعي وعفوي في بداية الحديث للتذكير والتواصل الذكي دون قراءتها كقائمة رسمية.\n" if memory_card else ""
+
     prompt = f"""أنت مسجل في النظام كبروفايل: {name}.
 {identity_gender}
 {role_text}
@@ -382,7 +573,7 @@ def build_dynamic_system_instruction(profile: dict) -> str:
 4. أدوات المستندات (RAG): لما يسألك عن أي معلومة تخص مستنداته أو ملفاته المرفوعة، استدعِ أداة search_knowledge_base.
 5. الإجابة من نتائج الأدوات: لخص نتائج الأداة للمستخدم بأسلوبك ولهجتك المحددة، بوضوح وأرقام دقيقة ومباشرة.
 6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{custom_text}
-7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط."""
+7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط.{memory_text}"""
     return prompt
 
 async def run_agent_session(room_name: str, user_id: int = None, profile_data: dict = None):
@@ -449,6 +640,15 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                     "auth_token": user_mcp.get("auth_token", ""),
                     "description": t.get("description", "")
                 }
+
+    # Fetch Customer Memory dynamically (Permanent profile + Working memory)
+    memory_data = {}
+    memory_card_text = ""
+    if user_id:
+        memory_data = await asyncio.to_thread(fetch_customer_memory_sync, user_id)
+        memory_card_text = memory_data.get("card_text", "")
+        if memory_card_text:
+            logger.info(f"Loaded customer memory for user {user_id} ({len(memory_card_text)} chars)")
 
     # Fetch User Active Profile dynamically
     active_profile = None
@@ -522,7 +722,7 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
 
     tools = [{"function_declarations": func_decls}]
 
-    system_instruction_text = build_dynamic_system_instruction(active_profile)
+    system_instruction_text = build_dynamic_system_instruction(active_profile, memory_card_text)
     logger.info(f"Dynamic system instruction compiled (length={len(system_instruction_text)} chars)")
 
     live_config = types.LiveConnectConfig(
@@ -539,6 +739,9 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
     in_audio_queue = asyncio.Queue()
     out_audio_queue = asyncio.Queue()
     stop_event = asyncio.Event()
+
+    call_started_at = time.time()
+    call_dialogue_turns = []
 
     state = {
         "is_agent_speaking": False,
@@ -712,11 +915,13 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                             if content.input_transcription and content.input_transcription.text:
                                 user_text = content.input_transcription.text.strip()
                                 logger.info(f"[{room_name}] User: {user_text}")
+                                call_dialogue_turns.append({"speaker": "user", "text": user_text})
                                 notify_centrifugo(channel_name, "transcription_user", user_text, {"speaker": "user"})
 
                             if content.output_transcription and content.output_transcription.text:
                                 bot_text = content.output_transcription.text.strip()
                                 logger.info(f"[{room_name}] Gemini: {bot_text}")
+                                call_dialogue_turns.append({"speaker": "agent", "text": bot_text})
                                 notify_centrifugo(channel_name, "transcription_agent", bot_text, {"speaker": "agent"})
 
                             # Audio response from Gemini
@@ -828,6 +1033,18 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
         logger.info(f"Cleaning up and disconnecting from room '{room_name}'...")
         await room.disconnect()
         notify_centrifugo(channel_name, "agent_disconnected", "تم إنهاء جلسة المساعدة الصوتية.")
+        if user_id and call_dialogue_turns:
+            logger.info(f"Triggering background memory distillation for user {user_id} with {len(call_dialogue_turns)} turns.")
+            asyncio.create_task(
+                distill_and_update_memory(
+                    user_id=user_id,
+                    room_name=room_name,
+                    started_at=call_started_at,
+                    messages=list(call_dialogue_turns),
+                    current_profile=dict(memory_data.get("permanent_profile", {}) if memory_data else {}),
+                    genai_client=client
+                )
+            )
 
 async def stream_user_audio_to_queue(audio_stream: rtc.AudioStream, queue: asyncio.Queue, stop_event: asyncio.Event, identity: str):
     """Read user audio frames from LiveKit stream and push to queue."""

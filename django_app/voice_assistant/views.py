@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer
+from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -804,4 +804,32 @@ def delete_mcp_server(request):
     return JsonResponse({
         "status": "success",
         "message": "تم حذف خادم MCP وجميع أدواته بنجاح."
+    })
+
+@login_required(login_url='/login/')
+def get_customer_memory(request):
+    """Retrieve the current customer memory card and recent call history."""
+    memory, _ = CustomerMemory.objects.get_or_create(user=request.user)
+    recent_calls = CallSession.objects.filter(user=request.user)[:5]
+    return JsonResponse({
+        "status": "success",
+        "memory": memory.to_dict(),
+        "recent_calls": [c.to_dict() for c in recent_calls]
+    })
+
+@login_required(login_url='/login/')
+def reset_customer_memory(request):
+    """Reset customer memory (both permanent profile and working memory)."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    memory, _ = CustomerMemory.objects.get_or_create(user=request.user)
+    memory.permanent_profile = {}
+    memory.last_interaction_summary = ""
+    memory.last_interaction_at = None
+    memory.save()
+    return JsonResponse({
+        "status": "success",
+        "message": "تمت إعادة تعيين ذاكرة العميل بنجاح.",
+        "memory": memory.to_dict()
     })
