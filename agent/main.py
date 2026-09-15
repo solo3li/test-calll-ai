@@ -185,6 +185,79 @@ def execute_http_action_sync(action_def: dict, args: dict) -> str:
         logger.error(f"Error executing HTTP action to {url}: {e}")
         return f"حدث خطأ أثناء الاتصال بالخدمة: {str(e)}"
 
+def fetch_user_mcp_server_sync(user_id: int) -> dict:
+    """Fetch active external MCP server and cached tools for user from PostgreSQL."""
+    if not user_id:
+        return {}
+    try:
+        conn = psycopg2.connect(
+            dbname=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT
+        )
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT server_url, auth_token, cached_tools, name
+                FROM voice_assistant_usermcpserver
+                WHERE user_id = %s AND is_active = TRUE
+                ORDER BY id DESC LIMIT 1;
+            """, (user_id,))
+            row = cur.fetchone()
+        conn.close()
+
+        if row:
+            url, token, tools_raw, name = row
+            tools = tools_raw
+            if isinstance(tools_raw, str):
+                try:
+                    tools = json.loads(tools_raw)
+                except Exception:
+                    tools = []
+            return {
+                "server_url": url,
+                "auth_token": token or "",
+                "tools": tools or [],
+                "name": name or "خادم MCP"
+            }
+        return {}
+    except Exception as e:
+        logger.error(f"Error fetching MCP server for user {user_id}: {e}")
+        return {}
+
+async def execute_mcp_tool_call(server_url: str, auth_token: str, tool_name: str, arguments: dict) -> str:
+    """Execute tool call on external MCP SSE server with strict timeout and fallback."""
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
+
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    logger.info(f"Connecting to MCP SSE at {server_url} to call '{tool_name}' with {arguments}")
+    try:
+        async def _call():
+            async with sse_client(server_url, headers=headers) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool(tool_name, arguments=arguments)
+                    out_texts = []
+                    for c in result.content:
+                        if hasattr(c, "text"):
+                            out_texts.append(c.text)
+                        else:
+                            out_texts.append(str(c))
+                    return "\n".join(out_texts) if out_texts else "{}"
+
+        return await asyncio.wait_for(_call(), timeout=4.0)
+    except asyncio.TimeoutError:
+        logger.warning(f"MCP tool '{tool_name}' timed out after 4.0s")
+        return "عذراً، استغرق نظام المتجر وقتاً أطول من المتوقع للرد."
+    except Exception as ex:
+        logger.error(f"Error calling MCP tool '{tool_name}' on {server_url}: {ex}", exc_info=True)
+        return f"حدث خطأ أثناء الاتصال بنظام المتجر: {str(ex)}"
+
 def fetch_user_active_profile_sync(user_id: int) -> dict:
     """Fetch active agent profile for user from PostgreSQL."""
     default_profile = {
@@ -361,6 +434,22 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
     if user_id:
         user_actions = await asyncio.to_thread(fetch_user_actions_sync, user_id)
 
+    # Fetch External MCP Tools dynamically
+    user_mcp = {}
+    mcp_tools = {}
+    if user_id:
+        user_mcp = await asyncio.to_thread(fetch_user_mcp_server_sync, user_id)
+        if user_mcp and user_mcp.get("tools"):
+            for t in user_mcp["tools"]:
+                t_name = t.get("name")
+                if not t_name:
+                    continue
+                mcp_tools[t_name] = {
+                    "server_url": user_mcp["server_url"],
+                    "auth_token": user_mcp.get("auth_token", ""),
+                    "description": t.get("description", "")
+                }
+
     # Fetch User Active Profile dynamically
     active_profile = None
     if profile_data and isinstance(profile_data, dict):
@@ -406,6 +495,8 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
     }
 
     func_decls = [rag_decl]
+
+    # Add custom HTTP actions
     for act_name, act_data in user_actions.items():
         decl = {
             "name": act_name,
@@ -415,6 +506,19 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
         if params and isinstance(params, dict) and params.get("properties"):
             decl["parameters"] = params
         func_decls.append(decl)
+
+    # Add external MCP tools
+    if user_mcp and user_mcp.get("tools"):
+        for t in user_mcp["tools"]:
+            decl = {
+                "name": t.get("name"),
+                "description": t.get("description", "")
+            }
+            params = t.get("parameters")
+            if params and isinstance(params, dict) and params.get("properties"):
+                decl["parameters"] = params
+            func_decls.append(decl)
+        logger.info(f"Loaded {len(user_mcp['tools'])} MCP tools from {user_mcp['server_url']}: {list(mcp_tools.keys())}")
 
     tools = [{"function_declarations": func_decls}]
 
@@ -558,6 +662,24 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                                             execute_http_action_sync, act_def, act_args
                                         )
                                         logger.info(f"Action '{fc.name}' response: {action_result[:150]}")
+                                        function_responses.append(types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={"result": action_result}
+                                        ))
+                                    elif fc.name in mcp_tools:
+                                        mcp_info = mcp_tools[fc.name]
+                                        desc = mcp_info["description"][:30] if mcp_info["description"] else fc.name
+                                        notify_centrifugo(channel_name, "agent_action_executing", f"جاري استدعاء أداة FastMCP: {desc}...")
+                                        act_args = dict(fc.args or {})
+                                        logger.info(f"Executing MCP tool '{fc.name}' with args {act_args} on {mcp_info['server_url']}")
+                                        action_result = await execute_mcp_tool_call(
+                                            mcp_info["server_url"],
+                                            mcp_info["auth_token"],
+                                            fc.name,
+                                            act_args
+                                        )
+                                        logger.info(f"MCP tool '{fc.name}' response: {action_result[:150]}")
                                         function_responses.append(types.FunctionResponse(
                                             id=fc.id,
                                             name=fc.name,

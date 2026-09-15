@@ -427,6 +427,166 @@
       </div>
     </section>
 
+    <!-- External FastMCP Server Management Section -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl">
+      <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
+        <div>
+          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <span class="text-cyan-400 text-xl">⚡</span>
+            ربط خادم الأدوات الخارجي (Model Context Protocol - FastMCP)
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">
+            ربط خادم MCP مستقل (عبر SSE) لتمكين المساعد الصوتي من استكشاف واستدعاء دوال المتجر تلقائياً في المكالمات الحية.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button 
+            type="button" 
+            onclick="syncMcpServer()"
+            id="btn-sync-mcp"
+            class="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-cyan-600/20"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span id="sync-mcp-label">فحص الاتصال وتحديث الأدوات</span>
+          </button>
+          <button 
+            type="button" 
+            onclick="openMcpModal()"
+            id="btn-open-mcp-modal"
+            class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span id="btn-mcp-settings-label">الإعدادات</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- MCP Connection Details Bar -->
+      <div id="mcp-details-bar" class="mt-4 p-4 rounded-2xl bg-slate-800/40 border border-slate-800 flex flex-wrap justify-between items-center gap-3 text-xs">
+        <div class="flex items-center gap-3">
+          <span id="mcp-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <div>
+            <div class="font-bold text-slate-200 flex items-center gap-2">
+              <span id="mcp-server-name">خادم المتجر الرئيسي (FastMCP)</span>
+              <span id="mcp-active-badge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950 border border-emerald-800 text-emerald-300">مفعل للمكالمات</span>
+            </div>
+            <div class="text-slate-400 font-mono text-[11px] mt-0.5">
+              Endpoint: <span id="mcp-server-url" class="text-cyan-400">http://mock-store:8002/sse</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span id="mcp-last-sync" class="text-slate-500 text-[11px] ml-1">آخر مزامنة: لم تتم بعد</span>
+          <button 
+            type="button" 
+            onclick="toggleMcpActive()" 
+            id="btn-toggle-mcp" 
+            class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition"
+          >
+            تعطيل
+          </button>
+          <button 
+            type="button" 
+            onclick="deleteMcpServer()" 
+            id="btn-delete-mcp" 
+            class="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/80 text-xs font-medium transition flex items-center gap-1"
+            title="حذف خادم MCP"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            <span>حذف</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Sync Status Alert -->
+      <div id="mcp-sync-alert" class="mt-3 hidden p-3 rounded-xl text-xs flex items-center gap-2"></div>
+
+      <!-- Discovered Tools Section -->
+      <div class="mt-5">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+            <span>🛠️</span>
+            الدوال المكتشفة من خادم FastMCP (<span id="mcp-tools-count">0</span>):
+          </h3>
+          <span class="text-[11px] text-slate-500">متاحة تلقائياً للمساعد الصوتي أثناء المكالمات</span>
+        </div>
+
+        <div id="mcp-tools-container" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="col-span-3 text-center py-6 text-slate-500 text-xs bg-slate-950/30 rounded-2xl border border-dashed border-slate-800">
+            اضغط على "فحص الاتصال وتحديث الأدوات" لقراءة دوال خادم FastMCP تلقائياً.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MCP Settings Modal -->
+    <div id="mcp-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+          <h3 id="modal-mcp-title" class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <span>⚙️</span> إعدادات خادم FastMCP الخارجي
+          </h3>
+          <button type="button" onclick="closeMcpModal()" class="text-slate-400 hover:text-slate-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form id="mcp-settings-form" onsubmit="saveMcpSettings(event)" class="space-y-3">
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">اسم الخادم</label>
+            <input type="text" id="modal-mcp-name" required class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-cyan-500" />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">رابط الـ SSE Endpoint (Server URL)</label>
+            <input type="text" id="modal-mcp-url" required placeholder="http://mock-store:8002/sse" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 font-mono focus:outline-none focus:border-cyan-500" />
+            <p class="text-[11px] text-slate-500 mt-1">يجب أن يدعم الخادم وسيلة نقل SSE (Server-Sent Events) على شبكة النظام.</p>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">مفتاح الحماية / Bearer Token (اختياري)</label>
+            <input type="password" id="modal-mcp-token" placeholder="اتركه فارغاً إذا كان الخادم محلياً بدون مصادقة" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 font-mono focus:outline-none focus:border-cyan-500" />
+          </div>
+
+          <div class="flex items-center gap-2 pt-1">
+            <input type="checkbox" id="modal-mcp-active" class="w-4 h-4 rounded text-cyan-600 bg-slate-800 border-slate-700 focus:ring-cyan-500" />
+            <label for="modal-mcp-active" class="text-slate-300 font-semibold cursor-pointer">تفعيل خادم MCP للاستخدام في المكالمات الصوتية الحية</label>
+          </div>
+
+          <div class="flex justify-between items-center pt-3 border-t border-slate-800">
+            <div>
+              <button 
+                type="button" 
+                onclick="deleteMcpServer()" 
+                id="modal-btn-delete-mcp" 
+                class="px-3.5 py-2 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs font-semibold transition flex items-center gap-1.5"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>حذف الخادم</span>
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="closeMcpModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">إلغاء</button>
+              <button type="submit" id="btn-save-mcp-settings" class="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition">حفظ التعديلات</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Add Action Modal -->
     <div id="action-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
       <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-4">
@@ -1070,6 +1230,266 @@
       }
     }
 
+    // ==================== External FastMCP Server Handling ====================
+    let currentMcpServer = null;
+
+    const mcpModal = document.getElementById('mcp-modal');
+    const mcpServerName = document.getElementById('mcp-server-name');
+    const mcpServerUrl = document.getElementById('mcp-server-url');
+    const mcpActiveBadge = document.getElementById('mcp-active-badge');
+    const mcpStatusDot = document.getElementById('mcp-status-dot');
+    const mcpLastSync = document.getElementById('mcp-last-sync');
+    const btnToggleMcp = document.getElementById('btn-toggle-mcp');
+    const mcpToolsCount = document.getElementById('mcp-tools-count');
+    const mcpToolsContainer = document.getElementById('mcp-tools-container');
+    const mcpSyncAlert = document.getElementById('mcp-sync-alert');
+
+    async function loadMcpServer() {
+      try {
+        const res = await fetch('/api/mcp/');
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentMcpServer = data.server;
+          renderMcpServer(currentMcpServer);
+        }
+      } catch (err) {
+        console.error('Error loading MCP server info:', err);
+      }
+    }
+
+    function renderMcpServer(server) {
+      const btnSync = document.getElementById('btn-sync-mcp');
+      const btnSettingsLabel = document.getElementById('btn-mcp-settings-label');
+      const btnDelete = document.getElementById('btn-delete-mcp');
+      const modalBtnDelete = document.getElementById('modal-btn-delete-mcp');
+
+      if (!server) {
+        mcpServerName.innerText = 'لا يوجد خادم MCP مرتبط حالياً';
+        mcpServerUrl.innerText = 'غير محدد';
+        mcpLastSync.innerText = '';
+        mcpStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-600';
+        mcpActiveBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 border border-slate-700 text-slate-400';
+        mcpActiveBadge.innerText = 'غير متصل';
+        btnToggleMcp.classList.add('hidden');
+        if (btnDelete) btnDelete.classList.add('hidden');
+        if (modalBtnDelete) modalBtnDelete.classList.add('hidden');
+        if (btnSettingsLabel) btnSettingsLabel.innerText = 'ربط خادم MCP';
+        if (btnSync) btnSync.classList.add('hidden');
+
+        mcpToolsCount.innerText = '0';
+        mcpToolsContainer.innerHTML = `
+          <div class="col-span-3 text-center py-8 text-slate-500 text-xs bg-slate-950/30 rounded-2xl border border-dashed border-slate-800 space-y-3">
+            <p>لا يوجد خادم MCP مرتبط حالياً. يمكنك ربط خادمك الخارجي لتمكين المساعد الصوتي من استدعاء أدواتك أثناء المكالمات.</p>
+            <button type="button" onclick="openMcpModal()" class="px-4 py-2 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-700/60 text-xs font-semibold transition inline-flex items-center gap-1.5">
+              <span>⚡</span>
+              <span>ربط خادم FastMCP الآن</span>
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      // Server is present
+      btnToggleMcp.classList.remove('hidden');
+      if (btnDelete) btnDelete.classList.remove('hidden');
+      if (modalBtnDelete) modalBtnDelete.classList.remove('hidden');
+      if (btnSettingsLabel) btnSettingsLabel.innerText = 'الإعدادات';
+      if (btnSync) btnSync.classList.remove('hidden');
+
+      mcpServerName.innerText = server.name;
+      mcpServerUrl.innerText = server.server_url;
+      mcpLastSync.innerText = server.last_synced_at ? `آخر مزامنة: ${server.last_synced_at}` : 'آخر مزامنة: لم تتم بعد';
+
+      if (server.is_active) {
+        mcpStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
+        mcpActiveBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950 border border-emerald-800 text-emerald-300';
+        mcpActiveBadge.innerText = 'مفعل للمكالمات';
+        btnToggleMcp.innerText = 'تعطيل';
+        btnToggleMcp.className = 'px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition';
+      } else {
+        mcpStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
+        mcpActiveBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 border border-slate-700 text-slate-400';
+        mcpActiveBadge.innerText = 'معطل';
+        btnToggleMcp.innerText = 'تفعيل';
+        btnToggleMcp.className = 'px-3 py-1.5 rounded-xl bg-emerald-900/60 hover:bg-emerald-800/80 text-emerald-300 border border-emerald-700 text-xs font-medium transition';
+      }
+
+      const tools = server.cached_tools || [];
+      mcpToolsCount.innerText = tools.length;
+      if (tools.length === 0) {
+        mcpToolsContainer.innerHTML = `
+          <div class="col-span-3 text-center py-6 text-slate-500 text-xs bg-slate-950/30 rounded-2xl border border-dashed border-slate-800">
+            لا توجد أدوات مكتشفة حتى الآن. اضغط على "فحص الاتصال وتحديث الأدوات" لقراءة دوال خادم FastMCP تلقائياً.
+          </div>
+        `;
+      } else {
+        mcpToolsContainer.innerHTML = tools.map(t => {
+          const paramsList = t.parameters && t.parameters.properties ? Object.keys(t.parameters.properties) : [];
+          const badges = paramsList.map(p => `<span class="px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-slate-400 font-mono text-[10px]">${p}</span>`).join(' ');
+          return `
+            <div class="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60 hover:border-cyan-500/40 transition shadow-sm space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="font-mono font-bold text-cyan-400 text-xs flex items-center gap-1.5">
+                  <span class="text-[10px]">⚡</span>
+                  ${t.name}
+                </span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 font-semibold">FastMCP</span>
+              </div>
+              <p class="text-slate-300 text-[11px] leading-relaxed line-clamp-2" title="${t.description}">${t.description || 'بدون وصف'}</p>
+              ${badges ? `<div class="pt-1 flex flex-wrap gap-1 items-center"><span class="text-[10px] text-slate-500">المعاملات:</span> ${badges}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    async function syncMcpServer() {
+      if (!currentMcpServer) {
+        alert('يرجى ربط خادم MCP أولاً قبل إجراء الفحص.');
+        return;
+      }
+      const btn = document.getElementById('btn-sync-mcp');
+      const label = document.getElementById('sync-mcp-label');
+      btn.disabled = true;
+      label.innerText = 'جاري الاتصال واكتشاف الأدوات...';
+      mcpSyncAlert.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/mcp/sync/', {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentMcpServer = data.server;
+          renderMcpServer(currentMcpServer);
+          mcpSyncAlert.className = 'mt-3 p-3 rounded-xl text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-300 flex items-center gap-2';
+          mcpSyncAlert.innerHTML = `<span>✅ ${data.message}</span>`;
+          mcpSyncAlert.classList.remove('hidden');
+        } else {
+          mcpSyncAlert.className = 'mt-3 p-3 rounded-xl text-xs bg-rose-950/80 border border-rose-800 text-rose-300 flex items-center gap-2';
+          mcpSyncAlert.innerHTML = `<span>❌ ${data.message}</span>`;
+          mcpSyncAlert.classList.remove('hidden');
+        }
+      } catch (err) {
+        mcpSyncAlert.className = 'mt-3 p-3 rounded-xl text-xs bg-rose-950/80 border border-rose-800 text-rose-300 flex items-center gap-2';
+        mcpSyncAlert.innerHTML = `<span>❌ حدث خطأ في الاتصال بالخادم.</span>`;
+        mcpSyncAlert.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        label.innerText = 'فحص الاتصال وتحديث الأدوات';
+      }
+    }
+
+    async function toggleMcpActive() {
+      if (!currentMcpServer) return;
+      try {
+        const res = await fetch('/api/mcp/toggle/', {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success' && currentMcpServer) {
+          currentMcpServer.is_active = data.is_active;
+          renderMcpServer(currentMcpServer);
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء تغيير حالة خادم MCP.');
+      }
+    }
+
+    async function deleteMcpServer() {
+      if (!confirm('هل أنت متأكد من رغبتك في حذف خادم MCP؟\nسيتم إزالة جميع الأدوات المرتبطة به ولن يتمكن المساعد الصوتي من استدعائها أثناء المكالمات.')) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/mcp/delete/', {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentMcpServer = null;
+          closeMcpModal();
+          renderMcpServer(null);
+          mcpSyncAlert.className = 'mt-3 p-3 rounded-xl text-xs bg-amber-950/80 border border-amber-800 text-amber-300 flex items-center gap-2';
+          mcpSyncAlert.innerHTML = `<span>🗑️ ${data.message}</span>`;
+          mcpSyncAlert.classList.remove('hidden');
+        } else {
+          alert('فشل حذف خادم MCP: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء الاتصال بالخادم لحذف خادم MCP.');
+      }
+    }
+
+    function openMcpModal() {
+      const modalTitle = document.getElementById('modal-mcp-title');
+      const modalBtnDelete = document.getElementById('modal-btn-delete-mcp');
+
+      if (currentMcpServer) {
+        if (modalTitle) modalTitle.innerHTML = '<span>⚙️</span> إعدادات خادم FastMCP الخارجي';
+        document.getElementById('modal-mcp-name').value = currentMcpServer.name;
+        document.getElementById('modal-mcp-url').value = currentMcpServer.server_url;
+        document.getElementById('modal-mcp-token').value = currentMcpServer.auth_token || '';
+        document.getElementById('modal-mcp-active').checked = currentMcpServer.is_active;
+        if (modalBtnDelete) modalBtnDelete.classList.remove('hidden');
+      } else {
+        if (modalTitle) modalTitle.innerHTML = '<span>⚡</span> ربط خادم FastMCP خارجي جديد';
+        document.getElementById('modal-mcp-name').value = 'خادم متجر خارجي (FastMCP)';
+        document.getElementById('modal-mcp-url').value = 'http://mock-store:8002/sse';
+        document.getElementById('modal-mcp-token').value = '';
+        document.getElementById('modal-mcp-active').checked = true;
+        if (modalBtnDelete) modalBtnDelete.classList.add('hidden');
+      }
+      mcpModal.classList.remove('hidden');
+    }
+
+    function closeMcpModal() {
+      mcpModal.classList.add('hidden');
+    }
+
+    async function saveMcpSettings(e) {
+      e.preventDefault();
+      const name = document.getElementById('modal-mcp-name').value.trim();
+      const server_url = document.getElementById('modal-mcp-url').value.trim();
+      const auth_token = document.getElementById('modal-mcp-token').value.trim();
+      const is_active = document.getElementById('modal-mcp-active').checked;
+
+      const btn = document.getElementById('btn-save-mcp-settings');
+      btn.disabled = true;
+      btn.innerText = 'جاري الحفظ...';
+
+      try {
+        const res = await fetch('/api/mcp/save/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ name, server_url, auth_token, is_active })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentMcpServer = data.server;
+          renderMcpServer(currentMcpServer);
+          closeMcpModal();
+          // Prompt auto sync if no cached tools yet
+          if (!currentMcpServer.cached_tools || currentMcpServer.cached_tools.length === 0) {
+            syncMcpServer();
+          }
+        } else {
+          alert('فشل الحفظ: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء حفظ الإعدادات.');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'حفظ التعديلات';
+      }
+    }
+
     // ==================== Agent Voice & Persona Profiles Handling ====================
     let userProfiles = [];
     let activeProfile = null;
@@ -1330,6 +1750,7 @@
     loadDocuments();
     loadActions();
     loadProfiles();
+    loadMcpServer();
   </script>
 </body>
 </html>

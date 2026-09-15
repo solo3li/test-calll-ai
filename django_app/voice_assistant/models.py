@@ -145,3 +145,34 @@ class AgentProfile(models.Model):
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M"),
         }
 
+class UserMCPServer(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mcp_servers')
+    name = models.CharField(max_length=100, default='خادم المتجر الرئيسي (FastMCP)')
+    server_url = models.CharField(max_length=500, default='http://mock-store:8002/sse')
+    auth_token = models.CharField(max_length=500, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    cached_tools = models.JSONField(default=list, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        status = " [نشط]" if self.is_active else " [معطل]"
+        return f"{self.name} ({self.server_url}){status}"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "server_url": self.server_url,
+            "auth_token": self.auth_token,
+            "is_active": self.is_active,
+            "cached_tools": self.cached_tools or [],
+            "tools_count": len(self.cached_tools or []),
+            "last_synced_at": self.last_synced_at.strftime("%Y-%m-%d %H:%M") if self.last_synced_at else None,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
+        }
+

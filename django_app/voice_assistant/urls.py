@@ -33,5 +33,12 @@ urlpatterns = [
     path('api/profiles/<int:profile_id>/activate/', views.activate_profile, name='activate_profile'),
     path('api/profiles/<int:profile_id>/update/', views.update_profile, name='update_profile'),
     path('api/profiles/<int:profile_id>/delete/', views.delete_profile, name='delete_profile'),
+
+    # External MCP Server APIs
+    path('api/mcp/', views.get_mcp_server, name='get_mcp_server'),
+    path('api/mcp/save/', views.save_mcp_server, name='save_mcp_server'),
+    path('api/mcp/sync/', views.sync_mcp_server, name='sync_mcp_server'),
+    path('api/mcp/toggle/', views.toggle_mcp_server, name='toggle_mcp_server'),
+    path('api/mcp/delete/', views.delete_mcp_server, name='delete_mcp_server'),
 ]
 

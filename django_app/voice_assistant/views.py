@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk, UserAction, AgentProfile
+from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -661,3 +661,147 @@ def delete_profile(request, profile_id):
             fallback.save()
 
     return JsonResponse({"status": "success", "message": f"تم حذف البروفايل '{name}' بنجاح."})
+
+# ==================== User External MCP Server Handling ====================
+import asyncio
+from django.utils import timezone
+
+async def _fetch_mcp_tools_async(url: str, auth_token: str = ""):
+    """Connect to MCP SSE server, perform handshake, and list tools."""
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
+
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    async with sse_client(url, headers=headers) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tool_list = await session.list_tools()
+            tools = []
+            for t in tool_list.tools:
+                schema = getattr(t, 'input_schema', None) or getattr(t, 'inputSchema', None) or {}
+                tools.append({
+                    "name": t.name,
+                    "description": t.description or "",
+                    "parameters": schema
+                })
+            return tools
+
+def fetch_mcp_tools_sync(url: str, auth_token: str = "", timeout: float = 6.0):
+    """Fetch tool list from an external MCP SSE server synchronously with timeout."""
+    async def _run():
+        return await asyncio.wait_for(_fetch_mcp_tools_async(url, auth_token), timeout=timeout)
+    return asyncio.run(_run())
+
+@login_required(login_url='/login/')
+def get_mcp_server(request):
+    """Retrieve the user's active MCP server and cached tools."""
+    server = UserMCPServer.objects.filter(user=request.user).first()
+    if not server:
+        return JsonResponse({
+            "status": "success",
+            "has_server": False,
+            "server": None
+        })
+    return JsonResponse({
+        "status": "success",
+        "has_server": True,
+        "server": server.to_dict()
+    })
+
+@login_required(login_url='/login/')
+def save_mcp_server(request):
+    """Save or update external MCP server configuration."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        server = UserMCPServer.objects.filter(user=request.user).first()
+        if not server:
+            server = UserMCPServer(user=request.user)
+
+        if 'name' in data and data['name'].strip():
+            server.name = data['name'].strip()
+        if 'server_url' in data and data['server_url'].strip():
+            server.server_url = data['server_url'].strip()
+        if 'auth_token' in data:
+            server.auth_token = data['auth_token'].strip()
+        if 'is_active' in data:
+            server.is_active = bool(data['is_active'])
+
+        server.save()
+        return JsonResponse({
+            "status": "success",
+            "message": "تم حفظ بيانات خادم MCP بنجاح.",
+            "server": server.to_dict()
+        })
+    except Exception as e:
+        logger.error(f"Error saving MCP server: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+@login_required(login_url='/login/')
+def sync_mcp_server(request):
+    """Test connection to MCP SSE server, fetch tools/list, and update cache."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    server = UserMCPServer.objects.filter(user=request.user).first()
+    if not server:
+        return JsonResponse({"status": "error", "message": "لا يوجد خادم MCP مسجل للفحص. يرجى إضافة خادم أولاً."}, status=404)
+
+    try:
+        tools = fetch_mcp_tools_sync(server.server_url, server.auth_token, timeout=6.0)
+        server.cached_tools = tools
+        server.last_synced_at = timezone.now()
+        server.is_active = True
+        server.save()
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم الاتصال بنجاح بخادم FastMCP! تم اكتشاف {len(tools)} أداة.",
+            "tools": tools,
+            "server": server.to_dict()
+        })
+    except Exception as e:
+        logger.error(f"Error syncing MCP server {server.server_url}: {e}")
+        return JsonResponse({
+            "status": "error",
+            "message": f"فشل الاتصال بخادم MCP على '{server.server_url}': {str(e)}"
+        }, status=400)
+
+@login_required(login_url='/login/')
+def toggle_mcp_server(request):
+    """Toggle active state of the user's MCP server."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    server = UserMCPServer.objects.filter(user=request.user).first()
+    if not server:
+        return JsonResponse({"status": "error", "message": "لا يوجد خادم MCP مسجل."}, status=404)
+
+    server.is_active = not server.is_active
+    server.save()
+    status_text = "تفعيل" if server.is_active else "تعطيل"
+    return JsonResponse({
+        "status": "success",
+        "is_active": server.is_active,
+        "message": f"تم {status_text} خادم MCP بنجاح."
+    })
+
+@login_required(login_url='/login/')
+def delete_mcp_server(request):
+    """Delete external MCP server configuration for the user."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    count, _ = UserMCPServer.objects.filter(user=request.user).delete()
+    if count == 0:
+        return JsonResponse({"status": "error", "message": "لا يوجد خادم MCP لحذفه."}, status=404)
+
+    return JsonResponse({
+        "status": "success",
+        "message": "تم حذف خادم MCP وجميع أدواته بنجاح."
+    })

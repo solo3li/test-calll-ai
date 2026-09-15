@@ -64,6 +64,8 @@ services:
     container_name: voice_django
     restart: unless-stopped
     command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./django_app:/app
     env_file:
       - .env
     depends_on:
@@ -80,8 +82,11 @@ services:
       dockerfile: Dockerfile
     container_name: voice_mock_store
     restart: unless-stopped
+    volumes:
+      - ./mock_store:/app
     ports:
       - "8001:8000"
+      - "8002:8002"
     networks:
       voice_net:
         aliases:
@@ -94,6 +99,8 @@ services:
       dockerfile: Dockerfile
     container_name: voice_agent
     restart: unless-stopped
+    volumes:
+      - ./agent:/app
     env_file:
       - .env
     depends_on:
