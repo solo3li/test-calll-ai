@@ -663,6 +663,126 @@
       </div>
     </section>
 
+    <!-- ==================== Call Queues & Routing Section ==================== -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+      <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
+        <div>
+          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <span class="text-amber-400 text-xl">👥</span>
+            طوابير الانتظار ومجموعات الاتصال (Call Queues & Routing)
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">
+            أنشئ طوابير فرق العمل (كود المبيعات 200، كود الدعم 300) مع نظام الرنين بالتناوب (Round-Robin)، موسيقى انتظار مخصصة، والتحويل التلقائي للذكاء الاصطناعي (Gemini Live) في حال عدم الرد.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button 
+            type="button" 
+            onclick="openNewQueueModal()" 
+            class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-amber-600/20"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>طابور جديد</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Call Queues Table -->
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full text-right text-xs">
+          <thead>
+            <tr class="text-slate-400 border-b border-slate-800/80">
+              <th class="py-2.5 px-3">كود الطابور</th>
+              <th class="py-2.5 px-3">اسم الطابور</th>
+              <th class="py-2.5 px-3">استراتيجية التوزيع</th>
+              <th class="py-2.5 px-3">الموظفون المسندون والحالة الحية</th>
+              <th class="py-2.5 px-3 text-center">المكالمات المنتظرة</th>
+              <th class="py-2.5 px-3 text-center">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="queues-tbody" class="divide-y divide-slate-800/40">
+            <tr>
+              <td colspan="6" class="text-center py-6 text-slate-500">جاري تحميل طوابير الانتظار...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- New Call Queue Modal -->
+    <div id="new-queue-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <span>👥</span> إنشاء طابور انتظار / مجموعة عمل جديدة
+          </h3>
+          <button type="button" onclick="closeNewQueueModal()" class="text-slate-400 hover:text-slate-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form id="new-queue-form" onsubmit="handleCreateQueue(event)" class="space-y-3.5">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">اسم الطابور</label>
+              <input type="text" id="queue-name" required placeholder="مثال: طابور المبيعات" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-amber-500" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">كود الطابور (Extension Code)</label>
+              <input type="text" id="queue-code" required pattern="[0-9]+" placeholder="مثال: 200 أو 300" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-amber-300 font-bold font-mono focus:outline-none focus:border-amber-500" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">استراتيجية التوزيع</label>
+              <select id="queue-strategy" class="w-full px-2.5 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-200 text-xs focus:outline-none">
+                <option value="round_robin">رنين بالتناوب (Round-Robin)</option>
+                <option value="ring_all">رنين متزامن للكل (Ring-All)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">رنين الموظف (ثوانٍ)</label>
+              <input type="number" id="queue-ring-timeout" value="15" min="5" max="60" class="w-full px-2.5 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-200 text-xs focus:outline-none" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">أقصى انتظار (ثوانٍ)</label>
+              <input type="number" id="queue-total-timeout" value="60" min="15" max="300" class="w-full px-2.5 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-200 text-xs focus:outline-none" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">الموظفون المسندون لهذا الطابور</label>
+            <div id="queue-members-list" class="max-h-32 overflow-y-auto p-2.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-1.5">
+              <span class="text-slate-500 text-[11px]">جاري تحميل خطوط الـ SIP...</span>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-1">حدد الموظفين الذين ستصلهم المكالمات بالتناوب عند الاتصال أو التحويل لكود هذا الطابور.</p>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">ملف موسيقى الانتظار المخصصة (اختياري - MP3/WAV)</label>
+            <input type="file" id="queue-hold-music" accept="audio/*" class="w-full px-2 py-1.5 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-300 text-xs file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-600 file:text-white hover:file:bg-amber-500" />
+            <p class="text-[10px] text-slate-500 mt-0.5">إذا لم يُرفع ملف، سيعزف النظام نغمة انتظار متناغمة وهادئة افتراضياً.</p>
+          </div>
+
+          <div id="new-queue-error" class="hidden p-2 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-300 text-xs"></div>
+
+          <div class="flex justify-end gap-2 pt-3 border-t border-slate-800">
+            <button type="button" onclick="closeNewQueueModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">إلغاء</button>
+            <button type="submit" id="btn-submit-queue" class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold transition flex items-center gap-1.5">
+              <span>حفظ الطابور وتفعيل الكود</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+
     <!-- New SIP Line Modal -->
     <div id="new-sip-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
       <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
@@ -710,13 +830,16 @@
           </button>
         </div>
 
-        <div class="p-3 rounded-xl bg-blue-950/50 border border-blue-800/60 text-blue-200 space-y-1">
+        <div class="p-3 rounded-xl bg-blue-950/50 border border-blue-800/60 text-blue-200 space-y-1.5">
           <div class="font-bold flex items-center gap-1.5 text-blue-300">
-            <span>💡</span> طريقة الضبط في برنامج MicroSIP:
+            <span>💡</span> طريقة الضبط والتحويل في برنامج MicroSIP:
           </div>
           <p class="text-[11px] leading-relaxed">
             افتح برنامج MicroSIP واضغط السهم بجانب اسم الحساب واختر <span class="font-bold text-white">Add Account</span>، وانسخ الحقول التالية واضغط <span class="font-bold text-emerald-400">Save</span>. سيتحول الحساب إلى اللون الأخضر <span class="font-bold text-emerald-400">(Online)</span> مباشرة، ثم اكتب رقم التحويلة (Extension) واضغط زر الاتصال <span class="font-bold text-emerald-400">Call</span>.
           </p>
+          <div class="pt-1.5 border-t border-blue-800/40 text-[11px] text-amber-200 leading-relaxed">
+            <strong>🔄 ميزة التحويل المباشر (Transfer):</strong> أثناء المكالمة، اضغط زر <span class="px-1.5 py-0.5 rounded bg-slate-800 font-bold text-white border border-slate-700">Transfer</span> في MicroSIP واكتب كود الطابور (مثل <span class="font-mono text-cyan-300 font-bold">200</span> للمبيعات أو <span class="font-mono text-cyan-300 font-bold">300</span> للدعم) أو رقم تحويلة زميلك (مثل <span class="font-mono text-cyan-300 font-bold">1002</span>)، وسيتم تحويل المكالمة فوراً وسلاسة!
+          </div>
         </div>
 
         <div class="space-y-2.5 font-mono text-[11px]">
@@ -2258,6 +2381,202 @@
       }
     }
 
+    // ==========================================
+    // Call Queues & Routing Management Functions
+    // ==========================================
+    let currentCallQueues = [];
+
+    async function loadQueues() {
+      const tbody = document.getElementById('queues-tbody');
+      if (!tbody) return;
+      try {
+        const res = await fetch('/api/queues/');
+        const data = await res.json();
+        if (data.status !== 'success') return;
+
+        currentCallQueues = data.queues || [];
+        if (currentCallQueues.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" class="text-center py-6 text-slate-500 text-xs">
+                لا توجد طوابير انتظار مسجلة بعد. اضغط "طابور جديد" لإنشاء طابور (مثل كود 200 للمبيعات أو 300 للدعم).
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = currentCallQueues.map(q => {
+          const membersHtml = (q.members && q.members.length > 0)
+            ? q.members.map(m => {
+                let badgeColor = 'bg-emerald-950/80 text-emerald-300 border-emerald-800';
+                let dotColor = 'bg-emerald-400';
+                let stateLabel = 'متاح';
+                if (m.presence_state === 'RINGING') {
+                  badgeColor = 'bg-amber-950/80 text-amber-300 border-amber-800';
+                  dotColor = 'bg-amber-400 animate-ping';
+                  stateLabel = 'يرن...';
+                } else if (m.presence_state === 'BUSY') {
+                  badgeColor = 'bg-rose-950/80 text-rose-300 border-rose-800';
+                  dotColor = 'bg-rose-400';
+                  stateLabel = 'مشغول';
+                }
+                return `
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold ${badgeColor} border mr-1 mb-1">
+                    <span class="w-1.5 h-1.5 rounded-full ${dotColor}"></span>
+                    <span>${escapeHtml(m.sip_account_name || m.sip_username)}</span>
+                    <span class="opacity-75 font-mono text-[9px]">(${stateLabel})</span>
+                  </span>
+                `;
+              }).join('')
+            : '<span class="text-slate-500 text-[10px]">لا يوجد موظفون مسندون</span>';
+
+          const waitingBadge = q.waiting_calls_count > 0
+            ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700 animate-pulse">${q.waiting_calls_count} مكالمة</span>`
+            : `<span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400">0</span>`;
+
+          const strategyLabel = q.strategy === 'round_robin' 
+            ? `رنين بالتناوب (${q.ring_timeout_seconds || 15}ث)` 
+            : 'رنين متزامن للكل';
+
+          return `
+            <tr class="hover:bg-slate-800/30 transition">
+              <td class="py-3 px-3">
+                <span class="font-mono font-bold text-amber-400 bg-amber-950/60 px-2 py-1 rounded-lg border border-amber-800/80 text-sm">
+                  ${escapeHtml(q.code)}
+                </span>
+              </td>
+              <td class="py-3 px-3 font-semibold text-slate-200">
+                ${escapeHtml(q.name)}
+                ${q.hold_music_url ? '<span class="mr-1 text-[10px] text-cyan-400" title="موسيقى انتظار مخصصة">🎵</span>' : ''}
+              </td>
+              <td class="py-3 px-3 text-slate-300 font-mono text-[11px]">${strategyLabel}</td>
+              <td class="py-3 px-3">
+                <div class="flex flex-wrap items-center">${membersHtml}</div>
+              </td>
+              <td class="py-3 px-3 text-center">${waitingBadge}</td>
+              <td class="py-3 px-3 text-center">
+                <button 
+                  type="button" 
+                  onclick="deleteQueue('${q.id}', '${escapeHtml(q.name)}')"
+                  class="p-1 rounded-lg hover:bg-rose-950/80 hover:text-rose-300 text-slate-500 transition"
+                  title="حذف الطابور"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Error loading call queues:', err);
+      }
+    }
+
+    function openNewQueueModal() {
+      document.getElementById('new-queue-form').reset();
+      document.getElementById('new-queue-error').classList.add('hidden');
+
+      const membersListEl = document.getElementById('queue-members-list');
+      if (currentSipAccounts && currentSipAccounts.length > 0) {
+        membersListEl.innerHTML = currentSipAccounts.map(acc => `
+          <label class="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900/60 border border-slate-800 hover:bg-slate-800/40 cursor-pointer transition">
+            <input type="checkbox" name="member_sip_ids" value="${acc.id}" class="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-amber-500">
+            <span class="text-slate-200 font-medium">${escapeHtml(acc.name)}</span>
+            <span class="font-mono text-cyan-400 text-[10px]">(${escapeHtml(acc.sip_username)})</span>
+          </label>
+        `).join('');
+      } else {
+        membersListEl.innerHTML = `
+          <span class="text-slate-500 text-[11px]">
+            لا توجد خطوط SIP مسجلة بعد. أنشئ خط SIP من جدول الخطوط أولاً لتحديده كعضو في هذا الطابور.
+          </span>
+        `;
+      }
+
+      document.getElementById('new-queue-modal').classList.remove('hidden');
+    }
+
+    function closeNewQueueModal() {
+      document.getElementById('new-queue-modal').classList.add('hidden');
+    }
+
+    async function handleCreateQueue(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit-queue');
+      const errEl = document.getElementById('new-queue-error');
+      const name = document.getElementById('queue-name').value.trim();
+      const code = document.getElementById('queue-code').value.trim();
+      const strategy = document.getElementById('queue-strategy').value;
+      const ringTimeout = document.getElementById('queue-ring-timeout').value;
+      const totalTimeout = document.getElementById('queue-total-timeout').value;
+
+      btn.disabled = true;
+      btn.innerText = 'جاري إنشاء الطابور وتخصيص الكود...';
+      errEl.classList.add('hidden');
+
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('code', code);
+      formData.append('strategy', strategy);
+      formData.append('ring_timeout_seconds', ringTimeout);
+      formData.append('total_timeout_seconds', totalTimeout);
+
+      const musicFile = document.getElementById('queue-hold-music').files[0];
+      if (musicFile) {
+        formData.append('hold_music', musicFile);
+      }
+
+      const checkedMembers = document.querySelectorAll('input[name="member_sip_ids"]:checked');
+      checkedMembers.forEach(cb => {
+        formData.append('member_ids', cb.value);
+      });
+
+      try {
+        const res = await fetch('/api/queues/create/', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: formData
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          closeNewQueueModal();
+          await loadQueues();
+        } else {
+          errEl.innerText = data.message || 'فشل إنشاء الطابور';
+          errEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        errEl.innerText = 'حدث خطأ أثناء الاتصال بالخادم.';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'حفظ الطابور وتفعيل الكود';
+      }
+    }
+
+    async function deleteQueue(id, name) {
+      if (!confirm(`هل أنت متأكد من حذف طابور "${name}"؟ سيتم إلغاء كود الطابور وتوجيه الاتصال.`)) return;
+      try {
+        const res = await fetch(`/api/queues/${id}/delete/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          await loadQueues();
+        } else {
+          alert('فشل الحذف: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء حذف الطابور.');
+      }
+    }
+
     // Initialize lists on load
     loadDocuments();
     loadActions();
@@ -2265,6 +2584,10 @@
     loadMcpServer();
     loadCustomerMemory();
     loadSipAccounts();
+    loadQueues();
+
+    // Periodic polling to update agent presence states & queue waiting counts
+    setInterval(loadQueues, 8000);
   </script>
 </body>
 </html>

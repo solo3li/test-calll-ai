@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession, UserSIPAccount
+from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession, UserSIPAccount, CallQueue, QueueMembership
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -241,26 +241,45 @@ def livekit_webhook(request):
                 if len(parts) >= 3 and parts[2].isdigit():
                     user_id = int(parts[2])
 
+            # Check if this room is a Call Queue: room_user_{user_id}_queue_{code}_...
+            is_queue = False
+            queue_code = None
+            queue_data = None
+            parts = room_name.split("_")
+            if len(parts) >= 5 and parts[3] == "queue":
+                is_queue = True
+                queue_code = parts[4]
+                try:
+                    q_obj = CallQueue.objects.filter(user_id=user_id, code=queue_code, is_active=True).first()
+                    if q_obj:
+                        queue_data = q_obj.to_dict()
+                except Exception as e:
+                    logger.error(f"Error loading queue {queue_code} for user {user_id}: {e}")
+
             # Resolve active profile if not provided in metadata
             if user_id and not profile:
                 active_prof = AgentProfile.objects.filter(user_id=user_id, is_active=True).first()
                 if active_prof:
                     profile = active_prof.to_dict()
 
-            logger.info(f"Human participant '{participant_identity}' (user_id={user_id}) joined room {room_name}. Queuing Voice Agent...")
+            logger.info(f"Human participant '{participant_identity}' (user_id={user_id}, is_queue={is_queue}) joined room {room_name}. Queuing Voice Agent...")
             publish_to_centrifugo(channel, {
                 "event": "agent_queued",
-                "message": "تم رصد انضمام المستخدم. جاري استدعاء المساعد الصوتي وتجهيز قاعدة المستندات...",
+                "message": f"تم رصد انضمام متصل لطابور الانتظار (كود: {queue_code})..." if is_queue else "تم رصد انضمام المستخدم. جاري استدعاء المساعد الصوتي وتجهيز قاعدة المستندات...",
                 "timestamp": time.time(),
             })
 
-            # Dispatch to standalone Agent service via Redis queue with user_id and profile
+            # Dispatch to standalone Agent service via Redis queue with user_id, profile, and queue info
             try:
                 r = redis.Redis.from_url(settings.REDIS_URL)
                 job_payload = json.dumps({
                     "room_name": room_name,
                     "user_id": user_id,
-                    "profile": profile
+                    "profile": profile,
+                    "is_queue": is_queue,
+                    "queue_code": queue_code,
+                    "queue_data": queue_data,
+                    "participant_identity": participant_identity
                 })
                 r.rpush("agent_jobs", job_payload)
                 logger.info(f"Dispatched job {job_payload} to Redis 'agent_jobs' queue.")
@@ -275,6 +294,18 @@ def livekit_webhook(request):
                 "message": "المستخدم غادر الغرفة",
                 "timestamp": time.time(),
             })
+            # If a SIP agent left, reset their status to AVAILABLE in Redis and publish presence
+            if participant_identity.startswith("sip_"):
+                try:
+                    r = redis.Redis.from_url(settings.REDIS_URL)
+                    r.set(f"agent_state:{participant_identity}", "AVAILABLE")
+                    publish_to_centrifugo("presence_updates", {
+                        "event": "agent_presence",
+                        "sip_username": participant_identity,
+                        "state": "AVAILABLE"
+                    })
+                except Exception:
+                    pass
 
     elif event_type == "room_finished":
         logger.info(f"Room {room_name} finished.")
@@ -985,4 +1016,171 @@ def delete_sip_account(request, account_id):
         "status": "success",
         "message": f"تم حذف خط SIP '{account.name}' بنجاح."
     })
+
+# ==================== Call Queues & Routing Management ====================
+
+async def _async_create_queue_trunk_and_rule(queue_name, queue_code, user_id):
+    lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+    try:
+        trunk_req = api.CreateSIPInboundTrunkRequest(
+            trunk=api.SIPInboundTrunkInfo(
+                name=f"Queue {queue_code} - {queue_name} (User {user_id})",
+                numbers=[str(queue_code)],
+                allowed_numbers=[str(queue_code)],
+            )
+        )
+        created_trunk = await lk.sip.create_sip_inbound_trunk(trunk_req)
+        trunk_id = created_trunk.sip_trunk_id
+
+        rule_req = api.CreateSIPDispatchRuleRequest(
+            name=f"Rule for Queue {queue_code} - User {user_id}",
+            trunk_ids=[trunk_id],
+            rule=api.SIPDispatchRule(
+                dispatch_rule_individual=api.SIPDispatchRuleIndividual(
+                    room_prefix=f"room_user_{user_id}_queue_{queue_code}_"
+                )
+            )
+        )
+        created_rule = await lk.sip.create_sip_dispatch_rule(rule_req)
+        rule_id = created_rule.sip_dispatch_rule_id
+        return trunk_id, rule_id
+    finally:
+        await lk.aclose()
+
+@login_required(login_url='/login/')
+def list_call_queues(request):
+    """List all call queues for authenticated user with live presence and waiting metrics."""
+    queues = CallQueue.objects.filter(user=request.user).prefetch_related('memberships__sip_account')
+    r = None
+    try:
+        r = redis.Redis.from_url(settings.REDIS_URL)
+    except Exception:
+        pass
+
+    results = []
+    for q in queues:
+        q_dict = q.to_dict()
+        waiting_count = 0
+        if r:
+            try:
+                waiting_count = r.llen(f"queue:{q.code}:waiting")
+            except Exception:
+                pass
+        q_dict["waiting_calls_count"] = waiting_count
+
+        for m in q_dict["members"]:
+            state = "AVAILABLE"
+            if r:
+                try:
+                    s = r.get(f"agent_state:{m['sip_username']}")
+                    if s:
+                        state = s.decode() if isinstance(s, bytes) else str(s)
+                except Exception:
+                    pass
+            m["presence_state"] = state
+        results.append(q_dict)
+
+    return JsonResponse({
+        "status": "success",
+        "queues": results
+    })
+
+@login_required(login_url='/login/')
+def create_call_queue(request):
+    """Create a new CallQueue, assign members, upload hold music, and register with LiveKit."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    try:
+        name = request.POST.get('name', '').strip() or "طابور المبيعات"
+        code = request.POST.get('code', '').strip()
+        strategy = request.POST.get('strategy', 'round_robin').strip()
+        ring_timeout = int(request.POST.get('ring_timeout_seconds', 15))
+        total_timeout = int(request.POST.get('total_timeout_seconds', 60))
+        fallback_action = request.POST.get('fallback_action', 'ai_assistant')
+
+        if not code or not code.isdigit():
+            return JsonResponse({"status": "error", "message": "يجب إدخال كود رقمي صحيح للطابور (مثل 200 أو 300)"}, status=400)
+
+        if CallQueue.objects.filter(user=request.user, code=code).exists():
+            return JsonResponse({"status": "error", "message": f"كود الطابور {code} مستخدم بالفعل لهذا الحساب"}, status=400)
+
+        hold_music_file = request.FILES.get('hold_music')
+
+        import asyncio
+        trunk_id, rule_id = asyncio.run(_async_create_queue_trunk_and_rule(
+            queue_name=name,
+            queue_code=code,
+            user_id=request.user.id
+        ))
+
+        queue = CallQueue.objects.create(
+            user=request.user,
+            name=name,
+            code=code,
+            strategy=strategy,
+            ring_timeout_seconds=ring_timeout,
+            total_timeout_seconds=total_timeout,
+            hold_music=hold_music_file,
+            fallback_action=fallback_action,
+            livekit_trunk_id=trunk_id,
+            livekit_rule_id=rule_id,
+            is_active=True
+        )
+
+        member_ids_raw = request.POST.getlist('member_ids') or request.POST.get('member_ids', '')
+        if isinstance(member_ids_raw, str) and member_ids_raw:
+            try:
+                member_ids = json.loads(member_ids_raw)
+            except Exception:
+                member_ids = [int(x.strip()) for x in member_ids_raw.split(',') if x.strip().isdigit()]
+        else:
+            member_ids = [int(x) for x in member_ids_raw if str(x).isdigit()]
+
+        valid_sips = UserSIPAccount.objects.filter(user=request.user, id__in=member_ids)
+        for idx, sip_acc in enumerate(valid_sips):
+            QueueMembership.objects.create(
+                queue=queue,
+                sip_account=sip_acc,
+                order=idx,
+                is_active=True
+            )
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم إنشاء الطابور '{name}' (كود: {code}) بنجاح.",
+            "queue": queue.to_dict()
+        }, status=201)
+
+    except Exception as e:
+        logger.error(f"Error creating CallQueue: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": f"فشل إنشاء الطابور: {str(e)}"}, status=500)
+
+@login_required(login_url='/login/')
+def delete_call_queue(request, queue_id):
+    """Delete a CallQueue from DB and LiveKit."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    queue = get_object_or_404(CallQueue, id=queue_id, user=request.user)
+    try:
+        import asyncio
+        asyncio.run(_async_delete_sip_trunk_and_rule(queue.livekit_trunk_id, queue.livekit_rule_id))
+    except Exception as e:
+        logger.warning(f"Error deleting queue LiveKit trunk/rule: {e}")
+
+    if queue.hold_music:
+        try:
+            queue.hold_music.delete(save=False)
+        except Exception:
+            pass
+
+    queue_name = queue.name
+    queue_code = queue.code
+    queue.delete()
+    return JsonResponse({
+        "status": "success",
+        "message": f"تم حذف الطابور '{queue_name}' (كود: {queue_code}) بنجاح."
+    })
+
 

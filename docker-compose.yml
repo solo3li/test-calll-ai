@@ -103,6 +103,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./agent:/app
+      - ./django_app/media:/app/media:ro
     env_file:
       - .env
     depends_on:

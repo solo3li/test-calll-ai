@@ -49,5 +49,11 @@ urlpatterns = [
     path('api/sip/', views.list_sip_accounts, name='list_sip_accounts'),
     path('api/sip/create/', views.create_sip_account, name='create_sip_account'),
     path('api/sip/<int:account_id>/delete/', views.delete_sip_account, name='delete_sip_account'),
+
+    # Call Queues & Routing APIs
+    path('api/queues/', views.list_call_queues, name='list_call_queues'),
+    path('api/queues/create/', views.create_call_queue, name='create_call_queue'),
+    path('api/queues/<int:queue_id>/delete/', views.delete_call_queue, name='delete_call_queue'),
 ]
+
 

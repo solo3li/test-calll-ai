@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from livekit import api, rtc
+from queue_manager import run_queue_session
 
 load_dotenv()
 
@@ -494,14 +495,23 @@ async def distill_and_update_memory(user_id: int, room_name: str, started_at: fl
     except Exception as e:
         logger.error(f"Error in distill_and_update_memory for user {user_id}: {e}", exc_info=True)
 
-def build_dynamic_system_instruction(profile: dict, memory_card: str = "") -> str:
-    """Construct dynamic prompt incorporating dialect, gender, role, style, memory, and strict guardrails."""
+def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue_context: dict = None) -> str:
+    """Construct dynamic prompt incorporating dialect, gender, role, style, memory, queue fallback context, and strict guardrails."""
     gender = profile.get("gender", "female")
     dialect = profile.get("dialect", "egyptian")
     role = profile.get("persona_role", "customer_support")
     style = profile.get("speaking_style", "friendly")
     custom = (profile.get("custom_instructions") or "").strip()
     name = profile.get("name", "المساعد")
+
+    fallback_header = ""
+    if queue_context and queue_context.get("is_fallback"):
+        q_name = queue_context.get("queue_name", "طابور الخدمة")
+        q_time = queue_context.get("wait_seconds", 60)
+        fallback_header = (
+            f"[توجيه فوري ذو أولوية عليا للمساعد]: العميل انتظر في '{q_name}' لمدة {q_time} ثانية دون رد من الموظفين لانشغالهم. "
+            f"يجب أن تبدأ حديثك فوراً بالاعتذار بلطف واختصار عن مدة الانتظار، وطمأنته بأنك المساعد الذكي وجاهز لخدمته والرد على كل استفساراته أو تسجيل بياناته ليتواصل معه ممثلو {q_name} لاحقاً.\n\n"
+        )
 
     # 1. Gender & pronouns
     if gender == "male":
@@ -574,9 +584,9 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "") -> st
 5. الإجابة من نتائج الأدوات: لخص نتائج الأداة للمستخدم بأسلوبك ولهجتك المحددة، بوضوح وأرقام دقيقة ومباشرة.
 6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{custom_text}
 7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط.{memory_text}"""
-    return prompt
+    return (fallback_header + prompt).strip()
 
-async def run_agent_session(room_name: str, user_id: int = None, profile_data: dict = None):
+async def run_agent_session(room_name: str, user_id: int = None, profile_data: dict = None, queue_context: dict = None):
     channel_name = f"rooms:{room_name}"
     logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name} (user_id={user_id})")
     notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعدة الصوتية وتجهيز قاعدة المستندات والإجراءات...")
@@ -722,7 +732,7 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
 
     tools = [{"function_declarations": func_decls}]
 
-    system_instruction_text = build_dynamic_system_instruction(active_profile, memory_card_text)
+    system_instruction_text = build_dynamic_system_instruction(active_profile, memory_card_text, queue_context=queue_context)
     logger.info(f"Dynamic system instruction compiled (length={len(system_instruction_text)} chars)")
 
     live_config = types.LiveConnectConfig(
@@ -1094,11 +1104,15 @@ async def main():
                 room_name = raw_data
                 user_id = None
                 profile_data = None
+                is_queue = False
+                queue_data = None
                 try:
                     parsed = json.loads(raw_data)
                     room_name = parsed.get("room_name", raw_data)
                     user_id = parsed.get("user_id")
                     profile_data = parsed.get("profile")
+                    is_queue = parsed.get("is_queue", False)
+                    queue_data = parsed.get("queue_data")
                 except Exception:
                     pass
 
@@ -1111,15 +1125,30 @@ async def main():
                     logger.info(f"Session for room '{room_name}' is already running. Skipping duplicate dispatch.")
                     continue
 
-                logger.info(f"Received new agent dispatch for room: {room_name} (user_id={user_id}, profile={profile_data.get('name') if profile_data else 'None'})")
+                logger.info(f"Received new dispatch for room: {room_name} (user_id={user_id}, is_queue={is_queue})")
 
                 def make_cleanup(rm):
                     def _cleanup(fut):
-                        logger.info(f"Agent session task finished for room: {rm}")
+                        logger.info(f"Session task finished for room: {rm}")
                         active_sessions.pop(rm, None)
                     return _cleanup
 
-                task = asyncio.create_task(run_agent_session(room_name, user_id=user_id, profile_data=profile_data))
+                if is_queue:
+                    task = asyncio.create_task(run_queue_session(
+                        room_name=room_name,
+                        user_id=user_id,
+                        queue_data=queue_data,
+                        profile_data=profile_data,
+                        livekit_url=LIVEKIT_INTERNAL_URL,
+                        api_key=LIVEKIT_API_KEY,
+                        api_secret=LIVEKIT_API_SECRET,
+                        redis_client=r,
+                        notify_func=notify_centrifugo,
+                        fallback_agent_func=run_agent_session
+                    ))
+                else:
+                    task = asyncio.create_task(run_agent_session(room_name, user_id=user_id, profile_data=profile_data))
+
                 task.add_done_callback(make_cleanup(room_name))
                 active_sessions[room_name] = task
 

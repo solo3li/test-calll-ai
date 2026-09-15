@@ -288,3 +288,73 @@ class UserSIPAccount(models.Model):
         }
 
 
+class CallQueue(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='call_queues')
+    name = models.CharField(max_length=100, default='طابور المبيعات')
+    code = models.CharField(max_length=32, help_text='كود الطابور للاتصال والتحويل مثل 200 أو 300')
+    strategy = models.CharField(max_length=32, default='round_robin', choices=[
+        ('round_robin', 'رنين بالتناوب (Round-Robin)'),
+        ('ring_all', 'رنين جماعي متزامن (Ring-All)')
+    ])
+    ring_timeout_seconds = models.PositiveIntegerField(default=15, help_text='مدة رنين الموظف قبل الانتقال للتالي')
+    total_timeout_seconds = models.PositiveIntegerField(default=60, help_text='أقصى مدة انتظار للعميل قبل التحويل للذكاء الاصطناعي')
+    hold_music = models.FileField(upload_to='hold_music/', null=True, blank=True, help_text='ملف صوتي لموسيقى الانتظار')
+    fallback_action = models.CharField(max_length=32, default='ai_assistant', choices=[
+        ('ai_assistant', 'مساعد الذكاء الاصطناعي (Gemini Live)'),
+        ('hangup', 'إنهاء المكالمة')
+    ])
+    livekit_trunk_id = models.CharField(max_length=128, blank=True)
+    livekit_rule_id = models.CharField(max_length=128, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['code']
+        unique_together = ('user', 'code')
+
+    def __str__(self):
+        return f"{self.name} (كود: {self.code})"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "code": self.code,
+            "strategy": self.strategy,
+            "ring_timeout_seconds": self.ring_timeout_seconds,
+            "total_timeout_seconds": self.total_timeout_seconds,
+            "hold_music_url": self.hold_music.url if self.hold_music else None,
+            "fallback_action": self.fallback_action,
+            "is_active": self.is_active,
+            "members": [m.to_dict() for m in self.memberships.filter(is_active=True).select_related('sip_account')],
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
+        }
+
+
+class QueueMembership(models.Model):
+    queue = models.ForeignKey(CallQueue, on_delete=models.CASCADE, related_name='memberships')
+    sip_account = models.ForeignKey(UserSIPAccount, on_delete=models.CASCADE, related_name='queue_memberships')
+    order = models.PositiveIntegerField(default=0, help_text='ترتيب أولوية الموظف في التناوب')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'created_at']
+        unique_together = ('queue', 'sip_account')
+
+    def __str__(self):
+        return f"{self.sip_account.name} في {self.queue.name}"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "sip_account_id": self.sip_account_id,
+            "sip_account_name": self.sip_account.name,
+            "sip_username": self.sip_account.sip_username,
+            "order": self.order,
+            "is_active": self.is_active,
+        }
+
+
+
