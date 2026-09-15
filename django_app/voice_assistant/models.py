@@ -257,3 +257,34 @@ class CallSession(models.Model):
             "summary": self.summary or "",
         }
 
+class UserSIPAccount(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sip_accounts')
+    name = models.CharField(max_length=100, default='خط MicroSIP الافتراضي')
+    sip_username = models.CharField(max_length=64, unique=True)
+    sip_password = models.CharField(max_length=128)
+    livekit_trunk_id = models.CharField(max_length=128, blank=True)
+    livekit_rule_id = models.CharField(max_length=128, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        status = " [نشط]" if self.is_active else " [معطل]"
+        return f"{self.name} ({self.sip_username}){status}"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "sip_username": self.sip_username,
+            "sip_password": self.sip_password,
+            "livekit_trunk_id": self.livekit_trunk_id,
+            "livekit_rule_id": self.livekit_rule_id,
+            "is_active": self.is_active,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
+        }
+
+

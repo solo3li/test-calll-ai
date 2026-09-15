@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession
+from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession, UserSIPAccount
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -234,6 +234,18 @@ def livekit_webhook(request):
                 parts = participant_identity.split("_")
                 if len(parts) >= 2 and parts[1].isdigit():
                     user_id = int(parts[1])
+
+            # Also resolve user_id from room_name if dispatched by SIP rule: room_user_{user_id}_sip_...
+            if not user_id and room_name.startswith("room_user_"):
+                parts = room_name.split("_")
+                if len(parts) >= 3 and parts[2].isdigit():
+                    user_id = int(parts[2])
+
+            # Resolve active profile if not provided in metadata
+            if user_id and not profile:
+                active_prof = AgentProfile.objects.filter(user_id=user_id, is_active=True).first()
+                if active_prof:
+                    profile = active_prof.to_dict()
 
             logger.info(f"Human participant '{participant_identity}' (user_id={user_id}) joined room {room_name}. Queuing Voice Agent...")
             publish_to_centrifugo(channel, {
@@ -833,3 +845,144 @@ def reset_customer_memory(request):
         "message": "تمت إعادة تعيين ذاكرة العميل بنجاح.",
         "memory": memory.to_dict()
     })
+
+# ==================== LiveKit SIP & MicroSIP Management ====================
+
+async def _async_create_sip_trunk_and_rule(username, password, user_id, line_name, extension):
+    lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+    try:
+        trunk_info = api.SIPInboundTrunkInfo(
+            name=f"{line_name} (User {user_id})",
+            auth_username=username,
+            auth_password=password,
+            numbers=[str(extension), str(username)]
+        )
+        created_trunk = await lk.sip.create_sip_inbound_trunk(api.CreateSIPInboundTrunkRequest(trunk=trunk_info))
+        trunk_id = created_trunk.sip_trunk_id
+
+        rule_individual = api.SIPDispatchRuleIndividual(room_prefix=f"room_user_{user_id}_sip_")
+        rule = api.SIPDispatchRule(dispatch_rule_individual=rule_individual)
+        rule_req = api.CreateSIPDispatchRuleRequest(
+            name=f"Rule for User {user_id} - {username}",
+            rule=rule,
+            trunk_ids=[trunk_id]
+        )
+        created_rule = await lk.sip.create_sip_dispatch_rule(rule_req)
+        rule_id = created_rule.sip_dispatch_rule_id
+        return trunk_id, rule_id
+    finally:
+        await lk.aclose()
+
+async def _async_delete_sip_trunk_and_rule(trunk_id, rule_id):
+    lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+    try:
+        if rule_id:
+            try:
+                await lk.sip.delete_sip_dispatch_rule(api.DeleteSIPDispatchRuleRequest(sip_dispatch_rule_id=rule_id))
+            except Exception as e:
+                logger.warning(f"Error deleting LiveKit SIP dispatch rule {rule_id}: {e}")
+        if trunk_id:
+            try:
+                await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=trunk_id))
+            except Exception as e:
+                logger.warning(f"Error deleting LiveKit SIP trunk {trunk_id}: {e}")
+    finally:
+        await lk.aclose()
+
+@login_required(login_url='/login/')
+def list_sip_accounts(request):
+    """List all SIP lines for the authenticated user."""
+    accounts = UserSIPAccount.objects.filter(user=request.user)
+    return JsonResponse({
+        "status": "success",
+        "accounts": [a.to_dict() for a in accounts],
+        "server_info": {
+            "sip_server": "127.0.0.1:5060",
+            "sip_domain": "127.0.0.1",
+            "sip_port": 5060,
+        }
+    })
+
+@login_required(login_url='/login/')
+def create_sip_account(request):
+    """Create a new SIP trunk and dispatch rule in LiveKit and save to DB."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST
+
+        name = data.get('name', '').strip() or f"خط MicroSIP #{UserSIPAccount.objects.filter(user=request.user).count() + 1}"
+        
+        # Generate unique SIP username and password
+        unique_suffix = uuid.uuid4().hex[:6]
+        sip_username = f"sip_u{request.user.id}_{unique_suffix}"
+        sip_password = f"Pass_{uuid.uuid4().hex[:10]}"
+
+        # Auto-assign clean extension number starting from 1001
+        last_acc = UserSIPAccount.objects.order_by('-id').first()
+        next_ext = (1000 + (last_acc.id if last_acc else 0) + 1)
+        extension = str(next_ext)
+
+        import asyncio
+        trunk_id, rule_id = asyncio.run(_async_create_sip_trunk_and_rule(
+            username=sip_username,
+            password=sip_password,
+            user_id=request.user.id,
+            line_name=name,
+            extension=extension
+        ))
+
+        account = UserSIPAccount.objects.create(
+            user=request.user,
+            name=name,
+            sip_username=sip_username,
+            sip_password=sip_password,
+            livekit_trunk_id=trunk_id,
+            livekit_rule_id=rule_id,
+            is_active=True
+        )
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم إنشاء خط SIP بنجاح: {name}",
+            "account": account.to_dict(),
+            "config": {
+                "account_name": name,
+                "sip_server": "127.0.0.1:5060",
+                "sip_proxy": "127.0.0.1:5060",
+                "username": sip_username,
+                "domain": "127.0.0.1",
+                "login": sip_username,
+                "password": sip_password,
+                "extension": extension,
+                "instructions": f"في MicroSIP: اضغط Add Account وأدخل البيانات، ثم ألغِ تحديد خيار (Register with domain) و (Publish Presence) واضغط Save. يمكنك الاتصال بطلب الرقم {extension} أو {sip_username} للحديث مع الـ AI."
+            }
+        }, status=201)
+
+    except Exception as e:
+        logger.error(f"Error creating SIP account: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": f"فشل إنشاء خط SIP: {str(e)}"}, status=500)
+
+@login_required(login_url='/login/')
+def delete_sip_account(request, account_id):
+    """Delete SIP line from LiveKit and database."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    account = get_object_or_404(UserSIPAccount, id=account_id, user=request.user)
+    try:
+        import asyncio
+        asyncio.run(_async_delete_sip_trunk_and_rule(account.livekit_trunk_id, account.livekit_rule_id))
+    except Exception as e:
+        logger.warning(f"Failed to delete LiveKit trunk/rule: {e}")
+
+    account.delete()
+    return JsonResponse({
+        "status": "success",
+        "message": f"تم حذف خط SIP '{account.name}' بنجاح."
+    })
+

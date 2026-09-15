@@ -1,0 +1,4 @@
+FROM python:3.11-alpine
+WORKDIR /app
+COPY sip_proxy.py /app/sip_proxy.py
+CMD ["python", "-u", "/app/sip_proxy.py"]

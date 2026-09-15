@@ -44,5 +44,10 @@ urlpatterns = [
     # Customer Memory & Call History APIs
     path('api/memory/', views.get_customer_memory, name='get_customer_memory'),
     path('api/memory/reset/', views.reset_customer_memory, name='reset_customer_memory'),
+
+    # MicroSIP & VoIP Lines APIs
+    path('api/sip/', views.list_sip_accounts, name='list_sip_accounts'),
+    path('api/sip/create/', views.create_sip_account, name='create_sip_account'),
+    path('api/sip/<int:account_id>/delete/', views.delete_sip_account, name='delete_sip_account'),
 ]
 

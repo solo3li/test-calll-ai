@@ -615,6 +615,152 @@
       </div>
     </section>
 
+    <!-- LiveKit SIP & MicroSIP Section -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl">
+      <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
+        <div>
+          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <span class="text-blue-400 text-xl">📞</span>
+            خطوط وحسابات الاتصال الهاتفي (LiveKit SIP & MicroSIP)
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">
+            أنشئ خطوط اتصال SIP مخصصة لحسابك للاتصال بالمساعد الصوتي مباشرة من برامج السوفت فون مثل <span class="text-blue-300 font-semibold">MicroSIP</span> مع عزل كامل ومحادثة فورية بالصوت والذاكرة التراكمية.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button 
+            type="button" 
+            onclick="openNewSipModal()" 
+            class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-blue-600/20"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>خط SIP جديد</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- SIP Lines Table -->
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full text-right text-xs">
+          <thead>
+            <tr class="text-slate-400 border-b border-slate-800/80">
+              <th class="py-2.5 px-3">اسم الخط</th>
+              <th class="py-2.5 px-3">اسم مستخدم SIP</th>
+              <th class="py-2.5 px-3">خادم الاتصال (Server/Domain)</th>
+              <th class="py-2.5 px-3 text-center">الحالة</th>
+              <th class="py-2.5 px-3 text-center">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="sip-accounts-tbody" class="divide-y divide-slate-800/40">
+            <tr>
+              <td colspan="5" class="text-center py-6 text-slate-500">جاري تحميل خطوط SIP...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- New SIP Line Modal -->
+    <div id="new-sip-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <span>📞</span> إنشاء خط اتصال SIP جديد
+          </h3>
+          <button type="button" onclick="closeNewSipModal()" class="text-slate-400 hover:text-slate-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form id="new-sip-form" onsubmit="handleCreateSipAccount(event)" class="space-y-3">
+          <div>
+            <label class="block font-semibold text-slate-300 mb-1">اسم الخط / الوصف</label>
+            <input type="text" id="sip-line-name" required placeholder="مثال: خط مبيعات المتجر، كول سنتر 1" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-blue-500" />
+            <p class="text-[11px] text-slate-500 mt-1">سيتم توليد بيانات اعتماد مشفرة وتوجيه المكالمات إلى مساعدك الذكي تلقائياً.</p>
+          </div>
+
+          <div id="new-sip-error" class="hidden p-2 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-300 text-xs"></div>
+
+          <div class="flex justify-end gap-2 pt-3 border-t border-slate-800">
+            <button type="button" onclick="closeNewSipModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">إلغاء</button>
+            <button type="submit" id="btn-submit-sip" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition flex items-center gap-1.5">
+              <span>إنشاء الخط وتوليد الإعدادات</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- SIP Credentials / MicroSIP Setup Modal -->
+    <div id="sip-details-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <span>⚙️</span> بيانات ضبط برنامج MicroSIP
+          </h3>
+          <button type="button" onclick="closeSipDetailsModal()" class="text-slate-400 hover:text-slate-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="p-3 rounded-xl bg-blue-950/50 border border-blue-800/60 text-blue-200 space-y-1">
+          <div class="font-bold flex items-center gap-1.5 text-blue-300">
+            <span>💡</span> طريقة الضبط في برنامج MicroSIP:
+          </div>
+          <p class="text-[11px] leading-relaxed">
+            افتح برنامج MicroSIP واضغط السهم بجانب اسم الحساب واختر <span class="font-bold text-white">Add Account</span>، وانسخ الحقول التالية واضغط <span class="font-bold text-emerald-400">Save</span>. سيتحول الحساب إلى اللون الأخضر <span class="font-bold text-emerald-400">(Online)</span> مباشرة، ثم اكتب رقم التحويلة (Extension) واضغط زر الاتصال <span class="font-bold text-emerald-400">Call</span>.
+          </p>
+        </div>
+
+        <div class="space-y-2.5 font-mono text-[11px]">
+          <div>
+            <label class="block font-sans font-semibold text-slate-400 mb-0.5">Account Name:</label>
+            <div class="flex items-center gap-2">
+              <input type="text" readonly id="details-sip-name" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-slate-200" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-sans font-semibold text-slate-400 mb-0.5">SIP Server:</label>
+              <input type="text" readonly id="details-sip-server" value="127.0.0.1:5060" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-cyan-300" />
+            </div>
+            <div>
+              <label class="block font-sans font-semibold text-slate-400 mb-0.5">SIP Proxy:</label>
+              <input type="text" readonly id="details-sip-proxy" value="127.0.0.1:5060" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-cyan-300" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-sans font-semibold text-slate-400 mb-0.5">User / Login:</label>
+              <input type="text" readonly id="details-sip-user" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-amber-300 font-bold" />
+            </div>
+            <div>
+              <label class="block font-sans font-semibold text-slate-400 mb-0.5">Domain:</label>
+              <input type="text" readonly id="details-sip-domain" value="127.0.0.1" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-slate-200" />
+            </div>
+          </div>
+          <div>
+            <label class="block font-sans font-semibold text-slate-400 mb-0.5">Password:</label>
+            <div class="flex items-center gap-2">
+              <input type="text" readonly id="details-sip-pass" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-emerald-300 font-bold" />
+              <button type="button" onclick="copySipPassword()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-sans text-xs border border-slate-700 whitespace-nowrap">نسخ</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-3 border-t border-slate-800">
+          <button type="button" onclick="closeSipDetailsModal()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition">تم، فهمت</button>
+        </div>
+      </div>
+    </div>
+
     <!-- MCP Settings Modal -->
     <div id="mcp-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
       <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
@@ -783,6 +929,16 @@
         }
       }
       return cookieValue;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
 
     function appendTranscript(speaker, text) {
@@ -1940,12 +2096,175 @@
       }
     }
 
+    // ==========================================
+    // LiveKit SIP & MicroSIP Management Functions
+    // ==========================================
+    let currentSipAccounts = [];
+
+    async function loadSipAccounts() {
+      const tbody = document.getElementById('sip-accounts-tbody');
+      try {
+        const res = await fetch('/api/sip/');
+        const data = await res.json();
+        if (data.status !== 'success') return;
+
+        currentSipAccounts = data.accounts || [];
+        if (currentSipAccounts.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="5" class="text-center py-6 text-slate-500 text-xs">
+                لا توجد خطوط SIP مسجلة بعد. اضغط "خط SIP جديد" لإنشاء خط وربط برنامج MicroSIP للاتصال بالـ AI.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = currentSipAccounts.map(acc => `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="py-3 px-3 font-semibold text-slate-200">${escapeHtml(acc.name)}</td>
+            <td class="py-3 px-3 font-mono text-cyan-400 font-bold">${escapeHtml(acc.sip_username)}</td>
+            <td class="py-3 px-3 font-mono text-slate-300">127.0.0.1:5060</td>
+            <td class="py-3 px-3 text-center">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                جاهز للمكالمات
+              </span>
+            </td>
+            <td class="py-3 px-3 text-center">
+              <div class="flex items-center justify-center gap-1.5">
+                <button 
+                  type="button" 
+                  onclick="showSipAccountDetails('${acc.id}')"
+                  class="px-2.5 py-1 rounded-lg bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border border-blue-800 text-[11px] font-semibold transition"
+                  title="عرض بيانات الضبط لـ MicroSIP"
+                >
+                  إعدادات MicroSIP
+                </button>
+                <button 
+                  type="button" 
+                  onclick="deleteSipAccount('${acc.id}', '${escapeHtml(acc.name)}')"
+                  class="p-1 rounded-lg hover:bg-rose-950/80 hover:text-rose-300 text-slate-500 transition"
+                  title="حذف الخط"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('Error loading SIP accounts:', err);
+      }
+    }
+
+    function openNewSipModal() {
+      document.getElementById('sip-line-name').value = '';
+      document.getElementById('new-sip-error').classList.add('hidden');
+      document.getElementById('new-sip-modal').classList.remove('hidden');
+    }
+
+    function closeNewSipModal() {
+      document.getElementById('new-sip-modal').classList.add('hidden');
+    }
+
+    async function handleCreateSipAccount(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit-sip');
+      const errEl = document.getElementById('new-sip-error');
+      const name = document.getElementById('sip-line-name').value.trim();
+
+      btn.disabled = true;
+      btn.innerText = 'جاري إنشاء الخط في LiveKit...';
+      errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/sip/create/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          closeNewSipModal();
+          await loadSipAccounts();
+          openSipDetailsModal(data.config);
+        } else {
+          errEl.innerText = data.message || 'فشل إنشاء الخط';
+          errEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        errEl.innerText = 'حدث خطأ في الاتصال بالخادم.';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'إنشاء الخط وتوليد الإعدادات';
+      }
+    }
+
+    function openSipDetailsModal(cfg) {
+      document.getElementById('details-sip-name').value = cfg.account_name || 'AI Assistant';
+      document.getElementById('details-sip-server').value = cfg.sip_server || '127.0.0.1:5060';
+      document.getElementById('details-sip-proxy').value = cfg.sip_proxy || '127.0.0.1:5060';
+      document.getElementById('details-sip-user').value = cfg.username || '';
+      document.getElementById('details-sip-domain').value = cfg.domain || '127.0.0.1';
+      document.getElementById('details-sip-pass').value = cfg.password || '';
+      document.getElementById('sip-details-modal').classList.remove('hidden');
+    }
+
+    function showSipAccountDetails(id) {
+      const acc = currentSipAccounts.find(a => String(a.id) === String(id));
+      if (!acc) return;
+      openSipDetailsModal({
+        account_name: acc.name,
+        sip_server: '127.0.0.1:5060',
+        sip_proxy: '127.0.0.1:5060',
+        username: acc.sip_username,
+        domain: '127.0.0.1',
+        password: acc.sip_password
+      });
+    }
+
+    function closeSipDetailsModal() {
+      document.getElementById('sip-details-modal').classList.add('hidden');
+    }
+
+    function copySipPassword() {
+      const pass = document.getElementById('details-sip-pass').value;
+      navigator.clipboard.writeText(pass);
+      alert('تم نسخ كلمة المرور إلى الحافظة!');
+    }
+
+    async function deleteSipAccount(id, name) {
+      if (!confirm(`هل أنت متأكد من حذف خط SIP "${name}"؟ سيتوقف MicroSIP عن العمل بهذا الخط فوراً.`)) return;
+      try {
+        const res = await fetch(`/api/sip/${id}/delete/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          await loadSipAccounts();
+        } else {
+          alert('فشل الحذف: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء حذف خط SIP.');
+      }
+    }
+
     // Initialize lists on load
     loadDocuments();
     loadActions();
     loadProfiles();
     loadMcpServer();
     loadCustomerMemory();
+    loadSipAccounts();
   </script>
 </body>
 </html>
