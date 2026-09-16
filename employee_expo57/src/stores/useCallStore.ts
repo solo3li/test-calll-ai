@@ -214,7 +214,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         livekit_url: string;
         livekit_token: string;
         call_type: string;
-      }>("/api/calls/dial/", {
+      }>("/api/call-center/calls/dial/", {
         method: "POST",
         body: JSON.stringify({ target }),
       }, token);
@@ -335,7 +335,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         room_name: string;
         livekit_url: string;
         livekit_token: string;
-      }>("/api/calls/token/", {
+      }>("/api/call-center/calls/token/", {
         method: "POST",
         body: JSON.stringify({ room_name: incomingCall.roomName }),
       }, token);
@@ -378,7 +378,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     const { incomingCall } = get();
     const token = useAuthStore.getState().token;
     if (incomingCall?.roomName && token) {
-      apiRequest("/api/calls/hangup/", {
+      apiRequest("/api/call-center/calls/hangup/", {
         method: "POST",
         body: JSON.stringify({ room_name: incomingCall.roomName }),
       }, token).catch((err) => console.log("Decline hangup API error:", err));
@@ -406,7 +406,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     // Notify backend and all peers via /api/calls/hangup/
     const token = useAuthStore.getState().token;
     if (roomNameToHangup && token) {
-      apiRequest("/api/calls/hangup/", {
+      apiRequest("/api/call-center/calls/hangup/", {
         method: "POST",
         body: JSON.stringify({ room_name: roomNameToHangup }),
       }, token).catch((err) => console.log("Hangup API error:", err));

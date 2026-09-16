@@ -7,8 +7,6 @@ import json
 import logging
 import signal
 import requests
-import psycopg2
-from pgvector.psycopg2 import register_vector
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from google import genai
@@ -32,11 +30,8 @@ CENTRIFUGO_API_KEY = os.getenv("CENTRIFUGO_API_KEY", "centrifugo_api_key_1234567
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-POSTGRES_DB = os.getenv("POSTGRES_DB", "voice_db")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "voice_user")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "voice_password_123")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+DJANGO_API_URL = os.getenv("DJANGO_API_URL", "http://django:8000")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "voice-internal-secret-token-key-12345")
 
 def notify_centrifugo(channel: str, event: str, message: str = "", extra: dict = None):
     """Notify web client via Centrifugo WebSocket channel."""
@@ -68,91 +63,62 @@ def notify_centrifugo(channel: str, event: str, message: str = "", extra: dict =
     except Exception as e:
         logger.warning(f"Could not notify Centrifugo: {e}")
 
-def query_knowledge_base_sync(query: str, user_id: int, genai_client, top_k: int = 4) -> str:
-    """Query PostgreSQL pgvector database for user's documents semantically matching query."""
-    if not user_id:
-        return "لا توجد مستندات مرفوعة لهذا المستخدم."
-    try:
-        # 1. Embed query with Gemini gemini-embedding-001 (768 dimensions)
-        embed_res = genai_client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=query,
-            config=types.EmbedContentConfig(output_dimensionality=768)
-        )
-        if not embed_res or not embed_res.embeddings:
-            return "تعذر استخراج التضمين الدلالي للاستعلام."
-        query_vec = embed_res.embeddings[0].values
-
-        # 2. Query PostgreSQL pgvector
-        conn = psycopg2.connect(
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT
-        )
-        register_vector(conn)
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT content, (embedding <=> %s::vector) AS distance
-                FROM voice_assistant_documentchunk
-                WHERE user_id = %s
-                ORDER BY embedding <=> %s::vector
-                LIMIT %s;
-            """, (query_vec, user_id, query_vec, top_k))
-            rows = cur.fetchall()
-        conn.close()
-
-        if not rows:
-            return "لا توجد أي مستندات مرفوعة في قاعدة المعرفة الخاصة بك."
-
-        # Filter chunks by cosine distance <= 0.50 (similarity >= 0.50)
-        relevant = [r[0] for r in rows if r[1] <= 0.50]
-        if not relevant:
-            return "لم يتم العثور على أي معلومات متعلقة بهذا السؤال في المستندات المرفوعة الخاصة بك."
-
-        return "المعلومات الموثقة المستخرجة من مستنداتك:\n" + "\n---\n".join(relevant)
-
-    except Exception as e:
-        logger.error(f"Database knowledge retrieval error: {e}", exc_info=True)
-        return f"حدث خطأ أثناء البحث في المستندات: {e}"
-
-def fetch_user_actions_sync(user_id: int) -> dict[str, dict]:
-    """Fetch active custom HTTP actions for user from PostgreSQL."""
+def fetch_agent_bootstrap_sync(user_id: int) -> dict:
+    """Fetch complete agent bootstrap bundle (profile, actions, mcp, memory) via Django API."""
     if not user_id:
         return {}
     try:
-        conn = psycopg2.connect(
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT
-        )
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT name, description, url, method, headers, parameters_schema
-                FROM voice_assistant_useraction
-                WHERE user_id = %s AND is_active = TRUE;
-            """, (user_id,))
-            rows = cur.fetchall()
-        conn.close()
+        url = f"{DJANGO_API_URL}/api/agents/internal/bootstrap/"
+        headers = {
+            "X-Internal-API-Key": INTERNAL_API_KEY,
+            "Content-Type": "application/json"
+        }
+        res = requests.post(url, json={"user_id": user_id}, headers=headers, timeout=5)
+        if res.status_code == 200:
+            return res.json()
+        logger.error(f"Bootstrap API error ({res.status_code}): {res.text}")
+        return {}
+    except Exception as e:
+        logger.error(f"Failed to fetch bootstrap from Django API: {e}")
+        return {}
 
-        actions = {}
-        for r in rows:
-            name, desc, url, method, headers, schema = r
-            actions[name] = {
-                "name": name,
-                "description": desc,
-                "url": url,
-                "method": method or "GET",
-                "headers": headers or {},
-                "parameters_schema": schema or {}
-            }
+def query_knowledge_base_sync(query: str, user_id: int, genai_client=None, top_k: int = 4) -> str:
+    """Query user's documents semantically via Django Knowledge RAG API."""
+    if not user_id:
+        return "لا توجد مستندات مرفوعة لهذا المستخدم."
+    try:
+        url = f"{DJANGO_API_URL}/api/knowledge/internal/rag/"
+        headers = {
+            "X-Internal-API-Key": INTERNAL_API_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "user_id": user_id,
+            "query": query,
+            "top_k": top_k
+        }
+        res = requests.post(url, json=payload, headers=headers, timeout=6)
+        if res.status_code == 200:
+            data = res.json()
+            return data.get("text", "لم يتم العثور على أي معلومات متعلقة بهذا السؤال في المستندات المرفوعة.")
+        else:
+            logger.error(f"Knowledge RAG API error ({res.status_code}): {res.text}")
+            return "حدث خطأ أثناء البحث في المستندات عبر الواجهة البرمجية."
+    except Exception as e:
+        logger.error(f"Failed to query knowledge API: {e}", exc_info=True)
+        return f"حدث خطأ أثناء البحث في المستندات: {e}"
+
+def fetch_user_actions_sync(user_id: int) -> dict[str, dict]:
+    """Fetch active custom HTTP actions for user via Django API."""
+    if not user_id:
+        return {}
+    try:
+        bootstrap = fetch_agent_bootstrap_sync(user_id)
+        actions = bootstrap.get("actions", {})
         logger.info(f"Loaded {len(actions)} custom HTTP actions for user {user_id}: {list(actions.keys())}")
         return actions
     except Exception as e:
-        logger.error(f"Error fetching user actions from DB: {e}")
+        logger.error(f"Error fetching user actions: {e}")
         return {}
 
 def execute_http_action_sync(action_def: dict, args: dict) -> str:
@@ -197,40 +163,25 @@ def execute_http_action_sync(action_def: dict, args: dict) -> str:
         return f"حدث خطأ أثناء الاتصال بالخدمة: {str(e)}"
 
 def fetch_user_mcp_server_sync(user_id: int) -> dict:
-    """Fetch active external MCP server and cached tools for user from PostgreSQL."""
+    """Fetch active external MCP server and cached tools for user via Django API."""
     if not user_id:
         return {}
     try:
-        conn = psycopg2.connect(
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT
-        )
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT server_url, auth_token, cached_tools, name
-                FROM voice_assistant_usermcpserver
-                WHERE user_id = %s AND is_active = TRUE
-                ORDER BY id DESC LIMIT 1;
-            """, (user_id,))
-            row = cur.fetchone()
-        conn.close()
-
-        if row:
-            url, token, tools_raw, name = row
-            tools = tools_raw
-            if isinstance(tools_raw, str):
+        bootstrap = fetch_agent_bootstrap_sync(user_id)
+        servers = bootstrap.get("mcp_servers", [])
+        if servers:
+            s = servers[0]
+            tools = s.get("cached_tools", [])
+            if isinstance(tools, str):
                 try:
-                    tools = json.loads(tools_raw)
+                    tools = json.loads(tools)
                 except Exception:
                     tools = []
             return {
-                "server_url": url,
-                "auth_token": token or "",
+                "server_url": s.get("server_url", ""),
+                "auth_token": s.get("auth_token", ""),
                 "tools": tools or [],
-                "name": name or "خادم MCP"
+                "name": s.get("name", "خادم MCP")
             }
         return {}
     except Exception as e:
@@ -270,7 +221,7 @@ async def execute_mcp_tool_call(server_url: str, auth_token: str, tool_name: str
         return f"حدث خطأ أثناء الاتصال بنظام المتجر: {str(ex)}"
 
 def fetch_user_active_profile_sync(user_id: int) -> dict:
-    """Fetch active agent profile for user from PostgreSQL."""
+    """Fetch active agent profile for user via Django API."""
     default_profile = {
         "name": "نورهان - خدمة عملاء مصرية",
         "voice_name": "Aoede",
@@ -283,33 +234,17 @@ def fetch_user_active_profile_sync(user_id: int) -> dict:
     if not user_id:
         return default_profile
     try:
-        conn = psycopg2.connect(
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT
-        )
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT voice_name, gender, dialect, persona_role, speaking_style, custom_instructions, name
-                FROM voice_assistant_agentprofile
-                WHERE user_id = %s AND is_active = TRUE
-                LIMIT 1;
-            """, (user_id,))
-            row = cur.fetchone()
-        conn.close()
-
-        if row:
-            voice_name, gender, dialect, role, style, custom, name = row
+        bootstrap = fetch_agent_bootstrap_sync(user_id)
+        prof = bootstrap.get("profile")
+        if prof and isinstance(prof, dict):
             return {
-                "voice_name": voice_name or "Aoede",
-                "gender": gender or "female",
-                "dialect": dialect or "egyptian",
-                "persona_role": role or "customer_support",
-                "speaking_style": style or "friendly",
-                "custom_instructions": custom or "",
-                "name": name or "المساعد"
+                "voice_name": prof.get("voice_name") or "Aoede",
+                "gender": prof.get("gender") or "female",
+                "dialect": prof.get("dialect") or "egyptian",
+                "persona_role": prof.get("persona_role") or "customer_support",
+                "speaking_style": prof.get("speaking_style") or "friendly",
+                "custom_instructions": prof.get("custom_instructions") or "",
+                "name": prof.get("name") or "المساعد"
             }
         return default_profile
     except Exception as e:
@@ -317,34 +252,20 @@ def fetch_user_active_profile_sync(user_id: int) -> dict:
         return default_profile
 
 def fetch_customer_memory_sync(user_id: int) -> dict:
-    """Fetch customer memory (permanent profile + immediate summary) from PostgreSQL."""
+    """Fetch customer memory (permanent profile + immediate summary) via Django API."""
     if not user_id:
         return {}
     try:
-        conn = psycopg2.connect(
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT
-        )
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT permanent_profile, last_interaction_summary, last_interaction_at, total_calls_count
-                FROM voice_assistant_customermemory
-                WHERE user_id = %s LIMIT 1;
-            """, (user_id,))
-            row = cur.fetchone()
-        conn.close()
+        bootstrap = fetch_agent_bootstrap_sync(user_id)
+        mem = bootstrap.get("customer_memory", {})
+        prof = mem.get("permanent_profile") or {}
+        if isinstance(prof, str):
+            try:
+                prof = json.loads(prof)
+            except Exception:
+                prof = {}
+        summary = mem.get("last_interaction_summary", "")
 
-        if not row:
-            return {"permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
-
-        profile_raw, summary, last_at, count = row
-        prof = profile_raw if isinstance(profile_raw, dict) else (json.loads(profile_raw) if profile_raw else {})
-        summary = summary or ""
-
-        # Format compact memory card (~100-150 tokens max)
         parts = []
         if prof:
             items = []
@@ -365,8 +286,7 @@ def fetch_customer_memory_sync(user_id: int) -> dict:
                 parts.append("البيانات الدائمة للعميل:\n- " + "\n- ".join(items))
 
         if summary:
-            time_str = last_at.strftime("%Y-%m-%d %H:%M") if last_at else "مكالمة سابقة"
-            parts.append(f"الذاكرة اللحظية من آخر تواصل ({time_str}):\n{summary}")
+            parts.append(f"الذاكرة اللحظية من آخر تواصل:\n{summary}")
 
         card_text = ""
         if parts:
@@ -376,20 +296,19 @@ def fetch_customer_memory_sync(user_id: int) -> dict:
             "permanent_profile": prof,
             "last_interaction_summary": summary,
             "card_text": card_text,
-            "total_calls_count": count or 0
+            "total_calls_count": mem.get("total_calls_count", 0)
         }
     except Exception as e:
         logger.error(f"Error fetching customer memory for user {user_id}: {e}")
         return {"permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
 
 def save_call_session_and_update_memory_sync(user_id: int, room_name: str, started_at: float, transcript_text: str, summary: str, updated_profile: dict, outbound_context: dict = None):
-    """Persist completed CallSession and update CustomerMemory in PostgreSQL."""
+    """Persist completed CallSession and update CustomerMemory via Django CRM API."""
     if not user_id:
         return
     try:
-        now_dt = datetime.datetime.now(datetime.timezone.utc)
-        start_dt = datetime.datetime.fromtimestamp(started_at, tz=datetime.timezone.utc)
-        duration = max(0, int((now_dt - start_dt).total_seconds()))
+        now_ts = time.time()
+        duration = max(0, int(now_ts - started_at))
 
         direction = 'inbound'
         destination_phone = ''
@@ -402,48 +321,30 @@ def save_call_session_and_update_memory_sync(user_id: int, room_name: str, start
             destination_phone = str(outbound_context.get("destination_phone") or "")
             call_goal = str(outbound_context.get("call_goal") or "")
 
-        conn = psycopg2.connect(
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT
-        )
-        with conn.cursor() as cur:
-            # 1. Check if CallSession already exists for this room_name (e.g. pre-created by outbound trigger)
-            cur.execute("SELECT id FROM voice_assistant_callsession WHERE room_name = %s LIMIT 1;", (room_name,))
-            existing_row = cur.fetchone()
-            if existing_row:
-                cur.execute("""
-                    UPDATE voice_assistant_callsession
-                    SET ended_at = %s, duration_seconds = %s, transcript_text = %s, summary = %s
-                    WHERE id = %s;
-                """, (now_dt, duration, transcript_text, summary, existing_row[0]))
-            else:
-                cur.execute("""
-                    INSERT INTO voice_assistant_callsession 
-                    (user_id, room_name, direction, destination_phone, call_goal, started_at, ended_at, duration_seconds, transcript_text, summary)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                """, (user_id, room_name, direction, destination_phone, call_goal, start_dt, now_dt, duration, transcript_text, summary))
-
-            # 2. Upsert CustomerMemory
-            cur.execute("""
-                INSERT INTO voice_assistant_customermemory
-                (user_id, permanent_profile, last_interaction_summary, last_interaction_at, total_calls_count, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, 1, %s, %s)
-                ON CONFLICT (user_id) DO UPDATE SET
-                    permanent_profile = EXCLUDED.permanent_profile,
-                    last_interaction_summary = EXCLUDED.last_interaction_summary,
-                    last_interaction_at = EXCLUDED.last_interaction_at,
-                    total_calls_count = voice_assistant_customermemory.total_calls_count + 1,
-                    updated_at = EXCLUDED.updated_at;
-            """, (user_id, json.dumps(updated_profile, ensure_ascii=False), summary, now_dt, now_dt, now_dt))
-
-        conn.commit()
-        conn.close()
-        logger.info(f"Successfully saved CallSession & updated CustomerMemory for user {user_id}")
+        url = f"{DJANGO_API_URL}/api/crm/internal/complete-call/"
+        headers = {
+            "X-Internal-API-Key": INTERNAL_API_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "user_id": user_id,
+            "room_name": room_name,
+            "started_at": started_at,
+            "duration_seconds": duration,
+            "direction": direction,
+            "destination_phone": destination_phone,
+            "call_goal": call_goal,
+            "transcript_text": transcript_text,
+            "summary": summary,
+            "permanent_profile": updated_profile
+        }
+        res = requests.post(url, json=payload, headers=headers, timeout=5)
+        if res.status_code == 200:
+            logger.info(f"Successfully saved CallSession & CustomerMemory via Django CRM API for user {user_id}")
+        else:
+            logger.error(f"Error saving CallSession via CRM API ({res.status_code}): {res.text}")
     except Exception as e:
-        logger.error(f"Error saving CallSession and updating memory: {e}", exc_info=True)
+        logger.error(f"Failed to save call session via Django API: {e}", exc_info=True)
 
 async def distill_and_update_memory(user_id: int, room_name: str, started_at: float, messages: list[dict], current_profile: dict, genai_client, outbound_context: dict = None):
     """Background task to extract permanent profile facts and distill short-term episode summary."""
@@ -1212,11 +1113,11 @@ async def transfer_events_worker(r: aioredis.Redis, shutdown_event: asyncio.Even
             await asyncio.sleep(1)
 
 async def main():
-    logger.info("Starting Standalone Voice Agent Service (with RAG & pgvector Support)...")
+    logger.info("Starting Standalone Voice Agent Service (Decoupled Modular Architecture via Django API)...")
     logger.info(f"LiveKit Internal URL: {LIVEKIT_INTERNAL_URL}")
     logger.info(f"Centrifugo API URL: {CENTRIFUGO_HTTP_API_URL}")
     logger.info(f"Redis URL: {REDIS_URL}")
-    logger.info(f"Postgres: {POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
+    logger.info(f"Django API URL: {DJANGO_API_URL}")
 
     r = aioredis.from_url(REDIS_URL, decode_responses=True)
     active_sessions: dict[str, asyncio.Task] = {}

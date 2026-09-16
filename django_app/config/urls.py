@@ -5,6 +5,11 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/knowledge/', include('knowledge.urls')),
+    path('api/agents/', include('agents.urls')),
+    path('api/call-center/', include('call_center.urls')),
+    path('api/telephony/', include('telephony.urls')),
+    path('api/crm/', include('crm.urls')),
     path('', include('voice_assistant.urls')),
 ]
 

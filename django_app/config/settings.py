@@ -27,6 +27,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'knowledge.apps.KnowledgeConfig',
+    'agents.apps.AgentsConfig',
+    'call_center.apps.CallCenterConfig',
+    'telephony.apps.TelephonyConfig',
+    'crm.apps.CrmConfig',
     'voice_assistant.apps.VoiceAssistantConfig',
 ]
 
@@ -120,3 +125,6 @@ CENTRIFUGO_WS_URL = os.getenv('CENTRIFUGO_WS_URL', 'wss://centrifugo.localhost/c
 
 # Google Gemini
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+
+# Internal Agent Service Authentication Key
+INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', 'voice-internal-secret-token-key-12345')

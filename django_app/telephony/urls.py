@@ -1,0 +1,11 @@
+from django.urls import path
+from . import views
+
+app_name = 'telephony'
+
+urlpatterns = [
+    path('trunk/', views.get_outbound_trunk, name='get_outbound_trunk'),
+    path('trunk/save/', views.save_outbound_trunk, name='save_outbound_trunk'),
+    path('trunk/<int:trunk_id>/delete/', views.delete_outbound_trunk, name='delete_outbound_trunk'),
+    path('ai-call/', views.trigger_ai_outbound_call, name='trigger_ai_outbound_call'),
+]

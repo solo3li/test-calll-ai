@@ -1,0 +1,512 @@
+import re
+import json
+import asyncio
+import logging
+from django.conf import settings
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.utils import timezone
+
+from .models import AgentProfile, UserAction, UserMCPServer
+
+logger = logging.getLogger(__name__)
+
+GOOGLE_VOICES = [
+    {"name": "Aoede", "gender": "female", "style": "Brisk (نشيطة وسريعة)", "tag": "افتراضي"},
+    {"name": "Kore", "gender": "female", "style": "Firm (واثقة وحازمة)", "tag": "رسمي"},
+    {"name": "Leda", "gender": "female", "style": "Youthful (شابة وودودة)", "tag": "ودود"},
+    {"name": "Fenrir", "gender": "male", "style": "Deep (عميق وهادئ)", "tag": "رسمي"},
+    {"name": "Puck", "gender": "male", "style": "Cheerful (مرح وحيوي)", "tag": "حيوي"},
+    {"name": "Charon", "gender": "male", "style": "Calm (هادئ ووقور)", "tag": "هادئ"},
+    {"name": "Callisto", "gender": "female", "style": "Warm (دافئة ومريحة)", "tag": "دافئ"},
+    {"name": "Sulafat", "gender": "female", "style": "Gentle (رقيقة وواضحة)", "tag": "رقيق"},
+    {"name": "Zubenelgenubi", "gender": "male", "style": "Casual (تلقائي وعادي)", "tag": "تلقائي"},
+    {"name": "Sadachbia", "gender": "male", "style": "Lively (حيوي ومتفاعل)", "tag": "حيوي"},
+    {"name": "Zephyr", "gender": "male", "style": "Bright (منعش ومشرق)", "tag": "منعش"},
+]
+
+def verify_internal_api_key(request) -> bool:
+    """Validate internal request from AI agent service."""
+    expected_key = getattr(settings, 'INTERNAL_API_KEY', 'default-internal-secret-key-12345')
+    auth_header = request.headers.get('X-Internal-API-Key') or request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(' ', 1)[1].strip()
+    else:
+        token = auth_header.strip()
+    return token == expected_key or request.user.is_authenticated
+
+# ==================== Agent Profiles Management ====================
+
+@login_required(login_url='/login/')
+def list_profiles(request):
+    """List all agent profiles for user, active profile, and options metadata."""
+    profiles = list(AgentProfile.objects.filter(user=request.user))
+    if not profiles:
+        default_prof = AgentProfile.objects.create(
+            user=request.user,
+            name="نورهان - خدمة عملاء مصرية",
+            voice_name="Aoede",
+            gender="female",
+            dialect="egyptian",
+            persona_role="customer_support",
+            speaking_style="friendly",
+            is_active=True
+        )
+        profiles = [default_prof]
+
+    active_p = next((p for p in profiles if p.is_active), profiles[0])
+
+    return JsonResponse({
+        "status": "success",
+        "profiles": [p.to_dict() for p in profiles],
+        "active_profile": active_p.to_dict(),
+        "google_voices": GOOGLE_VOICES,
+        "dialects": [{"id": d[0], "label": d[1]} for d in AgentProfile.DIALECT_CHOICES],
+        "roles": [{"id": r[0], "label": r[1]} for r in AgentProfile.ROLE_CHOICES],
+        "styles": [{"id": s[0], "label": s[1]} for s in AgentProfile.STYLE_CHOICES],
+        "genders": [{"id": g[0], "label": g[1]} for g in AgentProfile.GENDER_CHOICES],
+    })
+
+@login_required(login_url='/login/')
+def create_profile(request):
+    """Create a new agent persona profile for user."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        name = data.get('name', '').strip() or 'بروفايل مخصص'
+        voice_name = data.get('voice_name', 'Aoede').strip()
+        gender = data.get('gender', 'female')
+        dialect = data.get('dialect', 'egyptian')
+        persona_role = data.get('persona_role', 'customer_support')
+        speaking_style = data.get('speaking_style', 'friendly')
+        custom_instructions = data.get('custom_instructions', '').strip()
+        is_active = bool(data.get('is_active', True))
+
+        profile = AgentProfile.objects.create(
+            user=request.user,
+            name=name,
+            voice_name=voice_name,
+            gender=gender,
+            dialect=dialect,
+            persona_role=persona_role,
+            speaking_style=speaking_style,
+            custom_instructions=custom_instructions,
+            is_active=is_active
+        )
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم حفظ البروفايل '{profile.name}' بنجاح.",
+            "profile": profile.to_dict()
+        }, status=201)
+    except Exception as e:
+        logger.error(f"Error creating agent profile: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+@login_required(login_url='/login/')
+def update_profile(request, profile_id):
+    """Update an existing agent persona profile."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, user=request.user)
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        if 'name' in data and data['name'].strip():
+            profile.name = data['name'].strip()
+        if 'voice_name' in data and data['voice_name'].strip():
+            profile.voice_name = data['voice_name'].strip()
+        if 'gender' in data:
+            profile.gender = data['gender']
+        if 'dialect' in data:
+            profile.dialect = data['dialect']
+        if 'persona_role' in data:
+            profile.persona_role = data['persona_role']
+        if 'speaking_style' in data:
+            profile.speaking_style = data['speaking_style']
+        if 'custom_instructions' in data:
+            profile.custom_instructions = data['custom_instructions'].strip()
+        if 'is_active' in data:
+            profile.is_active = bool(data['is_active'])
+
+        profile.save()
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم تحديث البروفايل '{profile.name}' بنجاح.",
+            "profile": profile.to_dict()
+        })
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+@login_required(login_url='/login/')
+def activate_profile(request, profile_id):
+    """Set a specific profile as the active one for future calls."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, user=request.user)
+    profile.is_active = True
+    profile.save()
+    return JsonResponse({
+        "status": "success",
+        "message": f"تم تفعيل البروفايل '{profile.name}' للمكالمات القادمة.",
+        "profile": profile.to_dict()
+    })
+
+@login_required(login_url='/login/')
+def delete_profile(request, profile_id):
+    """Delete an agent persona profile."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, user=request.user)
+    was_active = profile.is_active
+    name = profile.name
+    profile.delete()
+
+    if was_active:
+        fallback = AgentProfile.objects.filter(user=request.user).first()
+        if fallback:
+            fallback.is_active = True
+            fallback.save()
+
+    return JsonResponse({"status": "success", "message": f"تم حذف البروفايل '{name}' بنجاح."})
+
+# ==================== User Custom Actions ====================
+
+@login_required(login_url='/login/')
+def list_actions(request):
+    """List all custom HTTP actions defined by the current user."""
+    actions = UserAction.objects.filter(user=request.user).order_by('-created_at')
+    data = []
+    for a in actions:
+        data.append({
+            "id": a.id,
+            "name": a.name,
+            "description": a.description,
+            "url": a.url,
+            "method": a.method,
+            "headers": a.headers,
+            "parameters_schema": a.parameters_schema,
+            "is_active": a.is_active,
+            "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
+        })
+    return JsonResponse({"status": "success", "actions": data})
+
+@login_required(login_url='/login/')
+def create_action(request):
+    """Create a new custom HTTP action for the current user."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        url = data.get('url', '').strip()
+        method = data.get('method', 'GET').upper().strip()
+
+        if not name or not description or not url:
+            return JsonResponse({"status": "error", "message": "الاسم والوصف والرابط حقول مطلوبة."}, status=400)
+
+        clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', name).lower().strip('_')
+        if not clean_name:
+            clean_name = "custom_action"
+
+        headers = data.get('headers', {})
+        if isinstance(headers, str):
+            try:
+                headers = json.loads(headers) if headers.strip() else {}
+            except Exception:
+                headers = {}
+
+        parameters_schema = data.get('parameters_schema', {})
+        if isinstance(parameters_schema, str):
+            try:
+                parameters_schema = json.loads(parameters_schema) if parameters_schema.strip() else {}
+            except Exception:
+                parameters_schema = {}
+
+        action = UserAction.objects.create(
+            user=request.user,
+            name=clean_name,
+            description=description,
+            url=url,
+            method=method,
+            headers=headers,
+            parameters_schema=parameters_schema,
+            is_active=True
+        )
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تمت إضافة الإجراء '{clean_name}' بنجاح.",
+            "action": {
+                "id": action.id,
+                "name": action.name,
+                "description": action.description,
+                "url": action.url,
+                "method": action.method,
+                "is_active": action.is_active,
+                "created_at": action.created_at.strftime("%Y-%m-%d %H:%M"),
+            }
+        }, status=201)
+
+    except Exception as e:
+        logger.error(f"Error creating user action: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": f"حدث خطأ أثناء حفظ الإجراء: {str(e)}"}, status=400)
+
+@login_required(login_url='/login/')
+def toggle_action(request, action_id):
+    """Toggle action active status."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    action = get_object_or_404(UserAction, id=action_id, user=request.user)
+    action.is_active = not action.is_active
+    action.save()
+    status_str = "تفعيل" if action.is_active else "تعطيل"
+    return JsonResponse({
+        "status": "success",
+        "message": f"تم {status_str} الإجراء '{action.name}' بنجاح.",
+        "is_active": action.is_active
+    })
+
+@login_required(login_url='/login/')
+def delete_action(request, action_id):
+    """Delete a custom HTTP action."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    action = get_object_or_404(UserAction, id=action_id, user=request.user)
+    name = action.name
+    action.delete()
+    return JsonResponse({"status": "success", "message": f"تم حذف الإجراء '{name}' بنجاح."})
+
+# ==================== User External MCP Server ====================
+
+async def _fetch_mcp_tools_async(url: str, auth_token: str = ""):
+    """Connect to MCP SSE server, perform handshake, and list tools."""
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
+
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    async with sse_client(url, headers=headers) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tool_list = await session.list_tools()
+            tools = []
+            for t in tool_list.tools:
+                schema = getattr(t, 'input_schema', None) or getattr(t, 'inputSchema', None) or {}
+                tools.append({
+                    "name": t.name,
+                    "description": t.description or "",
+                    "parameters": schema
+                })
+            return tools
+
+def fetch_mcp_tools_sync(url: str, auth_token: str = "", timeout: float = 6.0):
+    """Fetch tool list from an external MCP SSE server synchronously with timeout."""
+    async def _run():
+        return await asyncio.wait_for(_fetch_mcp_tools_async(url, auth_token), timeout=timeout)
+    return asyncio.run(_run())
+
+@login_required(login_url='/login/')
+def get_mcp_server(request):
+    """Get the current user's MCP server configuration and discovered tools."""
+    server = UserMCPServer.objects.filter(user=request.user).first()
+    if not server:
+        server = UserMCPServer.objects.create(
+            user=request.user,
+            name="خادم المتجر الرئيسي (FastMCP)",
+            server_url="http://mock-store:8002/sse",
+            is_active=True
+        )
+        try:
+            tools = fetch_mcp_tools_sync(server.server_url, server.auth_token)
+            server.cached_tools = tools
+            server.last_synced_at = timezone.now()
+            server.save()
+        except Exception as e:
+            logger.warning(f"Initial MCP sync failed: {e}")
+
+    return JsonResponse({
+        "status": "success",
+        "server": server.to_dict()
+    })
+
+@login_required(login_url='/login/')
+def save_mcp_server(request):
+    """Update MCP server configuration and trigger an automatic handshake sync."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        name = data.get('name', '').strip() or 'خادم FastMCP'
+        server_url = data.get('server_url', '').strip()
+        auth_token = data.get('auth_token', '').strip()
+        is_active = bool(data.get('is_active', True))
+
+        if not server_url:
+            return JsonResponse({"status": "error", "message": "رابط الخادم مطلوب."}, status=400)
+
+        server, _ = UserMCPServer.objects.get_or_create(user=request.user)
+        server.name = name
+        server.server_url = server_url
+        server.auth_token = auth_token
+        server.is_active = is_active
+
+        try:
+            tools = fetch_mcp_tools_sync(server_url, auth_token, timeout=5.0)
+            server.cached_tools = tools
+            server.last_synced_at = timezone.now()
+            sync_msg = f"تم الاتصال واكتشاف {len(tools)} أداة بنجاح."
+        except Exception as sync_err:
+            sync_msg = f"تم حفظ الرابط، ولكن تعذر الاتصال بالخادم: {sync_err}"
+
+        server.save()
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم حفظ إعدادات MCP بنجاح. {sync_msg}",
+            "server": server.to_dict()
+        })
+    except Exception as e:
+        logger.error(f"Error saving MCP server: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+@login_required(login_url='/login/')
+def sync_mcp_server(request):
+    """Trigger an on-demand re-sync of MCP tools from the remote server."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    server = UserMCPServer.objects.filter(user=request.user).first()
+    if not server:
+        return JsonResponse({"status": "error", "message": "لا يوجد خادم MCP مسجل."}, status=404)
+
+    try:
+        tools = fetch_mcp_tools_sync(server.server_url, server.auth_token, timeout=8.0)
+        server.cached_tools = tools
+        server.last_synced_at = timezone.now()
+        server.save()
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم تحديث الأدوات بنجاح. تم اكتشاف {len(tools)} أداة.",
+            "server": server.to_dict()
+        })
+    except Exception as e:
+        logger.error(f"Failed to sync MCP tools from {server.server_url}: {e}")
+        return JsonResponse({
+            "status": "error",
+            "message": f"فشل الاتصال بخادم MCP: {str(e)}"
+        }, status=502)
+
+@login_required(login_url='/login/')
+def toggle_mcp_server(request):
+    """Toggle whether MCP tools are enabled in Gemini Live session."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    server = UserMCPServer.objects.filter(user=request.user).first()
+    if not server:
+        return JsonResponse({"status": "error", "message": "لا يوجد خادم مسجل."}, status=404)
+
+    server.is_active = not server.is_active
+    server.save()
+    status_str = "تفعيل" if server.is_active else "تعطيل"
+    return JsonResponse({
+        "status": "success",
+        "message": f"تم {status_str} أدوات خادم MCP بنجاح.",
+        "is_active": server.is_active
+    })
+
+@login_required(login_url='/login/')
+def delete_mcp_server(request):
+    """Delete the MCP server configuration."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    UserMCPServer.objects.filter(user=request.user).delete()
+    return JsonResponse({"status": "success", "message": "تم حذف إعدادات خادم MCP بنجاح."})
+
+# ==================== Internal AI Agent Bootstrap API ====================
+
+@csrf_exempt
+def api_internal_agent_bootstrap(request):
+    """
+    Consolidated internal bootstrap API for AI Voice Agent session.
+    Fetches active profile, custom HTTP actions, MCP servers, and customer memory in a single fast call.
+    Accepts: { user_id: int }
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    if not verify_internal_api_key(request):
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        user_id = data.get('user_id')
+        user = User.objects.filter(id=user_id).first() if user_id else User.objects.first()
+        if not user:
+            return JsonResponse({"status": "error", "message": "No valid user found"}, status=404)
+
+        # 1. Agent Profile
+        profile = AgentProfile.objects.filter(user=user, is_active=True).first()
+        profile_data = profile.to_dict() if profile else {
+            "name": "البروفايل الافتراضي",
+            "voice_name": "Aoede",
+            "gender": "female",
+            "dialect": "egyptian",
+            "persona_role": "customer_support",
+            "speaking_style": "friendly",
+            "custom_instructions": "",
+            "is_active": True
+        }
+
+        # 2. Custom HTTP Actions
+        actions = UserAction.objects.filter(user=user, is_active=True)
+        actions_dict = {}
+        for a in actions:
+            actions_dict[a.name] = {
+                "name": a.name,
+                "description": a.description,
+                "url": a.url,
+                "method": a.method,
+                "headers": a.headers or {},
+                "parameters_schema": a.parameters_schema or {}
+            }
+
+        # 3. External MCP Servers
+        mcp_servers = UserMCPServer.objects.filter(user=user, is_active=True)
+        mcp_list = [s.to_dict() for s in mcp_servers]
+
+        # 4. Customer Memory (Lazy import to avoid circular dependency)
+        from crm.models import CustomerMemory
+        memory = CustomerMemory.objects.filter(user=user).first()
+        memory_data = memory.to_dict() if memory else {
+            "permanent_profile": "",
+            "last_interaction_summary": "",
+            "total_calls_count": 0
+        }
+
+        return JsonResponse({
+            "status": "success",
+            "user_id": user.id,
+            "profile": profile_data,
+            "actions": actions_dict,
+            "mcp_servers": mcp_list,
+            "customer_memory": memory_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error in api_internal_agent_bootstrap: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)

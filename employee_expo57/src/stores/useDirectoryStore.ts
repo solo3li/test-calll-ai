@@ -52,7 +52,7 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
         status: string;
         employees: EmployeeProfile[];
         queues: CallQueueItem[];
-      }>("/api/employees/", { method: "GET" }, token);
+      }>("/api/call-center/employees/", { method: "GET" }, token);
 
       if (data.status === "success") {
         set({

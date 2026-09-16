@@ -1,0 +1,29 @@
+from django.urls import path
+from . import views
+
+app_name = 'agents'
+
+urlpatterns = [
+    # Voice, Dialect & Persona Profiles APIs
+    path('profiles/', views.list_profiles, name='list_profiles'),
+    path('profiles/create/', views.create_profile, name='create_profile'),
+    path('profiles/<int:profile_id>/activate/', views.activate_profile, name='activate_profile'),
+    path('profiles/<int:profile_id>/update/', views.update_profile, name='update_profile'),
+    path('profiles/<int:profile_id>/delete/', views.delete_profile, name='delete_profile'),
+
+    # Actions Management APIs
+    path('actions/', views.list_actions, name='list_actions'),
+    path('actions/create/', views.create_action, name='create_action'),
+    path('actions/<int:action_id>/toggle/', views.toggle_action, name='toggle_action'),
+    path('actions/<int:action_id>/delete/', views.delete_action, name='delete_action'),
+
+    # External FastMCP Server APIs
+    path('mcp/', views.get_mcp_server, name='get_mcp_server'),
+    path('mcp/save/', views.save_mcp_server, name='save_mcp_server'),
+    path('mcp/sync/', views.sync_mcp_server, name='sync_mcp_server'),
+    path('mcp/toggle/', views.toggle_mcp_server, name='toggle_mcp_server'),
+    path('mcp/delete/', views.delete_mcp_server, name='delete_mcp_server'),
+
+    # Internal AI Agent Session Bootstrap API
+    path('internal/bootstrap/', views.api_internal_agent_bootstrap, name='api_internal_agent_bootstrap'),
+]

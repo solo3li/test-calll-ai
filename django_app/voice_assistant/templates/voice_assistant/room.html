@@ -1410,7 +1410,7 @@
 
     async function loadDocuments() {
       try {
-        const res = await fetch('/api/documents/');
+        const res = await fetch('/api/knowledge/documents/');
         const data = await res.json();
         if (data.status === 'success') {
           renderDocuments(data.documents);
@@ -1476,7 +1476,7 @@
       uploadStatus.classList.remove('hidden');
 
       try {
-        const res = await fetch('/api/documents/upload/', {
+        const res = await fetch('/api/knowledge/documents/upload/', {
           method: 'POST',
           headers: {
             'X-CSRFToken': getCookie('csrftoken'),
@@ -1506,7 +1506,7 @@
     async function deleteDocument(docId) {
       if (!confirm('هل أنت متأكد من رغبتك في حذف هذا المستند وحذف جميع مقاطعه الدلالية؟')) return;
       try {
-        const res = await fetch(`/api/documents/${docId}/delete/`, {
+        const res = await fetch(`/api/knowledge/documents/${docId}/delete/`, {
           method: 'POST',
           headers: {
             'X-CSRFToken': getCookie('csrftoken'),
@@ -1541,7 +1541,7 @@
 
     async function loadActions() {
       try {
-        const res = await fetch('/api/actions/');
+        const res = await fetch('/api/agents/actions/');
         const data = await res.json();
         if (data.status === 'success') {
           renderActions(data.actions);
@@ -1641,7 +1641,7 @@
       btnSave.innerText = 'جاري الحفظ...';
 
       try {
-        const res = await fetch('/api/actions/create/', {
+        const res = await fetch('/api/agents/actions/create/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1675,7 +1675,7 @@
 
     async function toggleAction(actionId) {
       try {
-        const res = await fetch(`/api/actions/${actionId}/toggle/`, {
+        const res = await fetch(`/api/agents/actions/${actionId}/toggle/`, {
           method: 'POST',
           headers: {
             'X-CSRFToken': getCookie('csrftoken')
@@ -1695,7 +1695,7 @@
     async function deleteAction(actionId) {
       if (!confirm('هل أنت متأكد من حذف هذا الإجراء؟')) return;
       try {
-        const res = await fetch(`/api/actions/${actionId}/delete/`, {
+        const res = await fetch(`/api/agents/actions/${actionId}/delete/`, {
           method: 'POST',
           headers: {
             'X-CSRFToken': getCookie('csrftoken')
@@ -1728,7 +1728,7 @@
 
     async function loadMcpServer() {
       try {
-        const res = await fetch('/api/mcp/');
+        const res = await fetch('/api/agents/mcp/');
         const data = await res.json();
         if (data.status === 'success') {
           currentMcpServer = data.server;
@@ -1837,7 +1837,7 @@
       mcpSyncAlert.classList.add('hidden');
 
       try {
-        const res = await fetch('/api/mcp/sync/', {
+        const res = await fetch('/api/agents/mcp/sync/', {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -1866,7 +1866,7 @@
     async function toggleMcpActive() {
       if (!currentMcpServer) return;
       try {
-        const res = await fetch('/api/mcp/toggle/', {
+        const res = await fetch('/api/agents/mcp/toggle/', {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -1886,7 +1886,7 @@
       }
 
       try {
-        const res = await fetch('/api/mcp/delete/', {
+        const res = await fetch('/api/agents/mcp/delete/', {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -1944,7 +1944,7 @@
       btn.innerText = 'جاري الحفظ...';
 
       try {
-        const res = await fetch('/api/mcp/save/', {
+        const res = await fetch('/api/agents/mcp/save/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1993,7 +1993,7 @@
 
     async function loadProfiles() {
       try {
-        const res = await fetch('/api/profiles/');
+        const res = await fetch('/api/agents/profiles/');
         const data = await res.json();
         if (data.status === 'success') {
           userProfiles = data.profiles;
@@ -2088,7 +2088,7 @@
     async function handleProfileSelect(profileId) {
       if (!profileId) return;
       try {
-        const res = await fetch(`/api/profiles/${profileId}/activate/`, {
+        const res = await fetch(`/api/agents/profiles/${profileId}/activate/`, {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -2122,7 +2122,7 @@
       };
 
       try {
-        const res = await fetch(`/api/profiles/${activeProfile.id}/update/`, {
+        const res = await fetch(`/api/agents/profiles/${activeProfile.id}/update/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2173,7 +2173,7 @@
       btn.innerText = 'جاري الحفظ...';
 
       try {
-        const res = await fetch('/api/profiles/create/', {
+        const res = await fetch('/api/agents/profiles/create/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2213,7 +2213,7 @@
       if (!confirm(`هل أنت متأكد من حذف بروفايل "${activeProfile.name}"؟`)) return;
 
       try {
-        const res = await fetch(`/api/profiles/${activeProfile.id}/delete/`, {
+        const res = await fetch(`/api/agents/profiles/${activeProfile.id}/delete/`, {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -2233,7 +2233,7 @@
     // ==========================================
     async function loadCustomerMemory() {
       try {
-        const res = await fetch('/api/memory/');
+        const res = await fetch('/api/crm/memory/');
         const data = await res.json();
         if (data.status !== 'success') return;
 
@@ -2330,7 +2330,7 @@
     async function resetCustomerMemory() {
       if (!confirm('هل أنت متأكد من تصفير ذاكرة العميل؟ سيتم مسح البيانات الدائمة وملخص المكالمات السابق.')) return;
       try {
-        const res = await fetch('/api/memory/reset/', {
+        const res = await fetch('/api/crm/memory/reset/', {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -2354,7 +2354,7 @@
       const tbody = document.getElementById('employees-tbody');
       if (!tbody) return;
       try {
-        const res = await fetch('/api/employees/');
+        const res = await fetch('/api/call-center/employees/');
         const data = await res.json();
         if (data.status !== 'success') return;
 
@@ -2435,7 +2435,7 @@
       const tbody = document.getElementById('queues-tbody');
       if (!tbody) return;
       try {
-        const res = await fetch('/api/queues/');
+        const res = await fetch('/api/call-center/queues/');
         const data = await res.json();
         if (data.status !== 'success') return;
 
@@ -2592,7 +2592,7 @@
       });
 
       try {
-        const res = await fetch('/api/queues/create/', {
+        const res = await fetch('/api/call-center/queues/create/', {
           method: 'POST',
           headers: {
             'X-CSRFToken': getCookie('csrftoken')
@@ -2619,7 +2619,7 @@
     async function deleteQueue(id, name) {
       if (!confirm(`هل أنت متأكد من حذف طابور "${name}"؟ سيتم إلغاء كود الطابور وتوجيه الاتصال.`)) return;
       try {
-        const res = await fetch(`/api/queues/${id}/delete/`, {
+        const res = await fetch(`/api/call-center/queues/${id}/delete/`, {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -2666,7 +2666,7 @@
       errEl.classList.add('hidden');
 
       try {
-        const res = await fetch('/api/employees/create/', {
+        const res = await fetch('/api/call-center/employees/create/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2701,7 +2701,7 @@
     async function deleteEmployee(id, name) {
       if (!confirm(`هل أنت متأكد من حذف الموظف "${name}" وإلغاء تحويلته؟`)) return;
       try {
-        const res = await fetch(`/api/employees/${id}/delete/`, {
+        const res = await fetch(`/api/call-center/employees/${id}/delete/`, {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -2739,7 +2739,7 @@
       if (callSub) callSub.innerText = 'يتم إنشاء غرفة WebRTC وتنبيه الموظفين عبر الشبكة الداخلية...';
 
       try {
-        const res = await fetch('/api/calls/dial/', {
+        const res = await fetch('/api/call-center/calls/dial/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2833,7 +2833,7 @@
       dashboardCurrentRoomName = null;
 
       try {
-        await fetch('/api/calls/hangup/', {
+        await fetch('/api/call-center/calls/hangup/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2851,7 +2851,7 @@
 
     async function loadOutboundTrunk() {
       try {
-        const res = await fetch('/api/outbound/trunk/');
+        const res = await fetch('/api/telephony/trunk/');
         const data = await res.json();
         if (data.status !== 'success') return;
 
@@ -2926,7 +2926,7 @@
       btn.innerHTML = '<span>جاري الربط مع LiveKit...</span>';
 
       try {
-        const res = await fetch('/api/outbound/trunk/save/', {
+        const res = await fetch('/api/telephony/trunk/save/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2955,7 +2955,7 @@
     async function handleDeleteOutboundTrunk(id) {
       if (!confirm('هل أنت متأكد من حذف الجذع الخارجي؟ لن تتمكن من إجراء اتصالات صادرة حتى إعادة إعداده.')) return;
       try {
-        const res = await fetch(`/api/outbound/trunk/${id}/delete/`, {
+        const res = await fetch(`/api/telephony/trunk/${id}/delete/`, {
           method: 'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') }
         });
@@ -2975,7 +2975,7 @@
       const select = document.getElementById('ai-call-profile');
       select.innerHTML = '<option value="">البروفايل النشط حالياً في النظام</option>';
       try {
-        const res = await fetch('/api/profiles/');
+        const res = await fetch('/api/agents/profiles/');
         const data = await res.json();
         if (data.status === 'success' && data.profiles) {
           data.profiles.forEach(p => {
@@ -3027,7 +3027,7 @@
       btn.innerHTML = '<span>جاري طلب الرقم وتجهيز المساعد...</span>';
 
       try {
-        const res = await fetch('/api/outbound/ai-call/', {
+        const res = await fetch('/api/telephony/ai-call/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

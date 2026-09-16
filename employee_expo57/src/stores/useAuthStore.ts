@@ -107,7 +107,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         employee: EmployeeProfile;
         centrifugo: CentrifugoConfig;
         message?: string;
-      }>("/api/auth/employee-login/", {
+      }>("/api/call-center/auth/login/", {
         method: "POST",
         body: JSON.stringify({ identifier, password }),
       });
@@ -172,7 +172,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       const data = await apiRequest<{ status: string; employee: EmployeeProfile }>(
-        "/api/employees/status/",
+        "/api/call-center/employees/status/",
         {
           method: "POST",
           body: JSON.stringify({ status }),
@@ -201,7 +201,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         status: string;
         employee: EmployeeProfile;
         centrifugo: CentrifugoConfig;
-      }>("/api/auth/me/", { method: "GET" }, token);
+      }>("/api/call-center/auth/me/", { method: "GET" }, token);
 
       if (data.status === "success") {
         setStorageItem(STORAGE_KEY_EMP, JSON.stringify(data.employee));
