@@ -164,63 +164,76 @@ async def run_queue_session(
 
             member = members[member_idx % len(members)]
             member_idx += 1
-            username = member.get("sip_username")
-            agent_name = member.get("sip_account_name") or username
+            extension = str(member.get("extension") or member.get("sip_username") or "")
+            agent_name = member.get("name") or member.get("sip_account_name") or f"موظف {extension}"
+            status = member.get("status", "ready")
 
-            # Check agent presence in Redis
+            # Check agent presence in Redis or status
             state = "AVAILABLE"
             try:
-                s = redis_client.get(f"agent_state:{username}")
+                s = redis_client.get(f"agent_state:{extension}")
                 if s:
                     state = s.decode() if isinstance(s, bytes) else str(s)
             except Exception:
                 pass
 
-            if state == "BUSY":
-                logger.info(f"Agent '{username}' is BUSY. Checking next agent.")
+            if status in ["busy", "break", "offline"] or state == "BUSY":
+                logger.info(f"Employee '{agent_name}' ({extension}) is BUSY/UNAVAILABLE (status={status}, state={state}). Checking next employee.")
                 await asyncio.sleep(1.0)
                 continue
 
-            logger.info(f"[ROUND-ROBIN] Ringing agent '{agent_name}' ({username}) for up to {ring_timeout}s...")
+            logger.info(f"[ROUND-ROBIN] Ringing employee '{agent_name}' ({extension}) via WebRTC for up to {ring_timeout}s...")
             try:
-                redis_client.set(f"agent_state:{username}", "RINGING", ex=ring_timeout + 5)
-                notify_func(f"presence_{user_id}", {"event": "agent_presence", "sip_username": username, "state": "RINGING"})
+                redis_client.set(f"agent_state:{extension}", "RINGING", ex=ring_timeout + 5)
             except Exception:
                 pass
 
             notify_func(channel_name, "queue_ringing", f"جاري الاتصال بـ {agent_name}...")
 
-            # Outbound dial to agent softphone
-            lk = api.LiveKitAPI(livekit_url, api_key, api_secret)
-            try:
-                dial_req = api.CreateSIPParticipantRequest(
-                    sip_call_to=f"sip:{username}@127.0.0.1:5060",
-                    room_name=room_name,
-                    participant_identity=f"agent_{username}",
-                    participant_name=agent_name,
-                    play_ringtone=True,
-                    ringing_timeout=ring_timeout,
-                    wait_until_answered=True
-                )
-                await lk.sip.create_sip_participant(dial_req)
-                logger.info(f"Agent '{username}' answered queue call in room '{room_name}'!")
-                agent_answered = True
-                try:
-                    redis_client.set(f"agent_state:{username}", "BUSY")
-                    notify_func(f"presence_{user_id}", {"event": "agent_presence", "sip_username": username, "state": "BUSY"})
-                except Exception:
-                    pass
-                notify_func(channel_name, "agent_connected", f"تم الرد بواسطة {agent_name}. المحادثة جارية الآن.")
+            # Dispatch WebRTC incoming call signaling to employee's Centrifugo channel
+            notify_func(
+                f"employee:{extension}",
+                "incoming_call",
+                f"مكالمة واردة من {queue_name}",
+                {
+                    "caller_name": f"طابور {queue_name}",
+                    "caller_number": queue_code,
+                    "room_name": room_name,
+                    "call_id": room_name,
+                    "call_type": "queue"
+                }
+            )
+
+            # Wait for employee to answer and join LiveKit WebRTC room
+            wait_start = time.time()
+            while (time.time() - wait_start) < ring_timeout:
+                remote_parts = list(room.remote_participants.values())
+                if any(p.identity.startswith("employee_") or p.identity.startswith(f"agent_{extension}") for p in remote_parts):
+                    logger.info(f"Employee '{agent_name}' ({extension}) answered and joined room '{room_name}'!")
+                    agent_answered = True
+                    try:
+                        redis_client.set(f"agent_state:{extension}", "BUSY")
+                    except Exception:
+                        pass
+                    notify_func(channel_name, "agent_connected", f"تم الرد بواسطة {agent_name}. المحادثة جارية الآن.")
+                    break
+                await asyncio.sleep(0.5)
+
+            if agent_answered:
                 break
-            except Exception as dial_err:
-                logger.info(f"Agent '{username}' did not answer ({dial_err}). Advancing to next agent.")
+            else:
+                logger.info(f"Employee '{agent_name}' ({extension}) did not answer within {ring_timeout}s. Advancing to next employee.")
+                # Cancel ringing on employee UI
+                notify_func(
+                    f"employee:{extension}",
+                    "call_ended",
+                    "انتهت مهلة الرنين",
+                    {"room_name": room_name, "ended_by": "timeout"}
+                )
                 try:
-                    redis_client.set(f"agent_state:{username}", "AVAILABLE")
-                    notify_func(f"presence_{user_id}", {"event": "agent_presence", "sip_username": username, "state": "AVAILABLE"})
+                    redis_client.set(f"agent_state:{extension}", "AVAILABLE")
                 except Exception:
                     pass
-            finally:
-                await lk.aclose()
 
             await asyncio.sleep(1.0)
 

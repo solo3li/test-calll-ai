@@ -45,11 +45,6 @@ urlpatterns = [
     path('api/memory/', views.get_customer_memory, name='get_customer_memory'),
     path('api/memory/reset/', views.reset_customer_memory, name='reset_customer_memory'),
 
-    # MicroSIP & VoIP Lines APIs
-    path('api/sip/', views.list_sip_accounts, name='list_sip_accounts'),
-    path('api/sip/create/', views.create_sip_account, name='create_sip_account'),
-    path('api/sip/<int:account_id>/delete/', views.delete_sip_account, name='delete_sip_account'),
-
     # Call Queues & Routing APIs
     path('api/queues/', views.list_call_queues, name='list_call_queues'),
     path('api/queues/create/', views.create_call_queue, name='create_call_queue'),
@@ -60,7 +55,6 @@ urlpatterns = [
     path('api/outbound/trunk/save/', views.save_outbound_trunk, name='save_outbound_trunk'),
     path('api/outbound/trunk/<int:trunk_id>/delete/', views.delete_outbound_trunk, name='delete_outbound_trunk'),
     path('api/outbound/ai-call/', views.trigger_ai_outbound_call, name='trigger_ai_outbound_call'),
-    path('api/outbound/agent-call/', views.trigger_agent_outbound_call, name='trigger_agent_outbound_call'),
 
     # Employee WebRTC & Auth APIs
     path('api/auth/employee-login/', views.api_employee_login, name='api_employee_login'),

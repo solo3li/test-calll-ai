@@ -18,7 +18,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession, UserSIPAccount, CallQueue, QueueMembership, OutboundSIPTrunk, EmployeeProfile
+from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession, CallQueue, QueueMembership, OutboundSIPTrunk, EmployeeProfile
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -940,168 +940,6 @@ def reset_customer_memory(request):
         "memory": memory.to_dict()
     })
 
-# ==================== LiveKit SIP & MicroSIP Management ====================
-
-async def _async_create_sip_trunk_and_rule(username, password, user_id, line_name, extension):
-    lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
-    try:
-        trunk_info = api.SIPInboundTrunkInfo(
-            name=f"{line_name} (User {user_id})",
-            auth_username=username,
-            auth_password=password,
-            numbers=[str(extension), str(username)]
-        )
-        created_trunk = await lk.sip.create_sip_inbound_trunk(api.CreateSIPInboundTrunkRequest(trunk=trunk_info))
-        trunk_id = created_trunk.sip_trunk_id
-
-        rule_individual = api.SIPDispatchRuleIndividual(room_prefix=f"room_user_{user_id}_sip_")
-        rule = api.SIPDispatchRule(dispatch_rule_individual=rule_individual)
-        rule_req = api.CreateSIPDispatchRuleRequest(
-            name=f"Rule for User {user_id} - {username}",
-            rule=rule,
-            trunk_ids=[trunk_id]
-        )
-        created_rule = await lk.sip.create_sip_dispatch_rule(rule_req)
-        rule_id = created_rule.sip_dispatch_rule_id
-        return trunk_id, rule_id
-    finally:
-        await lk.aclose()
-
-async def _async_delete_sip_trunk_and_rule(trunk_id, rule_id):
-    lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
-    try:
-        if rule_id:
-            try:
-                await lk.sip.delete_sip_dispatch_rule(api.DeleteSIPDispatchRuleRequest(sip_dispatch_rule_id=rule_id))
-            except Exception as e:
-                logger.warning(f"Error deleting LiveKit SIP dispatch rule {rule_id}: {e}")
-        if trunk_id:
-            try:
-                await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=trunk_id))
-            except Exception as e:
-                logger.warning(f"Error deleting LiveKit SIP trunk {trunk_id}: {e}")
-    finally:
-        await lk.aclose()
-
-@login_required(login_url='/login/')
-def list_sip_accounts(request):
-    """List all SIP lines for the authenticated user."""
-    accounts = UserSIPAccount.objects.filter(user=request.user)
-    return JsonResponse({
-        "status": "success",
-        "accounts": [a.to_dict() for a in accounts],
-        "server_info": {
-            "sip_server": "127.0.0.1:5060",
-            "sip_domain": "127.0.0.1",
-            "sip_port": 5060,
-        }
-    })
-
-@login_required(login_url='/login/')
-def create_sip_account(request):
-    """Create a new SIP trunk and dispatch rule in LiveKit and save to DB."""
-    if request.method != 'POST':
-        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
-
-    try:
-        if request.content_type == 'application/json':
-            data = json.loads(request.body)
-        else:
-            data = request.POST
-
-        name = data.get('name', '').strip() or f"خط MicroSIP #{UserSIPAccount.objects.filter(user=request.user).count() + 1}"
-        
-        # Generate unique SIP username and password
-        unique_suffix = uuid.uuid4().hex[:6]
-        sip_username = f"sip_u{request.user.id}_{unique_suffix}"
-        sip_password = f"Pass_{uuid.uuid4().hex[:10]}"
-
-        # Resolve or auto-assign clean numeric extension number
-        user_ext = str(data.get('extension', '')).strip()
-        if user_ext and user_ext.isdigit():
-            if UserSIPAccount.objects.filter(user=request.user, extension=user_ext).exists():
-                return JsonResponse({"status": "error", "message": f"رقم التحويلة {user_ext} مستخدم بالفعل"}, status=400)
-            extension = user_ext
-        else:
-            existing_exts = set(UserSIPAccount.objects.filter(user=request.user).values_list('extension', flat=True))
-            ext_num = 1001
-            while str(ext_num) in existing_exts:
-                ext_num += 1
-            extension = str(ext_num)
-
-        import asyncio
-        trunk_id, rule_id = asyncio.run(_async_create_sip_trunk_and_rule(
-            username=sip_username,
-            password=sip_password,
-            user_id=request.user.id,
-            line_name=name,
-            extension=extension
-        ))
-
-        account = UserSIPAccount.objects.create(
-            user=request.user,
-            name=name,
-            sip_username=sip_username,
-            sip_password=sip_password,
-            extension=extension,
-            livekit_trunk_id=trunk_id,
-            livekit_rule_id=rule_id,
-            is_active=True
-        )
-
-        try:
-            r = redis.Redis.from_url(settings.REDIS_URL)
-            r.set(f"ext_to_user:{extension}", sip_username)
-            r.set(f"user_to_ext:{sip_username}", extension)
-        except Exception:
-            pass
-
-        return JsonResponse({
-            "status": "success",
-            "message": f"تم إنشاء خط SIP بنجاح: {name} (تحويلة: {extension})",
-            "account": account.to_dict(),
-            "config": {
-                "account_name": name,
-                "sip_server": "127.0.0.1:5060",
-                "sip_proxy": "127.0.0.1:5060",
-                "username": sip_username,
-                "domain": "127.0.0.1",
-                "login": sip_username,
-                "password": sip_password,
-                "extension": extension,
-                "instructions": f"في MicroSIP: اضغط Add Account وأدخل البيانات، ثم ألغِ تحديد خيار (Register with domain) و (Publish Presence) واضغط Save. رقم تحويلتك المباشر للاتصال والتحويل هو {extension}."
-            }
-        }, status=201)
-
-    except Exception as e:
-        logger.error(f"Error creating SIP account: {e}", exc_info=True)
-        return JsonResponse({"status": "error", "message": f"فشل إنشاء خط SIP: {str(e)}"}, status=500)
-
-@login_required(login_url='/login/')
-def delete_sip_account(request, account_id):
-    """Delete SIP line from LiveKit and database."""
-    if request.method != 'POST':
-        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
-
-    account = get_object_or_404(UserSIPAccount, id=account_id, user=request.user)
-    try:
-        import asyncio
-        asyncio.run(_async_delete_sip_trunk_and_rule(account.livekit_trunk_id, account.livekit_rule_id))
-    except Exception as e:
-        logger.warning(f"Failed to delete LiveKit trunk/rule: {e}")
-
-    try:
-        r = redis.Redis.from_url(settings.REDIS_URL)
-        r.delete(f"ext_to_user:{account.extension}")
-        r.delete(f"user_to_ext:{account.sip_username}")
-    except Exception:
-        pass
-
-    account.delete()
-    return JsonResponse({
-        "status": "success",
-        "message": f"تم حذف خط SIP '{account.name}' (تحويلة: {account.extension}) بنجاح."
-    })
 
 # ==================== Call Queues & Routing Management ====================
 
@@ -1612,89 +1450,6 @@ def trigger_ai_outbound_call(request):
         return JsonResponse({"status": "error", "message": f"فشل بدء المكالمة الصادرة: {str(e)}"}, status=500)
 
 
-@login_required(login_url='/login/')
-def trigger_agent_outbound_call(request):
-    """Click-to-Call: Bridge human agent MicroSIP and customer phone number."""
-    if request.method != 'POST':
-        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
-
-    try:
-        if request.content_type == 'application/json':
-            data = json.loads(request.body)
-        else:
-            data = request.POST
-
-        raw_phone = (data.get('phone_number') or '').strip()
-        sip_account_id = data.get('sip_account_id')
-
-        if not raw_phone:
-            return JsonResponse({"status": "error", "message": "رقم الهاتف المستهدف مطلوب"}, status=400)
-
-        normalized_phone = normalize_phone_number(raw_phone)
-        if not normalized_phone or len(normalized_phone) < 8:
-            return JsonResponse({"status": "error", "message": f"رقم الهاتف غير صالح ({raw_phone})"}, status=400)
-
-        trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True, is_default=True).first()
-        if not trunk or not trunk.livekit_outbound_trunk_id:
-            return JsonResponse({
-                "status": "error",
-                "message": "لا يوجد جذع SIP خارجي مفعل. يرجى إعداد الجذع الخارجي أولاً."
-            }, status=400)
-
-        if sip_account_id:
-            sip_acc = UserSIPAccount.objects.filter(id=sip_account_id, user=request.user).first()
-        else:
-            sip_acc = UserSIPAccount.objects.filter(user=request.user, is_active=True).first()
-
-        if not sip_acc:
-            return JsonResponse({"status": "error", "message": "لا يوجد خط SIP للموظف متاح لإجراء الاتصال"}, status=400)
-
-        room_name = f"room_user_{request.user.id}_agent_out_{uuid.uuid4().hex[:8]}"
-
-        session = CallSession.objects.create(
-            user=request.user,
-            room_name=room_name,
-            direction='outbound_agent',
-            destination_phone=normalized_phone,
-            call_goal=f"مكالمة موظف ({sip_acc.name}) للعميل {normalized_phone}"
-        )
-
-        import asyncio
-        # Dial customer
-        asyncio.run(_async_dial_sip_participant(
-            trunk_id=trunk.livekit_outbound_trunk_id,
-            destination_phone=normalized_phone,
-            room_name=room_name,
-            caller_id=trunk.caller_id
-        ))
-
-        # Dial agent's MicroSIP
-        async def _dial_agent():
-            lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
-            try:
-                dial_req = api.CreateSIPParticipantRequest(
-                    sip_call_to=f"sip:{sip_acc.sip_username}@127.0.0.1:5060",
-                    room_name=room_name,
-                    participant_identity=f"agent_{sip_acc.sip_username}",
-                    participant_name=f"الموظف {sip_acc.name}",
-                    play_ringtone=True,
-                )
-                await lk.sip.create_sip_participant(dial_req)
-            finally:
-                await lk.aclose()
-
-        asyncio.run(_dial_agent())
-
-        return JsonResponse({
-            "status": "success",
-            "message": f"جاري الاتصال ببرنامج MicroSIP الخاص بك ({sip_acc.name}) ورقم العميل ({normalized_phone}) لربطكما معاً...",
-            "room_name": room_name,
-            "session_id": session.id
-        })
-
-    except Exception as e:
-        logger.error(f"Error in trigger_agent_outbound_call: {e}", exc_info=True)
-        return JsonResponse({"status": "error", "message": f"فشل إجراء الاتصال: {str(e)}"}, status=500)
 
 
 # ==================== Employee WebRTC & Auth APIs ====================
@@ -1965,6 +1720,67 @@ def api_dial_call(request):
                 "target_name": callee.display_name,
                 "target_number": callee.extension,
                 "target_status": callee.status,
+                "livekit_url": settings.LIVEKIT_URL,
+                "livekit_token": caller_jwt
+            })
+
+        # 3. Check if target is an External Phone Number (PSTN via OutboundSIPTrunk)
+        cleaned_phone = re.sub(r'[^\d+]', '', target)
+        if len(cleaned_phone) >= 7:
+            trunk = OutboundSIPTrunk.objects.filter(is_active=True).first()
+            if not trunk or not trunk.livekit_outbound_trunk_id:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "لا يوجد خط SIP Trunk خارجي مفعل. يرجى إعداد بيانات المزود الخارجي أولاً."
+                }, status=400)
+
+            room_name = f"pstn_out_{caller.extension}_{uuid.uuid4().hex[:6]}"
+
+            # Generate caller WebRTC token
+            token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
+                .with_identity(f"employee_{caller.id}_{caller.extension}") \
+                .with_name(caller.display_name) \
+                .with_metadata(json.dumps({"role": "caller", "employee_id": caller.id, "phone": cleaned_phone})) \
+                .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
+            caller_jwt = token.to_jwt()
+
+            # Record call session
+            CallSession.objects.create(
+                user=caller.user,
+                room_name=room_name,
+                direction='outbound_agent',
+                destination_phone=cleaned_phone,
+                call_goal=f"مكالمة موظف ({caller.display_name}) لرقم العميل {cleaned_phone}"
+            )
+
+            # Dial customer via LiveKit Outbound Trunk
+            import asyncio
+            async def _dial_external_customer():
+                lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+                try:
+                    dial_req = api.CreateSIPParticipantRequest(
+                        sip_trunk_id=trunk.livekit_outbound_trunk_id,
+                        sip_call_to=cleaned_phone,
+                        room_name=room_name,
+                        participant_identity=f"customer_{cleaned_phone}",
+                        participant_name=f"Customer {cleaned_phone}",
+                        play_ringtone=True,
+                    )
+                    await lk.sip.create_sip_participant(dial_req)
+                finally:
+                    await lk.aclose()
+
+            try:
+                asyncio.run(_dial_external_customer())
+            except Exception as e:
+                logger.error(f"Failed to dial external customer via SIP trunk: {e}")
+
+            return JsonResponse({
+                "status": "success",
+                "call_type": "external_pstn",
+                "room_name": room_name,
+                "target_name": f"عميل خارجي ({cleaned_phone})",
+                "target_number": cleaned_phone,
                 "livekit_url": settings.LIVEKIT_URL,
                 "livekit_token": caller_jwt
             })

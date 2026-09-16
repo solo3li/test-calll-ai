@@ -315,40 +315,6 @@ class OutboundSIPTrunk(models.Model):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
         }
 
-class UserSIPAccount(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sip_accounts')
-    name = models.CharField(max_length=100, default='خط MicroSIP الافتراضي')
-    sip_username = models.CharField(max_length=64, unique=True)
-    sip_password = models.CharField(max_length=128)
-    extension = models.CharField(max_length=32, blank=True, default='', db_index=True, help_text='رقم التحويلة المختصر مثل 1001')
-    livekit_trunk_id = models.CharField(max_length=128, blank=True)
-    livekit_rule_id = models.CharField(max_length=128, blank=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def __str__(self):
-        status = " [نشط]" if self.is_active else " [معطل]"
-        ext_str = f" [تحويلة: {self.extension}]" if self.extension else ""
-        return f"{self.name}{ext_str} ({self.sip_username}){status}"
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "sip_username": self.sip_username,
-            "sip_password": self.sip_password,
-            "extension": self.extension or str(1000 + self.id),
-            "livekit_trunk_id": self.livekit_trunk_id,
-            "livekit_rule_id": self.livekit_rule_id,
-            "is_active": self.is_active,
-            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
-        }
-
-
 class EmployeeProfile(models.Model):
     STATUS_CHOICES = [
         ('ready', 'متاح (Ready)'),
@@ -427,15 +393,14 @@ class CallQueue(models.Model):
             "hold_music_url": self.hold_music.url if self.hold_music else None,
             "fallback_action": self.fallback_action,
             "is_active": self.is_active,
-            "members": [m.to_dict() for m in self.memberships.filter(is_active=True).select_related('employee', 'sip_account')],
+            "members": [m.to_dict() for m in self.memberships.filter(is_active=True).select_related('employee')],
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
         }
 
 
 class QueueMembership(models.Model):
     queue = models.ForeignKey(CallQueue, on_delete=models.CASCADE, related_name='memberships')
-    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name='queue_memberships', null=True, blank=True)
-    sip_account = models.ForeignKey(UserSIPAccount, on_delete=models.CASCADE, related_name='queue_memberships', null=True, blank=True)
+    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name='queue_memberships')
     order = models.PositiveIntegerField(default=0, help_text='ترتيب أولوية الموظف في التناوب')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -444,33 +409,19 @@ class QueueMembership(models.Model):
         ordering = ['order', 'created_at']
 
     def __str__(self):
-        target = self.employee.display_name if self.employee else (self.sip_account.name if self.sip_account else 'عضو')
-        return f"{target} في {self.queue.name}"
+        return f"{self.employee.display_name} في {self.queue.name}"
 
     def to_dict(self):
-        if self.employee:
-            return {
-                "id": self.id,
-                "type": "employee",
-                "employee_id": self.employee_id,
-                "name": self.employee.display_name,
-                "extension": self.employee.extension,
-                "department": self.employee.department,
-                "status": self.employee.status,
-                "order": self.order,
-                "is_active": self.is_active,
-            }
-        elif self.sip_account:
-            return {
-                "id": self.id,
-                "type": "sip",
-                "sip_account_id": self.sip_account_id,
-                "name": self.sip_account.name,
-                "extension": self.sip_account.extension or str(1000 + self.sip_account.id),
-                "order": self.order,
-                "is_active": self.is_active,
-            }
-        return {"id": self.id, "order": self.order, "is_active": self.is_active}
+        return {
+            "id": self.id,
+            "employee_id": self.employee_id,
+            "name": self.employee.display_name,
+            "extension": self.employee.extension,
+            "department": self.employee.department,
+            "status": self.employee.status,
+            "order": self.order,
+            "is_active": self.is_active,
+        }
 
 
 

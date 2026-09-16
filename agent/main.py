@@ -38,17 +38,26 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "voice_password_123")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 
-def notify_centrifugo(channel: str, event: str, message: str, extra: dict = None):
+def notify_centrifugo(channel: str, event: str, message: str = "", extra: dict = None):
     """Notify web client via Centrifugo WebSocket channel."""
     try:
         url = f"{CENTRIFUGO_HTTP_API_URL}/publish"
+        if isinstance(event, dict):
+            extra_data = event
+            event_name = extra_data.get("event", "notification")
+            msg = extra_data.get("message", message or "")
+        else:
+            event_name = event
+            msg = message or ""
+            extra_data = extra or {}
+
         payload = {
             "channel": channel,
             "data": {
-                "event": event,
-                "message": message,
+                "event": event_name,
+                "message": msg,
                 "timestamp": time.time(),
-                **(extra or {})
+                **extra_data
             }
         }
         headers = {
@@ -1167,24 +1176,34 @@ async def transfer_events_worker(r: aioredis.Redis, shutdown_event: asyncio.Even
                 logger.warning(f"[TRANSFER WORKER] Could not find active room for from_user '{from_user}'")
                 continue
 
-            # Bridge target (queue or direct agent)
-            lk = api.LiveKitAPI(LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
-            try:
-                dial_req = api.CreateSIPParticipantRequest(
-                    sip_call_to=f"sip:{real_target_user}@127.0.0.1:5060",
-                    room_name=room_name,
-                    participant_identity=f"agent_{real_target_user}",
-                    participant_name=f"Extension {target}",
-                    play_ringtone=True,
-                    ringing_timeout=25,
-                    wait_until_answered=True
-                )
-                await lk.sip.create_sip_participant(dial_req)
-                logger.info(f"[TRANSFER WORKER] Successfully bridged '{real_target_user}' to room '{room_name}'!")
-            except Exception as dial_err:
-                logger.error(f"[TRANSFER WORKER] Failed to bridge '{real_target_user}' to room '{room_name}': {dial_err}")
-            finally:
-                await lk.aclose()
+            # Bridge target (queue or direct agent) via WebRTC Centrifugo signaling
+            logger.info(f"[TRANSFER WORKER] Dispatching WebRTC call transfer signaling for target '{real_target_user}' in room '{room_name}'")
+            notify_centrifugo(
+                f"employee:{real_target_user}",
+                "incoming_call",
+                f"مكالمة محولة من {from_user or 'العميل'}",
+                {
+                    "room_name": room_name,
+                    "call_id": room_name,
+                    "caller_name": f"تحويل ({from_user or 'عميل'})",
+                    "caller_number": str(from_user or ""),
+                    "call_type": "transfer"
+                }
+            )
+            # Also notify queues:broadcast if target is a queue code
+            notify_centrifugo(
+                "queues:broadcast",
+                "incoming_call",
+                f"مكالمة محولة إلى {real_target_user}",
+                {
+                    "room_name": room_name,
+                    "target": str(real_target_user),
+                    "call_id": room_name,
+                    "caller_name": f"تحويل ({from_user or 'عميل'})",
+                    "caller_number": str(from_user or ""),
+                    "call_type": "transfer"
+                }
+            )
 
         except asyncio.CancelledError:
             break
