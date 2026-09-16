@@ -154,9 +154,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       callerName: "Karim Mostafa",
       phoneNumber: "+20 112 998 7766",
       durationSeconds: 0,
-      sentiment: "Positive Sentiment",
+      sentiment: "Inquiry • High Priority",
       summaryBullets: [
-        "Inbound inquiry: Customer checking order status #5432"
+        "Inquiring about shipment delay for order #5432",
+        "Wants to confirm delivery address before dispatch"
       ]
     });
     setCallState("RINGING");
