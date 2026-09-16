@@ -1946,7 +1946,7 @@ def api_get_call_token(request):
 
 @csrf_exempt
 def api_hangup_call(request):
-    """Signal call hangup/end to room participants."""
+    """Signal call hangup/end to room participants and delete LiveKit room."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
@@ -1965,6 +1965,7 @@ def api_hangup_call(request):
         room_name = data.get('room_name')
         target_employee_id = data.get('target_employee_id')
 
+        # 1. Direct peer employee channel notification if explicitly provided
         if target_employee_id:
             publish_to_centrifugo(f"employee:{target_employee_id}", {
                 "event": "call_ended",
@@ -1972,13 +1973,58 @@ def api_hangup_call(request):
                 "ended_by": caller_name
             })
 
+        # 2. Extract peers for internal employee-to-employee calls (call_ext_{ext1}_{ext2}_{uuid})
+        if room_name and room_name.startswith("call_ext_"):
+            parts = room_name.split("_")
+            if len(parts) >= 4:
+                ext1, ext2 = parts[2], parts[3]
+                peers = EmployeeProfile.objects.filter(extension__in=[ext1, ext2], is_active=True)
+                for peer in peers:
+                    publish_to_centrifugo(f"employee:{peer.id}", {
+                        "event": "call_ended",
+                        "room_name": room_name,
+                        "ended_by": caller_name
+                    })
+
+        # 3. Extract queue members if queue call (queue_{code}_{uuid})
+        if room_name and room_name.startswith("queue_"):
+            parts = room_name.split("_")
+            if len(parts) >= 2:
+                q_code = parts[1]
+                queue = CallQueue.objects.filter(code=q_code, is_active=True).first()
+                if queue:
+                    for m in queue.memberships.filter(is_active=True).select_related('employee'):
+                        if m.employee:
+                            publish_to_centrifugo(f"employee:{m.employee.id}", {
+                                "event": "call_ended",
+                                "room_name": room_name,
+                                "ended_by": caller_name
+                            })
+
+        # 4. Broadcast on global queues channel
         publish_to_centrifugo("queues:broadcast", {
             "event": "call_ended",
             "room_name": room_name,
             "ended_by": caller_name
         })
 
-        return JsonResponse({"status": "success", "message": "Call hung up"})
+        # 5. Clean up and delete room on LiveKit server
+        if room_name:
+            import asyncio
+            async def _delete_livekit_room():
+                try:
+                    lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+                    await lk.room.delete_room(api.DeleteRoomRequest(room=room_name))
+                    await lk.aclose()
+                except Exception as lk_err:
+                    logger.debug(f"LiveKit room deletion note: {lk_err}")
+
+            try:
+                asyncio.run(_delete_livekit_room())
+            except Exception as e:
+                logger.warning(f"Failed to delete LiveKit room {room_name}: {e}")
+
+        return JsonResponse({"status": "success", "message": "Call hung up and room cleaned up"})
 
     except Exception as e:
         logger.error(f"Error in api_hangup_call: {e}", exc_info=True)

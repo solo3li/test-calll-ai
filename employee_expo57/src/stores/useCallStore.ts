@@ -259,6 +259,17 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             }
           });
 
+          // When the other person leaves or disconnects, end call immediately
+          room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+            console.log("Remote participant disconnected:", participant.identity);
+            get().endCall();
+          });
+
+          room.on(RoomEvent.Disconnected, () => {
+            console.log("LiveKit room disconnected");
+            get().endCall();
+          });
+
           // Join room and enable microphone
           await room.connect(data.livekit_url, data.livekit_token);
           await room.localParticipant.setMicrophoneEnabled(true);
@@ -342,6 +353,17 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           }
         });
 
+        // When the other person leaves or disconnects, end call immediately
+        room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+          console.log("Remote participant disconnected:", participant.identity);
+          get().endCall();
+        });
+
+        room.on(RoomEvent.Disconnected, () => {
+          console.log("LiveKit room disconnected");
+          get().endCall();
+        });
+
         await room.connect(data.livekit_url, data.livekit_token);
         await room.localParticipant.setMicrophoneEnabled(true);
 
@@ -353,6 +375,14 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   declineCall: () => {
+    const { incomingCall } = get();
+    const token = useAuthStore.getState().token;
+    if (incomingCall?.roomName && token) {
+      apiRequest("/api/calls/hangup/", {
+        method: "POST",
+        body: JSON.stringify({ room_name: incomingCall.roomName }),
+      }, token).catch((err) => console.log("Decline hangup API error:", err));
+    }
     set({ incomingModalVisible: false, incomingCall: null });
   },
 
@@ -362,13 +392,24 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       callTimerInterval = null;
     }
 
-    const { livekitRoom, activeCall } = get();
+    const { livekitRoom, activeCall, incomingCall } = get();
+    const roomNameToHangup = activeCall.roomName || incomingCall?.roomName;
+
     if (livekitRoom) {
       try {
         livekitRoom.disconnect();
       } catch (e) {
         // Ignore disconnect errors
       }
+    }
+
+    // Notify backend and all peers via /api/calls/hangup/
+    const token = useAuthStore.getState().token;
+    if (roomNameToHangup && token) {
+      apiRequest("/api/calls/hangup/", {
+        method: "POST",
+        body: JSON.stringify({ room_name: roomNameToHangup }),
+      }, token).catch((err) => console.log("Hangup API error:", err));
     }
 
     // Add to history
@@ -396,6 +437,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       livekitRoom: null,
       activeCall: INITIAL_CALL_DATA,
       incomingModalVisible: false,
+      incomingCall: null,
     });
   },
 

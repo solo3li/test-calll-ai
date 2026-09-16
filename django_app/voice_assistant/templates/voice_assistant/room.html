@@ -2772,6 +2772,11 @@
           if (callSub) callSub.innerText = `انضم للمكالمة: ${p.name || p.identity} ✅`;
         });
 
+        dashboardLivekitRoom.on(LivekitClient.RoomEvent.ParticipantDisconnected, (p) => {
+          console.log('[LiveKit Dashboard] Remote participant disconnected:', p.identity);
+          endDashboardCall();
+        });
+
         dashboardLivekitRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
           if (track.kind === LivekitClient.Track.Kind.Audio) {
             if (dashboardAttachedAudio) dashboardAttachedAudio.remove();
