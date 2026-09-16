@@ -282,6 +282,10 @@ def livekit_webhook(request):
                     "participant_identity": participant_identity
                 })
                 r.rpush("agent_jobs", job_payload)
+                if participant_identity.startswith("sip_"):
+                    clean = participant_identity.replace("sip_sip_", "sip_")
+                    r.set(f"agent_room:{participant_identity}", room_name, ex=7200)
+                    r.set(f"agent_room:{clean}", room_name, ex=7200)
                 logger.info(f"Dispatched job {job_payload} to Redis 'agent_jobs' queue.")
             except Exception as ex:
                 logger.error(f"Failed to dispatch room '{room_name}' to Redis: {ex}")
@@ -297,8 +301,12 @@ def livekit_webhook(request):
             # If a SIP agent left, reset their status to AVAILABLE in Redis and publish presence
             if participant_identity.startswith("sip_"):
                 try:
+                    clean = participant_identity.replace("sip_sip_", "sip_")
                     r = redis.Redis.from_url(settings.REDIS_URL)
                     r.set(f"agent_state:{participant_identity}", "AVAILABLE")
+                    r.set(f"agent_state:{clean}", "AVAILABLE")
+                    r.delete(f"agent_room:{participant_identity}")
+                    r.delete(f"agent_room:{clean}")
                     publish_to_centrifugo("presence_updates", {
                         "event": "agent_presence",
                         "sip_username": participant_identity,
@@ -953,10 +961,18 @@ def create_sip_account(request):
         sip_username = f"sip_u{request.user.id}_{unique_suffix}"
         sip_password = f"Pass_{uuid.uuid4().hex[:10]}"
 
-        # Auto-assign clean extension number starting from 1001
-        last_acc = UserSIPAccount.objects.order_by('-id').first()
-        next_ext = (1000 + (last_acc.id if last_acc else 0) + 1)
-        extension = str(next_ext)
+        # Resolve or auto-assign clean numeric extension number
+        user_ext = str(data.get('extension', '')).strip()
+        if user_ext and user_ext.isdigit():
+            if UserSIPAccount.objects.filter(user=request.user, extension=user_ext).exists():
+                return JsonResponse({"status": "error", "message": f"رقم التحويلة {user_ext} مستخدم بالفعل"}, status=400)
+            extension = user_ext
+        else:
+            existing_exts = set(UserSIPAccount.objects.filter(user=request.user).values_list('extension', flat=True))
+            ext_num = 1001
+            while str(ext_num) in existing_exts:
+                ext_num += 1
+            extension = str(ext_num)
 
         import asyncio
         trunk_id, rule_id = asyncio.run(_async_create_sip_trunk_and_rule(
@@ -972,14 +988,22 @@ def create_sip_account(request):
             name=name,
             sip_username=sip_username,
             sip_password=sip_password,
+            extension=extension,
             livekit_trunk_id=trunk_id,
             livekit_rule_id=rule_id,
             is_active=True
         )
 
+        try:
+            r = redis.Redis.from_url(settings.REDIS_URL)
+            r.set(f"ext_to_user:{extension}", sip_username)
+            r.set(f"user_to_ext:{sip_username}", extension)
+        except Exception:
+            pass
+
         return JsonResponse({
             "status": "success",
-            "message": f"تم إنشاء خط SIP بنجاح: {name}",
+            "message": f"تم إنشاء خط SIP بنجاح: {name} (تحويلة: {extension})",
             "account": account.to_dict(),
             "config": {
                 "account_name": name,
@@ -990,7 +1014,7 @@ def create_sip_account(request):
                 "login": sip_username,
                 "password": sip_password,
                 "extension": extension,
-                "instructions": f"في MicroSIP: اضغط Add Account وأدخل البيانات، ثم ألغِ تحديد خيار (Register with domain) و (Publish Presence) واضغط Save. يمكنك الاتصال بطلب الرقم {extension} أو {sip_username} للحديث مع الـ AI."
+                "instructions": f"في MicroSIP: اضغط Add Account وأدخل البيانات، ثم ألغِ تحديد خيار (Register with domain) و (Publish Presence) واضغط Save. رقم تحويلتك المباشر للاتصال والتحويل هو {extension}."
             }
         }, status=201)
 
@@ -1011,10 +1035,17 @@ def delete_sip_account(request, account_id):
     except Exception as e:
         logger.warning(f"Failed to delete LiveKit trunk/rule: {e}")
 
+    try:
+        r = redis.Redis.from_url(settings.REDIS_URL)
+        r.delete(f"ext_to_user:{account.extension}")
+        r.delete(f"user_to_ext:{account.sip_username}")
+    except Exception:
+        pass
+
     account.delete()
     return JsonResponse({
         "status": "success",
-        "message": f"تم حذف خط SIP '{account.name}' بنجاح."
+        "message": f"تم حذف خط SIP '{account.name}' (تحويلة: {account.extension}) بنجاح."
     })
 
 # ==================== Call Queues & Routing Management ====================

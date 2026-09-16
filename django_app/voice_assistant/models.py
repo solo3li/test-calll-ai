@@ -262,6 +262,7 @@ class UserSIPAccount(models.Model):
     name = models.CharField(max_length=100, default='خط MicroSIP الافتراضي')
     sip_username = models.CharField(max_length=64, unique=True)
     sip_password = models.CharField(max_length=128)
+    extension = models.CharField(max_length=32, blank=True, default='', db_index=True, help_text='رقم التحويلة المختصر مثل 1001')
     livekit_trunk_id = models.CharField(max_length=128, blank=True)
     livekit_rule_id = models.CharField(max_length=128, blank=True)
     is_active = models.BooleanField(default=True)
@@ -273,7 +274,8 @@ class UserSIPAccount(models.Model):
 
     def __str__(self):
         status = " [نشط]" if self.is_active else " [معطل]"
-        return f"{self.name} ({self.sip_username}){status}"
+        ext_str = f" [تحويلة: {self.extension}]" if self.extension else ""
+        return f"{self.name}{ext_str} ({self.sip_username}){status}"
 
     def to_dict(self):
         return {
@@ -281,6 +283,7 @@ class UserSIPAccount(models.Model):
             "name": self.name,
             "sip_username": self.sip_username,
             "sip_password": self.sip_password,
+            "extension": self.extension or str(1000 + self.id),
             "livekit_trunk_id": self.livekit_trunk_id,
             "livekit_rule_id": self.livekit_rule_id,
             "is_active": self.is_active,
@@ -352,6 +355,7 @@ class QueueMembership(models.Model):
             "sip_account_id": self.sip_account_id,
             "sip_account_name": self.sip_account.name,
             "sip_username": self.sip_account.sip_username,
+            "extension": self.sip_account.extension or str(1000 + self.sip_account.id),
             "order": self.order,
             "is_active": self.is_active,
         }

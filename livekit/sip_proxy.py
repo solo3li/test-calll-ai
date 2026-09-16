@@ -144,7 +144,12 @@ class SIPProxyProtocol(asyncio.DatagramProtocol):
                 try:
                     self.redis_client.set(f"agent_endpoint:{from_user}", f"{addr[0]}:{addr[1]}", ex=360)
                     self.redis_client.set(f"agent_state:{from_user}", "AVAILABLE", ex=360)
-                    logger.info(f"[PRESENCE] Registered agent '{from_user}' endpoint as {addr[0]}:{addr[1]}")
+                    ext = self.redis_client.get(f"user_to_ext:{from_user}")
+                    if ext:
+                        ext_str = ext.decode() if isinstance(ext, bytes) else str(ext)
+                        self.redis_client.set(f"agent_endpoint:{ext_str}", f"{addr[0]}:{addr[1]}", ex=360)
+                        self.redis_client.set(f"agent_state:{ext_str}", "AVAILABLE", ex=360)
+                    logger.info(f"[PRESENCE] Registered agent '{from_user}' (ext: {ext}) endpoint as {addr[0]}:{addr[1]}")
                 except Exception as ex:
                     logger.warning(f"Error caching agent presence in Redis: {ex}")
 
@@ -168,11 +173,17 @@ class SIPProxyProtocol(asyncio.DatagramProtocol):
 
             if self.redis_client:
                 try:
+                    real_target = target
+                    resolved = self.redis_client.get(f"ext_to_user:{target}")
+                    if resolved:
+                        real_target = resolved.decode() if isinstance(resolved, bytes) else str(resolved)
+
                     payload = json.dumps({
                         "event": "call_transfer",
                         "call_id": call_id,
                         "from_user": from_user,
                         "target": target,
+                        "real_target_user": real_target,
                         "timestamp": asyncio.get_event_loop().time()
                     })
                     self.redis_client.rpush("transfer_events", payload)
@@ -199,11 +210,17 @@ class SIPProxyProtocol(asyncio.DatagramProtocol):
                 target_user = self.extract_user(req_uri)
                 if target_user and self.redis_client:
                     ep = self.redis_client.get(f"agent_endpoint:{target_user}")
+                    if not ep:
+                        # Try extension to username lookup
+                        resolved = self.redis_client.get(f"ext_to_user:{target_user}")
+                        if resolved:
+                            real_u = resolved.decode() if isinstance(resolved, bytes) else str(resolved)
+                            ep = self.redis_client.get(f"agent_endpoint:{real_u}")
                     if ep and ":" in ep:
                         ip, port = ep.split(":", 1)
                         client_addr = (ip, int(port))
                         self.client_sessions[call_id] = client_addr
-                        logger.info(f"[OUTBOUND INVITE] Routing call from LiveKit to agent '{target_user}' at {client_addr}")
+                        logger.info(f"[OUTBOUND INVITE] Routing call from LiveKit to target '{target_user}' at {client_addr}")
 
             if client_addr:
                 logger.info(f"[UPSTREAM -> CLIENT] {first_line} -> {client_addr}")

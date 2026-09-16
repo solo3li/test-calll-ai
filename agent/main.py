@@ -1068,6 +1068,64 @@ async def stream_user_audio_to_queue(audio_stream: rtc.AudioStream, queue: async
     except Exception as e:
         logger.debug(f"Audio stream for {identity} ended: {e}")
 
+async def transfer_events_worker(r: aioredis.Redis, shutdown_event: asyncio.Event):
+    logger.info("Starting Transfer Events Background Worker in agent service...")
+    while not shutdown_event.is_set():
+        try:
+            item = await r.brpop("transfer_events", timeout=1.0)
+            if not item:
+                continue
+            _, raw_ev = item
+            data = json.loads(raw_ev)
+            from_user = data.get("from_user")
+            target = data.get("target")
+            real_target_user = data.get("real_target_user") or target
+            call_id = data.get("call_id")
+
+            logger.info(f"[TRANSFER WORKER] Processing transfer: from '{from_user}' -> target '{target}' (resolved: '{real_target_user}')")
+
+            # Resolve active room of from_user or call_id
+            room_name = None
+            if from_user:
+                r_val = await r.get(f"agent_room:{from_user}")
+                if r_val:
+                    room_name = r_val.decode() if isinstance(r_val, bytes) else str(r_val)
+
+            if not room_name and call_id:
+                r_val = await r.get(f"call_room:{call_id}")
+                if r_val:
+                    room_name = r_val.decode() if isinstance(r_val, bytes) else str(r_val)
+
+            logger.info(f"[TRANSFER WORKER] Active room resolved: {room_name}")
+            if not room_name:
+                logger.warning(f"[TRANSFER WORKER] Could not find active room for from_user '{from_user}'")
+                continue
+
+            # Bridge target (queue or direct agent)
+            lk = api.LiveKitAPI(LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+            try:
+                dial_req = api.CreateSIPParticipantRequest(
+                    sip_call_to=f"sip:{real_target_user}@127.0.0.1:5060",
+                    room_name=room_name,
+                    participant_identity=f"agent_{real_target_user}",
+                    participant_name=f"Extension {target}",
+                    play_ringtone=True,
+                    ringing_timeout=25,
+                    wait_until_answered=True
+                )
+                await lk.sip.create_sip_participant(dial_req)
+                logger.info(f"[TRANSFER WORKER] Successfully bridged '{real_target_user}' to room '{room_name}'!")
+            except Exception as dial_err:
+                logger.error(f"[TRANSFER WORKER] Failed to bridge '{real_target_user}' to room '{room_name}': {dial_err}")
+            finally:
+                await lk.aclose()
+
+        except asyncio.CancelledError:
+            break
+        except Exception as ex:
+            logger.error(f"Error in transfer worker: {ex}")
+            await asyncio.sleep(1)
+
 async def main():
     logger.info("Starting Standalone Voice Agent Service (with RAG & pgvector Support)...")
     logger.info(f"LiveKit Internal URL: {LIVEKIT_INTERNAL_URL}")
@@ -1090,6 +1148,8 @@ async def main():
             loop.add_signal_handler(sig, handle_signal)
         except NotImplementedError:
             pass
+
+    transfer_task = asyncio.create_task(transfer_events_worker(r, shutdown_event))
 
     while not shutdown_event.is_set():
         try:
