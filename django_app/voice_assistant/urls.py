@@ -61,6 +61,15 @@ urlpatterns = [
     path('api/outbound/trunk/<int:trunk_id>/delete/', views.delete_outbound_trunk, name='delete_outbound_trunk'),
     path('api/outbound/ai-call/', views.trigger_ai_outbound_call, name='trigger_ai_outbound_call'),
     path('api/outbound/agent-call/', views.trigger_agent_outbound_call, name='trigger_agent_outbound_call'),
+
+    # Employee WebRTC & Auth APIs
+    path('api/auth/employee-login/', views.api_employee_login, name='api_employee_login'),
+    path('api/auth/me/', views.api_employee_me, name='api_employee_me'),
+    path('api/employees/', views.api_list_employees, name='api_list_employees'),
+    path('api/employees/status/', views.api_update_employee_status, name='api_update_employee_status'),
+    path('api/calls/dial/', views.api_dial_call, name='api_dial_call'),
+    path('api/calls/token/', views.api_get_call_token, name='api_get_call_token'),
+    path('api/calls/hangup/', views.api_hangup_call, name='api_hangup_call'),
 ]
 
 

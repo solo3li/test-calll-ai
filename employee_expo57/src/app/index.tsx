@@ -14,7 +14,11 @@ import { useCall } from "../context/CallContext";
 export default function Index() {
   const { activeTab, callState } = useCall();
 
-  const isCallActive = callState === "CONNECTED" || callState === "ON_HOLD";
+  const isCallActive =
+    callState === "CONNECTED" ||
+    callState === "ON_HOLD" ||
+    callState === "DIALING" ||
+    callState === "RINGING";
 
   return (
     <WindowFrame>

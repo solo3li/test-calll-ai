@@ -2,15 +2,20 @@ import React from "react";
 import { View, Text, StyleSheet, Modal, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
-import { useCall } from "../context/CallContext";
+import { useCallStore } from "../stores/useCallStore";
 
 export const IncomingCallModal: React.FC = () => {
-  const { callState, activeCall, answerCall, declineCall } = useCall();
+  const incomingModalVisible = useCallStore((s) => s.incomingModalVisible);
+  const incomingCall = useCallStore((s) => s.incomingCall);
+  const answerCall = useCallStore((s) => s.answerCall);
+  const declineCall = useCallStore((s) => s.declineCall);
 
-  if (callState !== "RINGING") return null;
+  if (!incomingModalVisible || !incomingCall) return null;
+
+  const isQueue = incomingCall.callType === "queue";
 
   return (
-    <Modal visible={callState === "RINGING"} transparent animationType="slide">
+    <Modal visible={incomingModalVisible} transparent animationType="slide">
       <View style={styles.backdrop}>
         <View style={styles.alertCard}>
           {/* Avatar & Pulse Indicator */}
@@ -19,39 +24,45 @@ export const IncomingCallModal: React.FC = () => {
           </View>
 
           {/* Caller Name & Phone */}
-          <Text style={styles.callerName}>{activeCall.callerName}</Text>
-          <Text style={styles.callerNumber}>{activeCall.phoneNumber}</Text>
+          <Text style={styles.callerName}>{incomingCall.callerName}</Text>
+          <Text style={styles.callerNumber}>
+            تحويلة: {incomingCall.callerExtension || "داخلي"}
+          </Text>
 
           {/* Queue Tag */}
           <View style={styles.queueTag}>
-            <Text style={styles.queueTagText}>🔔 Inbound • Support Queue</Text>
+            <Text style={styles.queueTagText}>
+              {isQueue
+                ? `🔔 وارد من ${incomingCall.queueName || "طابور المبيعات"}`
+                : `🔔 مكالمة داخلية مباشرة (${incomingCall.callerDepartment || "زميل"})`}
+            </Text>
           </View>
 
-          {/* AI Pre-Call Intent & Summary Box */}
+          {/* AI / WebRTC Pre-Call Intent Box */}
           <View style={styles.aiSummaryBox}>
             <View style={styles.aiSummaryHeader}>
               <View style={styles.aiTitleGroup}>
                 <Ionicons name="sparkles" size={14} color={Colors.primaryTeal} />
-                <Text style={styles.aiSummaryTitle}>AI Call Intent / Reason</Text>
+                <Text style={styles.aiSummaryTitle}>WebRTC Audio Stream</Text>
               </View>
-              {activeCall.sentiment ? (
-                <View style={styles.sentimentBadge}>
-                  <Text style={styles.sentimentText}>{activeCall.sentiment}</Text>
-                </View>
-              ) : null}
+              <View style={styles.sentimentBadge}>
+                <Text style={styles.sentimentText}>LiveKit HD</Text>
+              </View>
             </View>
 
             <View style={styles.bulletsList}>
-              {activeCall.summaryBullets && activeCall.summaryBullets.length > 0 ? (
-                activeCall.summaryBullets.map((bullet, idx) => (
-                  <View key={idx} style={styles.bulletRow}>
-                    <View style={styles.bulletDot} />
-                    <Text style={styles.bulletText}>{bullet}</Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.bulletText}>Incoming customer inquiry</Text>
-              )}
+              <View style={styles.bulletRow}>
+                <View style={styles.bulletDot} />
+                <Text style={styles.bulletText}>
+                  اتصال صوتي مباشر وفوري بدون وسطاء SIP
+                </Text>
+              </View>
+              <View style={styles.bulletRow}>
+                <View style={styles.bulletDot} />
+                <Text style={styles.bulletText}>
+                  جاهز للربط بغرفة LiveKit المشفرة
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -70,7 +81,7 @@ export const IncomingCallModal: React.FC = () => {
                   style={{ transform: [{ rotate: "135deg" }] }}
                 />
               </TouchableOpacity>
-              <Text style={styles.btnLabel}>Decline</Text>
+              <Text style={styles.btnLabel}>رفض</Text>
             </View>
 
             <View style={styles.actionBtnCol}>
@@ -81,7 +92,7 @@ export const IncomingCallModal: React.FC = () => {
               >
                 <Ionicons name="call" size={24} color={Colors.textWhite} />
               </TouchableOpacity>
-              <Text style={styles.btnLabel}>Answer</Text>
+              <Text style={styles.btnLabel}>رد (قبول)</Text>
             </View>
           </View>
         </View>
@@ -126,13 +137,14 @@ const styles = StyleSheet.create({
   },
   callerName: {
     color: Colors.textWhite,
-    fontSize: 21,
+    fontSize: 20,
     fontWeight: "bold",
     marginBottom: 4,
+    textAlign: "center",
   },
   callerNumber: {
     color: Colors.textMuted,
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 10,
   },
   queueTag: {
@@ -173,13 +185,13 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   sentimentBadge: {
-    backgroundColor: "rgba(245, 158, 11, 0.18)",
+    backgroundColor: "rgba(16, 185, 129, 0.18)",
     paddingHorizontal: 7,
     paddingVertical: 2.5,
     borderRadius: 6,
   },
   sentimentText: {
-    color: Colors.holdAmber,
+    color: Colors.liveGreen,
     fontSize: 10,
     fontWeight: "bold",
   },
@@ -201,8 +213,9 @@ const styles = StyleSheet.create({
   bulletText: {
     flex: 1,
     color: "#e2e8f0",
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 17,
+    textAlign: "right",
   },
   actionsRow: {
     flexDirection: "row",

@@ -38,7 +38,7 @@ export const DialpadView: React.FC = () => {
           style={styles.numberInput}
           value={dialpadInput}
           onChangeText={setDialpadInput}
-          placeholder="Enter number..."
+          placeholder="رقم التحويلة أو الطابور..."
           placeholderTextColor={Colors.textSubtle}
           keyboardType="phone-pad"
         />
@@ -53,21 +53,15 @@ export const DialpadView: React.FC = () => {
       <View style={styles.quickQueuesRow}>
         <TouchableOpacity
           style={styles.quickQueueChip}
-          onPress={() => startCall("100", "Sales Queue")}
+          onPress={() => startCall("200", "طابور المبيعات")}
         >
-          <Text style={styles.quickQueueText}>📞 Sales</Text>
+          <Text style={styles.quickQueueText}>📞 طابور المبيعات (200)</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickQueueChip}
-          onPress={() => startCall("200", "Support Queue")}
+          onPress={() => startCall("102", "سارة (دعم)")}
         >
-          <Text style={styles.quickQueueText}>🛠 Support</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickQueueChip}
-          onPress={() => startCall("300", "Billing Queue")}
-        >
-          <Text style={styles.quickQueueText}>💳 Billing</Text>
+          <Text style={styles.quickQueueText}>👤 سارة (102)</Text>
         </TouchableOpacity>
       </View>
 

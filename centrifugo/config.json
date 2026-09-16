@@ -7,7 +7,11 @@
       "https://app.localhost",
       "http://app.localhost",
       "https://localhost",
-      "http://localhost"
+      "http://localhost",
+      "http://localhost:8081",
+      "http://localhost:8082",
+      "http://localhost:19006",
+      "http://127.0.0.1:8081"
     ]
   },
   "http_api": {
@@ -29,6 +33,27 @@
     "namespaces": [
       {
         "name": "rooms",
+        "allow_subscribe_for_client": true,
+        "presence": true,
+        "history_size": 50,
+        "history_ttl": "300s"
+      },
+      {
+        "name": "employee",
+        "allow_subscribe_for_client": true,
+        "presence": true,
+        "history_size": 50,
+        "history_ttl": "300s"
+      },
+      {
+        "name": "employees",
+        "allow_subscribe_for_client": true,
+        "presence": true,
+        "history_size": 50,
+        "history_ttl": "300s"
+      },
+      {
+        "name": "queues",
         "allow_subscribe_for_client": true,
         "presence": true,
         "history_size": 50,

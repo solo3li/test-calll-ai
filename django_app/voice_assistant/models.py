@@ -349,6 +349,45 @@ class UserSIPAccount(models.Model):
         }
 
 
+class EmployeeProfile(models.Model):
+    STATUS_CHOICES = [
+        ('ready', 'متاح (Ready)'),
+        ('break', 'استراحة (Break)'),
+        ('busy', 'مشغول (Busy)'),
+        ('offline', 'غير متصل (Offline)'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
+    extension = models.CharField(max_length=32, unique=True, db_index=True, help_text='رقم التحويلة الداخلية مثل 101 أو 102')
+    display_name = models.CharField(max_length=100, default='موظف')
+    department = models.CharField(max_length=100, default='المبيعات')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ready')
+    avatar_url = models.CharField(max_length=500, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['extension']
+
+    def __str__(self):
+        return f"{self.display_name} (تحويلة: {self.extension}) - {self.get_status_display()}"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "username": self.user.username,
+            "extension": self.extension,
+            "display_name": self.display_name,
+            "department": self.department,
+            "status": self.status,
+            "status_display": self.get_status_display(),
+            "avatar_url": self.avatar_url or f"https://api.dicebear.com/7.x/bottts/png?seed={self.extension}",
+            "is_active": self.is_active,
+        }
+
+
 class CallQueue(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='call_queues')
     name = models.CharField(max_length=100, default='طابور المبيعات')
@@ -388,35 +427,51 @@ class CallQueue(models.Model):
             "hold_music_url": self.hold_music.url if self.hold_music else None,
             "fallback_action": self.fallback_action,
             "is_active": self.is_active,
-            "members": [m.to_dict() for m in self.memberships.filter(is_active=True).select_related('sip_account')],
+            "members": [m.to_dict() for m in self.memberships.filter(is_active=True).select_related('employee', 'sip_account')],
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
         }
 
 
 class QueueMembership(models.Model):
     queue = models.ForeignKey(CallQueue, on_delete=models.CASCADE, related_name='memberships')
-    sip_account = models.ForeignKey(UserSIPAccount, on_delete=models.CASCADE, related_name='queue_memberships')
+    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name='queue_memberships', null=True, blank=True)
+    sip_account = models.ForeignKey(UserSIPAccount, on_delete=models.CASCADE, related_name='queue_memberships', null=True, blank=True)
     order = models.PositiveIntegerField(default=0, help_text='ترتيب أولوية الموظف في التناوب')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['order', 'created_at']
-        unique_together = ('queue', 'sip_account')
 
     def __str__(self):
-        return f"{self.sip_account.name} في {self.queue.name}"
+        target = self.employee.display_name if self.employee else (self.sip_account.name if self.sip_account else 'عضو')
+        return f"{target} في {self.queue.name}"
 
     def to_dict(self):
-        return {
-            "id": self.id,
-            "sip_account_id": self.sip_account_id,
-            "sip_account_name": self.sip_account.name,
-            "sip_username": self.sip_account.sip_username,
-            "extension": self.sip_account.extension or str(1000 + self.sip_account.id),
-            "order": self.order,
-            "is_active": self.is_active,
-        }
+        if self.employee:
+            return {
+                "id": self.id,
+                "type": "employee",
+                "employee_id": self.employee_id,
+                "name": self.employee.display_name,
+                "extension": self.employee.extension,
+                "department": self.employee.department,
+                "status": self.employee.status,
+                "order": self.order,
+                "is_active": self.is_active,
+            }
+        elif self.sip_account:
+            return {
+                "id": self.id,
+                "type": "sip",
+                "sip_account_id": self.sip_account_id,
+                "name": self.sip_account.name,
+                "extension": self.sip_account.extension or str(1000 + self.sip_account.id),
+                "order": self.order,
+                "is_active": self.is_active,
+            }
+        return {"id": self.id, "order": self.order, "is_active": self.is_active}
+
 
 
 

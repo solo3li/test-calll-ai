@@ -18,7 +18,7 @@ from django.views.decorators.csrf import csrf_exempt
 from livekit import api
 from google import genai
 
-from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession, UserSIPAccount, CallQueue, QueueMembership, OutboundSIPTrunk
+from .models import Document, DocumentChunk, UserAction, AgentProfile, UserMCPServer, CustomerMemory, CallSession, UserSIPAccount, CallQueue, QueueMembership, OutboundSIPTrunk, EmployeeProfile
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -1695,6 +1695,363 @@ def trigger_agent_outbound_call(request):
     except Exception as e:
         logger.error(f"Error in trigger_agent_outbound_call: {e}", exc_info=True)
         return JsonResponse({"status": "error", "message": f"فشل إجراء الاتصال: {str(e)}"}, status=500)
+
+
+# ==================== Employee WebRTC & Auth APIs ====================
+
+JWT_SECRET = getattr(settings, 'SECRET_KEY', 'default_secret_key')
+
+def generate_employee_jwt(employee: EmployeeProfile):
+    payload = {
+        "user_id": employee.user_id,
+        "username": employee.user.username,
+        "employee_id": employee.id,
+        "extension": employee.extension,
+        "exp": int(time.time()) + (30 * 24 * 3600),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+def get_employee_from_token(request):
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        # Check query param for fallback
+        token_str = request.GET.get("token")
+        if not token_str:
+            return None
+    else:
+        token_str = auth_header.split("Bearer ")[1].strip()
+
+    try:
+        payload = jwt.decode(token_str, JWT_SECRET, algorithms=["HS256"])
+        return EmployeeProfile.objects.select_related('user').filter(id=payload.get("employee_id"), is_active=True).first()
+    except Exception as e:
+        logger.warning(f"Invalid employee JWT: {e}")
+        return None
+
+def generate_centrifugo_token_for_employee(employee: EmployeeProfile):
+    centrifugo_payload = {
+        "sub": f"employee_{employee.id}_{employee.extension}",
+        "exp": int(time.time()) + (30 * 24 * 3600),
+        "info": {
+            "id": employee.id,
+            "name": employee.display_name,
+            "extension": employee.extension,
+            "department": employee.department,
+        }
+    }
+    return jwt.encode(centrifugo_payload, settings.CENTRIFUGO_SECRET, algorithm="HS256")
+
+
+@csrf_exempt
+def api_employee_login(request):
+    """Authenticate employee by username or extension and return JWT & Centrifugo tokens."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        identifier = str(data.get('identifier') or data.get('username') or data.get('extension') or '').strip()
+        password = str(data.get('password') or '').strip()
+
+        if not identifier or not password:
+            return JsonResponse({"status": "error", "message": "يرجى إدخال اسم المستخدم أو التحويلة وكلمة المرور"}, status=400)
+
+        # 1. Try to find user by extension first
+        emp = EmployeeProfile.objects.select_related('user').filter(extension=identifier).first()
+        username = emp.user.username if emp else identifier
+
+        # 2. Authenticate
+        user = authenticate(request, username=username, password=password)
+        if not user:
+            return JsonResponse({"status": "error", "message": "بيانات الدخول غير صحيحة (اسم المستخدم/التحويلة أو كلمة المرور خطأ)"}, status=401)
+
+        # 3. Fetch or auto-create EmployeeProfile
+        employee = EmployeeProfile.objects.filter(user=user).first()
+        if not employee:
+            ext = str(100 + user.id)
+            employee = EmployeeProfile.objects.create(
+                user=user,
+                extension=ext,
+                display_name=user.get_full_name() or user.username,
+                department="المبيعات" if user.id % 2 != 0 else "خدمة العملاء",
+                status="ready"
+            )
+        else:
+            employee.status = "ready"
+            employee.save(update_fields=['status'])
+
+        # 4. Generate Tokens
+        app_token = generate_employee_jwt(employee)
+        centrifugo_token = generate_centrifugo_token_for_employee(employee)
+
+        # Broadcast status change
+        publish_to_centrifugo("employees:presence", {
+            "event": "status_change",
+            "employee": employee.to_dict()
+        })
+
+        return JsonResponse({
+            "status": "success",
+            "token": app_token,
+            "employee": employee.to_dict(),
+            "centrifugo": {
+                "ws_url": settings.CENTRIFUGO_WS_URL,
+                "token": centrifugo_token,
+                "channel": f"employee:{employee.id}"
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error in api_employee_login: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_employee_me(request):
+    """Get current authenticated employee profile."""
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    centrifugo_token = generate_centrifugo_token_for_employee(employee)
+    return JsonResponse({
+        "status": "success",
+        "employee": employee.to_dict(),
+        "centrifugo": {
+            "ws_url": settings.CENTRIFUGO_WS_URL,
+            "token": centrifugo_token,
+            "channel": f"employee:{employee.id}"
+        }
+    })
+
+
+@csrf_exempt
+def api_list_employees(request):
+    """List all employees and active call queues for the internal directory."""
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    employees = EmployeeProfile.objects.filter(is_active=True).exclude(id=employee.id).order_by('extension')
+    queues = CallQueue.objects.filter(is_active=True).order_by('code')
+
+    return JsonResponse({
+        "status": "success",
+        "current_employee": employee.to_dict(),
+        "employees": [e.to_dict() for e in employees],
+        "queues": [q.to_dict() for q in queues]
+    })
+
+
+@csrf_exempt
+def api_update_employee_status(request):
+    """Update employee status (ready, break, busy)."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        new_status = data.get('status', 'ready')
+        if new_status in ['ready', 'break', 'busy', 'offline']:
+            employee.status = new_status
+            employee.save(update_fields=['status'])
+
+            publish_to_centrifugo("employees:presence", {
+                "event": "status_change",
+                "employee": employee.to_dict()
+            })
+
+            return JsonResponse({"status": "success", "employee": employee.to_dict()})
+        else:
+            return JsonResponse({"status": "error", "message": "Invalid status value"}, status=400)
+
+    except Exception as e:
+        logger.error(f"Error in api_update_employee_status: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_dial_call(request):
+    """Initiate an internal WebRTC call to an employee extension or a Call Queue."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    caller = get_employee_from_token(request)
+    if not caller:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        target = str(data.get('target', '')).strip()
+
+        if not target:
+            return JsonResponse({"status": "error", "message": "يرجى تحديد رقم التحويلة أو كود الطابور للاتصال"}, status=400)
+
+        # 1. Check if target is a CallQueue
+        queue = CallQueue.objects.filter(code=target, is_active=True).first()
+        if queue:
+            room_name = f"queue_{queue.code}_{uuid.uuid4().hex[:6]}"
+
+            # Generate caller LiveKit Token
+            token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
+                .with_identity(f"employee_{caller.id}_{caller.extension}") \
+                .with_name(caller.display_name) \
+                .with_metadata(json.dumps({"role": "caller", "employee_id": caller.id})) \
+                .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
+            caller_jwt = token.to_jwt()
+
+            # Broadcast incoming call to queue members
+            members = queue.memberships.filter(is_active=True).select_related('employee')
+            notified_count = 0
+            for m in members:
+                if m.employee and m.employee.id != caller.id and m.employee.status == 'ready':
+                    publish_to_centrifugo(f"employee:{m.employee.id}", {
+                        "event": "incoming_call",
+                        "room_name": room_name,
+                        "caller_name": caller.display_name,
+                        "caller_extension": caller.extension,
+                        "caller_department": caller.department,
+                        "queue_name": queue.name,
+                        "queue_code": queue.code,
+                        "call_type": "queue"
+                    })
+                    notified_count += 1
+
+            return JsonResponse({
+                "status": "success",
+                "call_type": "queue",
+                "room_name": room_name,
+                "target_name": queue.name,
+                "target_number": queue.code,
+                "livekit_url": settings.LIVEKIT_URL,
+                "livekit_token": caller_jwt,
+                "notified_agents": notified_count
+            })
+
+        # 2. Check if target is an Employee Extension
+        callee = EmployeeProfile.objects.filter(extension=target, is_active=True).first()
+        if callee:
+            if callee.id == caller.id:
+                return JsonResponse({"status": "error", "message": "لا يمكنك الاتصال بتحويلتك الشخصية"}, status=400)
+
+            room_name = f"call_ext_{caller.extension}_{callee.extension}_{uuid.uuid4().hex[:6]}"
+
+            # Generate caller LiveKit Token
+            token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
+                .with_identity(f"employee_{caller.id}_{caller.extension}") \
+                .with_name(caller.display_name) \
+                .with_metadata(json.dumps({"role": "caller", "employee_id": caller.id})) \
+                .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
+            caller_jwt = token.to_jwt()
+
+            # Send incoming call event to callee via Centrifugo
+            publish_to_centrifugo(f"employee:{callee.id}", {
+                "event": "incoming_call",
+                "room_name": room_name,
+                "caller_name": caller.display_name,
+                "caller_extension": caller.extension,
+                "caller_department": caller.department,
+                "call_type": "direct_internal"
+            })
+
+            return JsonResponse({
+                "status": "success",
+                "call_type": "direct_internal",
+                "room_name": room_name,
+                "target_name": callee.display_name,
+                "target_number": callee.extension,
+                "target_status": callee.status,
+                "livekit_url": settings.LIVEKIT_URL,
+                "livekit_token": caller_jwt
+            })
+
+        return JsonResponse({"status": "error", "message": f"التحويلة أو كود الطابور '{target}' غير موجود"}, status=404)
+
+    except Exception as e:
+        logger.error(f"Error in api_dial_call: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_get_call_token(request):
+    """Generate LiveKit token for callee to answer and join an active WebRTC room."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        room_name = data.get('room_name')
+        if not room_name:
+            return JsonResponse({"status": "error", "message": "room_name مطلوب"}, status=400)
+
+        token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
+            .with_identity(f"employee_{employee.id}_{employee.extension}") \
+            .with_name(employee.display_name) \
+            .with_metadata(json.dumps({"role": "callee", "employee_id": employee.id})) \
+            .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
+        callee_jwt = token.to_jwt()
+
+        # Notify room or caller that call was accepted
+        publish_to_centrifugo("queues:broadcast", {
+            "event": "call_accepted",
+            "room_name": room_name,
+            "accepted_by": employee.to_dict()
+        })
+
+        return JsonResponse({
+            "status": "success",
+            "room_name": room_name,
+            "livekit_url": settings.LIVEKIT_URL,
+            "livekit_token": callee_jwt
+        })
+
+    except Exception as e:
+        logger.error(f"Error in api_get_call_token: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_hangup_call(request):
+    """Signal call hangup/end to room participants."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        room_name = data.get('room_name')
+        target_employee_id = data.get('target_employee_id')
+
+        if target_employee_id:
+            publish_to_centrifugo(f"employee:{target_employee_id}", {
+                "event": "call_ended",
+                "room_name": room_name,
+                "ended_by": employee.display_name
+            })
+
+        publish_to_centrifugo("queues:broadcast", {
+            "event": "call_ended",
+            "room_name": room_name,
+            "ended_by": employee.display_name
+        })
+
+        return JsonResponse({"status": "success", "message": "Call hung up"})
+
+    except Exception as e:
+        logger.error(f"Error in api_hangup_call: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
 
 
 

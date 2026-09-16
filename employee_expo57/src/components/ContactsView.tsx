@@ -1,62 +1,76 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
-import { useCall } from "../context/CallContext";
-import { ContactItem } from "../constants/mockData";
+import { useCallStore } from "../stores/useCallStore";
+import { useDirectoryStore } from "../stores/useDirectoryStore";
+import { EmployeeProfile } from "../stores/useAuthStore";
 
 export const ContactsView: React.FC = () => {
-  const { contacts, startCall } = useCall();
+  const startCall = useCallStore((s) => s.startCall);
+  const { employees, queues, isLoading, fetchDirectory } = useDirectoryStore();
   const [search, setSearch] = useState("");
 
-  const filtered = contacts.filter((c) => {
+  useEffect(() => {
+    fetchDirectory();
+  }, []);
+
+  const filteredEmployees = employees.filter((c) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
-      c.name.toLowerCase().includes(q) ||
-      c.role.toLowerCase().includes(q) ||
-      c.extension.includes(q) ||
-      c.department.toLowerCase().includes(q)
+      c.display_name.toLowerCase().includes(q) ||
+      c.department.toLowerCase().includes(q) ||
+      c.extension.includes(q)
     );
   });
 
-  const renderContact = ({ item }: { item: ContactItem }) => {
-    const isAvailable = item.status === "available";
-    const isOnCall = item.status === "on_call";
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "ready":
+        return Colors.liveGreen;
+      case "break":
+        return Colors.holdAmber;
+      case "busy":
+        return Colors.endCallRed;
+      default:
+        return Colors.textSubtle;
+    }
+  };
+
+  const renderEmployee = ({ item }: { item: EmployeeProfile }) => {
+    const isAvailable = item.status === "ready";
 
     return (
       <View style={styles.contactCard}>
         <View style={styles.avatarBox}>
           <Text style={styles.avatarText}>
-            {item.name
+            {item.display_name
               .split(" ")
               .map((n) => n[0])
+              .slice(0, 2)
               .join("")}
           </Text>
         </View>
 
         <View style={styles.contactDetails}>
           <View style={styles.nameRow}>
-            <Text style={styles.nameText}>{item.name}</Text>
+            <Text style={styles.nameText}>{item.display_name}</Text>
             <View
               style={[
                 styles.statusIndicator,
-                isAvailable
-                  ? styles.statusAvailable
-                  : isOnCall
-                  ? styles.statusOnCall
-                  : styles.statusAway,
+                { backgroundColor: getStatusColor(item.status) },
               ]}
             />
           </View>
           <Text style={styles.roleText}>
-            {item.role} • Ext: {item.extension}
+            {item.department} • تحويلة: {item.extension}
           </Text>
         </View>
 
         <TouchableOpacity
           style={[styles.callBtn, !isAvailable && styles.callBtnDisabled]}
-          onPress={() => startCall(item.extension, item.name)}
+          onPress={() => startCall(item.extension, item.display_name)}
           disabled={!isAvailable}
           activeOpacity={0.7}
         >
@@ -77,7 +91,7 @@ export const ContactsView: React.FC = () => {
         <Feather name="search" size={16} color={Colors.textSubtle} style={{ marginRight: 8 }} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search colleagues & extensions..."
+          placeholder="بحث عن زميل، تحويلة أو قسم..."
           placeholderTextColor={Colors.textSubtle}
           value={search}
           onChangeText={setSearch}
@@ -91,46 +105,54 @@ export const ContactsView: React.FC = () => {
 
       {/* Department Queues Section */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>DEPARTMENT QUEUES</Text>
+        <Text style={styles.sectionTitle}>طوابير الأقسام (QUEUES)</Text>
       </View>
       <View style={styles.queuesGrid}>
-        <TouchableOpacity
-          style={styles.queueCard}
-          onPress={() => startCall("100", "Sales Queue")}
-        >
-          <Ionicons name="headset-outline" size={18} color={Colors.primaryTeal} />
-          <Text style={styles.queueName}>Sales</Text>
-          <Text style={styles.queueExt}>Ext: 100</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.queueCard}
-          onPress={() => startCall("200", "Support Queue")}
-        >
-          <Ionicons name="construct-outline" size={18} color={Colors.primaryTeal} />
-          <Text style={styles.queueName}>Support</Text>
-          <Text style={styles.queueExt}>Ext: 200</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.queueCard}
-          onPress={() => startCall("300", "Billing Queue")}
-        >
-          <Ionicons name="card-outline" size={18} color={Colors.primaryTeal} />
-          <Text style={styles.queueName}>Billing</Text>
-          <Text style={styles.queueExt}>Ext: 300</Text>
-        </TouchableOpacity>
+        {queues.length > 0 ? (
+          queues.map((q) => (
+            <TouchableOpacity
+              key={q.id}
+              style={styles.queueCard}
+              onPress={() => startCall(q.code, q.name)}
+            >
+              <Ionicons name="headset-outline" size={18} color={Colors.primaryTeal} />
+              <Text style={styles.queueName} numberOfLines={1}>
+                {q.name.split(" ")[0]}
+              </Text>
+              <Text style={styles.queueExt}>كود: {q.code}</Text>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <TouchableOpacity
+            style={styles.queueCard}
+            onPress={() => startCall("200", "طابور المبيعات")}
+          >
+            <Ionicons name="headset-outline" size={18} color={Colors.primaryTeal} />
+            <Text style={styles.queueName}>المبيعات</Text>
+            <Text style={styles.queueExt}>كود: 200</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Colleagues Section */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>INTERNAL AGENTS</Text>
+        <Text style={styles.sectionTitle}>الموظفون والتحويلات الداخلية</Text>
       </View>
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        renderItem={renderContact}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+
+      {isLoading && employees.length === 0 ? (
+        <ActivityIndicator color={Colors.primaryTeal} style={{ marginTop: 20 }} />
+      ) : (
+        <FlatList
+          data={filteredEmployees}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderEmployee}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>لا يوجد موظفون متاحون حالياً</Text>
+          }
+        />
+      )}
     </View>
   );
 };
@@ -157,6 +179,8 @@ const styles = StyleSheet.create({
     flex: 1,
     color: Colors.textWhite,
     fontSize: 13,
+    textAlign: "right",
+    outlineStyle: "none" as any,
   },
   sectionHeader: {
     marginBottom: 8,
@@ -166,6 +190,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "bold",
     letterSpacing: 0.8,
+    textAlign: "right",
   },
   queuesGrid: {
     flexDirection: "row",
@@ -236,19 +261,11 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
   },
-  statusAvailable: {
-    backgroundColor: Colors.liveGreen,
-  },
-  statusOnCall: {
-    backgroundColor: Colors.holdAmber,
-  },
-  statusAway: {
-    backgroundColor: Colors.textSubtle,
-  },
   roleText: {
     color: Colors.textMuted,
     fontSize: 11,
     marginTop: 2,
+    textAlign: "right",
   },
   callBtn: {
     width: 32,
@@ -260,5 +277,11 @@ const styles = StyleSheet.create({
   },
   callBtnDisabled: {
     backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  emptyText: {
+    color: Colors.textSubtle,
+    textAlign: "center",
+    marginTop: 20,
+    fontSize: 12,
   },
 });

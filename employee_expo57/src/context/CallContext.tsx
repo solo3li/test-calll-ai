@@ -1,17 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useEffect } from "react";
 import { Linking, Platform, Alert } from "react-native";
-import { INITIAL_ACTIVE_CALL, MOCK_HISTORY, MOCK_CONTACTS, CallRecord, ContactItem } from "../constants/mockData";
+import { ContactItem, CallRecord } from "../constants/mockData";
+import { useCallStore, CallState, TabKey, ActiveCallData } from "../stores/useCallStore";
 
-export type CallState = "IDLE" | "RINGING" | "CONNECTED" | "ON_HOLD";
-export type TabKey = "dialpad" | "history" | "contacts";
-
-interface ActiveCallData {
-  callerName: string;
-  phoneNumber: string;
-  durationSeconds: number;
-  sentiment: string;
-  summaryBullets: string[];
-}
+export type { TabKey, CallState, ActiveCallData };
 
 interface CallContextType {
   activeTab: TabKey;
@@ -31,7 +23,7 @@ interface CallContextType {
   setTransferModalVisible: (visible: boolean) => void;
   playingAudioId: string | null;
   setPlayingAudioId: (id: string | null) => void;
-  
+
   // Actions
   toggleMute: () => void;
   toggleHold: () => void;
@@ -48,165 +40,59 @@ interface CallContextType {
 const CallContext = createContext<CallContextType | undefined>(undefined);
 
 export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<TabKey>("dialpad");
-  const [callState, setCallState] = useState<CallState>("CONNECTED"); // Defaults to matching user's mockup!
-  const [activeCall, setActiveCall] = useState<ActiveCallData>(INITIAL_ACTIVE_CALL);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isOnHold, setIsOnHold] = useState(false);
-  const [dialpadInput, setDialpadInput] = useState("+20 100 123 4567");
-  const [history, setHistory] = useState<CallRecord[]>(MOCK_HISTORY);
-  const [historyFilter, setHistoryFilter] = useState<"all" | "missed">("all");
-  const [contacts] = useState<ContactItem[]>(MOCK_CONTACTS);
-  const [transferModalVisible, setTransferModalVisible] = useState(false);
-  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const store = useCallStore();
 
-  // Active call live timer tick
-  useEffect(() => {
-    let interval: any = null;
-    if (callState === "CONNECTED") {
-      interval = setInterval(() => {
-        setActiveCall((prev) => ({
-          ...prev,
-          durationSeconds: prev.durationSeconds + 1,
-        }));
-      }, 1000);
+  const sendWhatsAppOrSms = () => {
+    const rawNumber = store.activeCall.phoneNumber.replace(/[^0-9+]/g, "");
+    if (!rawNumber) return;
+    const url = `https://wa.me/${rawNumber.replace("+", "")}`;
+    if (Platform.OS === "web") {
+      window.open(url, "_blank");
+    } else {
+      Linking.openURL(url).catch(() => Alert.alert("Error", "Cannot open WhatsApp"));
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [callState]);
-
-  const toggleMute = () => {
-    setIsMuted((prev) => !prev);
-  };
-
-  const toggleHold = () => {
-    setIsOnHold((prev) => {
-      const next = !prev;
-      setCallState(next ? "ON_HOLD" : "CONNECTED");
-      return next;
-    });
-  };
-
-  const endCall = () => {
-    setCallState("IDLE");
-    setIsMuted(false);
-    setIsOnHold(false);
-  };
-
-  const startCall = (number?: string, name?: string) => {
-    const targetNum = number || dialpadInput || "+20 100 000 0000";
-    const targetName = name || "Outgoing Customer";
-    setActiveCall({
-      callerName: targetName,
-      phoneNumber: targetNum,
-      durationSeconds: 0,
-      sentiment: "Positive Sentiment",
-      summaryBullets: [
-        "Call initiated by agent",
-        "Connecting through LiveKit WebRTC..."
-      ]
-    });
-    setCallState("CONNECTED");
-    setActiveTab("dialpad");
-  };
-
-  const answerCall = () => {
-    setCallState("CONNECTED");
-    setIsMuted(false);
-    setIsOnHold(false);
-  };
-
-  const declineCall = () => {
-    setCallState("IDLE");
   };
 
   const transferCall = (contact: ContactItem) => {
-    setTransferModalVisible(false);
-    if (Platform.OS === "web") {
-      window.alert(`Call transferred to ${contact.name} (${contact.role} - Ext: ${contact.extension})`);
-    } else {
-      Alert.alert("Transfer Complete", `Transferred to ${contact.name} (Ext ${contact.extension})`);
-    }
-    endCall();
-  };
-
-  const sendWhatsAppOrSms = () => {
-    const phone = activeCall.phoneNumber.replace(/[^0-9]/g, "");
-    const text = encodeURIComponent(
-      `Hello ${activeCall.callerName},\nHere is a summary of our conversation:\n- ${activeCall.summaryBullets.join(
-        "\n- "
-      )}\nThank you for contacting us!`
-    );
-    const waUrl = `https://wa.me/${phone}?text=${text}`;
-
-    if (Platform.OS === "web") {
-      window.open(waUrl, "_blank");
-    } else {
-      Linking.openURL(waUrl).catch(() => {
-        Linking.openURL(`sms:${phone}?body=${text}`);
-      });
-    }
-  };
-
-  const simulateIncomingCall = () => {
-    setActiveCall({
-      callerName: "Karim Mostafa",
-      phoneNumber: "+20 112 998 7766",
-      durationSeconds: 0,
-      sentiment: "Inquiry • High Priority",
-      summaryBullets: [
-        "Inquiring about shipment delay for order #5432",
-        "Wants to confirm delivery address before dispatch"
-      ]
-    });
-    setCallState("RINGING");
-    setActiveTab("dialpad");
+    store.transferCall(contact.extension);
   };
 
   const resetToDefaultMock = () => {
-    setActiveCall(INITIAL_ACTIVE_CALL);
-    setCallState("CONNECTED");
-    setIsMuted(false);
-    setIsOnHold(false);
-    setActiveTab("dialpad");
+    store.endCall();
   };
 
-  return (
-    <CallContext.Provider
-      value={{
-        activeTab,
-        setActiveTab,
-        callState,
-        setCallState,
-        activeCall,
-        isMuted,
-        isOnHold,
-        dialpadInput,
-        setDialpadInput,
-        history,
-        historyFilter,
-        setHistoryFilter,
-        contacts,
-        transferModalVisible,
-        setTransferModalVisible,
-        playingAudioId,
-        setPlayingAudioId,
-        toggleMute,
-        toggleHold,
-        endCall,
-        startCall,
-        answerCall,
-        declineCall,
-        transferCall,
-        sendWhatsAppOrSms,
-        simulateIncomingCall,
-        resetToDefaultMock,
-      }}
-    >
-      {children}
-    </CallContext.Provider>
-  );
+  const value: CallContextType = {
+    activeTab: store.activeTab,
+    setActiveTab: store.setActiveTab,
+    callState: store.callState,
+    setCallState: (state: CallState) => useCallStore.setState({ callState: state }),
+    activeCall: store.activeCall,
+    isMuted: store.isMuted,
+    isOnHold: store.isOnHold,
+    dialpadInput: store.dialpadInput,
+    setDialpadInput: store.setDialpadInput,
+    history: store.history,
+    historyFilter: store.historyFilter,
+    setHistoryFilter: store.setHistoryFilter,
+    contacts: store.contacts,
+    transferModalVisible: store.transferModalVisible,
+    setTransferModalVisible: store.setTransferModalVisible,
+    playingAudioId: store.playingAudioId,
+    setPlayingAudioId: store.setPlayingAudioId,
+
+    toggleMute: store.toggleMute,
+    toggleHold: store.toggleHold,
+    endCall: store.endCall,
+    startCall: store.startCall,
+    answerCall: store.answerCall,
+    declineCall: store.declineCall,
+    transferCall,
+    sendWhatsAppOrSms,
+    simulateIncomingCall: store.simulateIncomingCall,
+    resetToDefaultMock,
+  };
+
+  return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
 };
 
 export const useCall = () => {
