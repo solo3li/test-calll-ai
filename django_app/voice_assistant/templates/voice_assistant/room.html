@@ -713,7 +713,148 @@
       </div>
     </section>
 
-    <!-- New Call Queue Modal -->
+    <!-- ==================== Generic Outbound SIP Trunk & Auto-Dialer Section ==================== -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+      <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
+        <div>
+          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <span class="text-purple-400 text-xl">🌐</span>
+            المكالمات الصادرة والجذع الخارجي (Generic Outbound SIP Trunk & AI Auto-Dialer)
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">
+            اربط أي مزود اتصالات سحابي خارجي مثل <span class="text-purple-300 font-semibold">Telnyx</span> أو <span class="text-purple-300 font-semibold">Twilio</span> لتمكين الذكاء الاصطناعي والموظفين من الاتصال بأرقام الهواتف المحمولة والأرضية مباشرة مع التصحيح التلقائي للأرقام المحلية والدولية.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Button: New AI Outbound Call -->
+          <button 
+            type="button" 
+            onclick="openNewAICallModal()" 
+            class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-purple-600/20"
+          >
+            <span>🤖</span>
+            <span>اتصال جديد عبر الـ AI</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Outbound Trunk Current Status & Configuration Form -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Status Card -->
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+              <span>📡</span> حالة الجذع في LiveKit
+            </span>
+            <span id="outbound-trunk-badge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-800 text-gray-400 border border-gray-700">
+              غير مهيأ
+            </span>
+          </div>
+          <div id="outbound-trunk-details" class="space-y-2 text-xs text-slate-300">
+            <div class="text-slate-500 text-center py-4">لم يتم ضبط مزود خارجي بعد. أدخل بيانات المزود في النموذج لحفظه.</div>
+          </div>
+        </div>
+
+        <!-- Trunk Settings Form -->
+        <div class="lg:col-span-2 bg-slate-800/30 border border-slate-700/40 rounded-2xl p-4">
+          <form id="outbound-trunk-form" onsubmit="handleSaveOutboundTrunk(event)" class="space-y-4 text-xs">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1">اسم الجذع / المزود</label>
+                <input type="text" id="outbound-name" placeholder="مثال: حساب Telnyx الأساسي" class="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-purple-500" />
+              </div>
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1">خادم الـ SIP (Host / Termination URI) *</label>
+                <input type="text" id="outbound-host" required placeholder="مثال: sip.telnyx.com أو mytrunk.pstn.twilio.com" class="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-slate-100 font-mono text-[11px] focus:outline-none focus:border-purple-500" />
+              </div>
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1">اسم مستخدم المصادقة (SIP Username)</label>
+                <input type="text" id="outbound-username" placeholder="اختياري حسب إعداد المزود" class="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-slate-100 font-mono focus:outline-none focus:border-purple-500" />
+              </div>
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1">كلمة المرور (SIP Password)</label>
+                <input type="password" id="outbound-password" placeholder="••••••••" class="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-purple-500" />
+              </div>
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1">الرقم المعتمد كمتصل (Caller ID Number)</label>
+                <input type="text" id="outbound-caller-id" placeholder="مثال: +12055550199 أو 01012345678" class="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-slate-100 font-mono focus:outline-none focus:border-purple-500" />
+                <span class="text-[10px] text-slate-500">الرقم الذي يظهر للمتلقي (يقبل الصيغ المصرية والدولية ويصحح تلقائياً)</span>
+              </div>
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1">بروتوكول النقل (Transport) والمنفذ</label>
+                <div class="flex gap-2">
+                  <select id="outbound-transport" class="w-1/2 px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-purple-500">
+                    <option value="UDP">UDP (الافتراضي)</option>
+                    <option value="TCP">TCP</option>
+                    <option value="TLS">TLS (مشفر)</option>
+                  </select>
+                  <input type="number" id="outbound-port" value="5060" class="w-1/2 px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-slate-100 font-mono focus:outline-none focus:border-purple-500" />
+                </div>
+              </div>
+            </div>
+
+            <div id="outbound-trunk-msg" class="hidden p-2.5 rounded-xl text-xs font-semibold"></div>
+
+            <div class="flex justify-end gap-3 pt-2">
+              <button type="submit" id="btn-save-outbound" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold shadow-md transition flex items-center gap-1.5 shadow-purple-600/20">
+                <span>حفظ وتفعيل الجذع الخارجي</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal: New AI Outbound Call -->
+    <div id="ai-call-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <span>🤖</span>
+            <span>بدء مكالمة صادرة عبر الذكاء الاصطناعي (Gemini Live)</span>
+          </h3>
+          <button type="button" onclick="closeAICallModal()" class="text-slate-400 hover:text-slate-200 text-lg">&times;</button>
+        </div>
+
+        <form id="ai-call-form" onsubmit="handleTriggerAICall(event)" class="space-y-4">
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">رقم هاتف العميل المستهدف *</label>
+            <input type="text" id="ai-call-phone" required placeholder="مثال: 01012345678 أو +2010... أو +966..." class="w-full px-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 font-mono text-sm focus:outline-none focus:border-purple-500" />
+            <p class="text-[10px] text-slate-500 mt-1">يقبل الأرقام المصرية العادية (01x) والأرقام الدولية ويتم تصحيحها تلقائياً.</p>
+          </div>
+
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">البروفايل الصوتي للـ AI</label>
+            <select id="ai-call-profile" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-purple-500">
+              <option value="">البروفايل النشط حالياً في النظام</option>
+            </select>
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="block text-slate-300 font-semibold">هدف وتعليمات المكالمة للمساعد</label>
+              <div class="flex gap-1">
+                <button type="button" onclick="applyGoalTemplate('confirm_order')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-purple-300">تأكيد طلب</button>
+                <button type="button" onclick="applyGoalTemplate('survey')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-cyan-300">استبيان رضا</button>
+                <button type="button" onclick="applyGoalTemplate('reminder')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-amber-300">تذكير بموعد</button>
+              </div>
+            </div>
+            <textarea id="ai-call-goal" rows="3" placeholder="مثال: الاتصال بالعميل لتأكيد تفاصيل الأوردر رقم 1005، وسؤاله عن موعد التسليم وعنوان الشحن المناسب له." class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-purple-500"></textarea>
+          </div>
+
+          <div id="ai-call-error" class="hidden p-2.5 rounded-xl bg-rose-950/80 border border-rose-800/80 text-rose-300"></div>
+          <div id="ai-call-success" class="hidden p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-800/80 text-emerald-300"></div>
+
+          <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            <button type="button" onclick="closeAICallModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold">إلغاء</button>
+            <button type="submit" id="btn-submit-ai-call" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-purple-600/20">
+              <span>📞 بدء الاتصال الآن</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
     <div id="new-queue-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
       <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
         <div class="flex justify-between items-center pb-3 border-b border-slate-800">
@@ -2198,18 +2339,29 @@
         if (!calls || calls.length === 0) {
           callsEl.innerHTML = '<div class="text-slate-500 text-center py-2">لا توجد مكالمات سابقة مسجلة.</div>';
         } else {
-          callsEl.innerHTML = calls.map(c => `
-            <div class="p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/40 flex flex-col md:flex-row md:items-center justify-between gap-2">
+          callsEl.innerHTML = calls.map(c => {
+            let dirBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-semibold">📞 واردة</span>';
+            if (c.direction === 'outbound_ai') {
+              dirBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-700/60 text-purple-300 font-semibold">🤖 صادرة (AI)</span>';
+            } else if (c.direction === 'outbound_agent') {
+              dirBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-950/80 border border-blue-700/60 text-blue-300 font-semibold">👤 صادرة (موظف)</span>';
+            }
+            const destHtml = c.destination_phone ? `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 font-mono text-cyan-300">🎯 ${escapeHtml(c.destination_phone)}</span>` : '';
+            return `
+            <div class="p-3 rounded-2xl bg-slate-800/40 border border-slate-700/40 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
               <div class="space-y-1">
-                <div class="flex items-center gap-2">
-                  <span class="font-mono text-cyan-400 font-semibold">${escapeHtml(c.room_name)}</span>
-                  <span class="text-[10px] text-slate-500 font-mono">${c.started_at}</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">${c.duration_seconds} ثانية</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  ${dirBadge}
+                  ${destHtml}
+                  <span class="font-mono text-xs text-slate-300 font-semibold">${escapeHtml(c.room_name)}</span>
+                  <span class="text-[10px] text-slate-500 font-mono">📅 ${c.started_at}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">⏱️ ${c.duration_seconds} ثانية</span>
                 </div>
-                <p class="text-[11px] text-slate-300">${escapeHtml(c.summary || 'بدون ملخص')}</p>
+                <p class="text-[11px] text-slate-300 mt-1">${escapeHtml(c.summary || (c.call_goal ? 'الهدف: ' + c.call_goal : 'مكالمة مكتملة بدون ملخص'))}</p>
               </div>
             </div>
-          `).join('');
+            `;
+          }).join('');
         }
       } catch (err) {
         console.error('Error loading customer memory:', err);
@@ -2606,6 +2758,222 @@
       }
     }
 
+    // ==================== Generic Outbound SIP Trunk & AI Calling JS ====================
+    let currentOutboundTrunk = null;
+
+    async function loadOutboundTrunk() {
+      try {
+        const res = await fetch('/api/outbound/trunk/');
+        const data = await res.json();
+        if (data.status !== 'success') return;
+
+        const badge = document.getElementById('outbound-trunk-badge');
+        const details = document.getElementById('outbound-trunk-details');
+
+        if (data.has_trunk && data.trunk) {
+          currentOutboundTrunk = data.trunk;
+          badge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-700/60";
+          badge.innerHTML = "متصل وجاهز للاتصال";
+
+          details.innerHTML = `
+            <div class="space-y-1.5 pt-1">
+              <div class="flex justify-between items-center"><span class="text-slate-400">الاسم:</span> <span class="font-bold text-slate-100">${escapeHtml(data.trunk.name)}</span></div>
+              <div class="flex justify-between items-center"><span class="text-slate-400">الخادم:</span> <span class="font-mono text-cyan-300 text-[11px]">${escapeHtml(data.trunk.sip_host)}:${data.trunk.sip_port}</span></div>
+              <div class="flex justify-between items-center"><span class="text-slate-400">البروتوكول:</span> <span class="text-amber-300 font-semibold">${data.trunk.transport}</span></div>
+              <div class="flex justify-between items-center"><span class="text-slate-400">Caller ID:</span> <span class="font-mono text-emerald-300 font-semibold">${escapeHtml(data.trunk.caller_id || 'افتراضي')}</span></div>
+              <div class="flex justify-between items-center"><span class="text-slate-400">معرف LiveKit:</span> <span class="font-mono text-[10px] text-purple-400">${data.trunk.livekit_outbound_trunk_id}</span></div>
+            </div>
+            <div class="pt-2 border-t border-slate-700/50 flex justify-end">
+              <button type="button" onclick="handleDeleteOutboundTrunk(${data.trunk.id})" class="text-[11px] text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1">
+                <span>حذف الجذع</span>
+              </button>
+            </div>
+          `;
+
+          // Populate form fields
+          document.getElementById('outbound-name').value = data.trunk.name || '';
+          document.getElementById('outbound-host').value = data.trunk.sip_host || '';
+          document.getElementById('outbound-port').value = data.trunk.sip_port || 5060;
+          document.getElementById('outbound-transport').value = data.trunk.transport || 'UDP';
+          document.getElementById('outbound-username').value = data.trunk.auth_username || '';
+          document.getElementById('outbound-caller-id').value = data.trunk.caller_id || '';
+        } else {
+          currentOutboundTrunk = null;
+          badge.className = "px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-800 text-gray-400 border border-gray-700";
+          badge.innerText = "غير مهيأ";
+          details.innerHTML = `
+            <div class="text-slate-500 text-center py-4">
+              لم يتم حفظ أي جذع SIP خارجي بعد. أدخل بيانات حساب Telnyx أو Twilio أو المزود الخاص بك لحفظه.
+            </div>
+          `;
+        }
+      } catch (err) {
+        console.error('Error loading outbound trunk:', err);
+      }
+    }
+
+    async function handleSaveOutboundTrunk(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-save-outbound');
+      const msg = document.getElementById('outbound-trunk-msg');
+      msg.className = "hidden p-2.5 rounded-xl text-xs font-semibold";
+
+      const payload = {
+        name: document.getElementById('outbound-name').value.trim() || 'حساب المزود الخارجي (Generic SIP Trunk)',
+        sip_host: document.getElementById('outbound-host').value.trim(),
+        sip_port: parseInt(document.getElementById('outbound-port').value || 5060),
+        transport: document.getElementById('outbound-transport').value,
+        auth_username: document.getElementById('outbound-username').value.trim(),
+        auth_password: document.getElementById('outbound-password').value.trim(),
+        caller_id: document.getElementById('outbound-caller-id').value.trim(),
+      };
+
+      if (!payload.sip_host) {
+        msg.className = "p-2.5 rounded-xl text-xs font-semibold bg-rose-950/80 border border-rose-800 text-rose-300";
+        msg.innerText = "يرجى كتابة عنوان الخادم (SIP Host).";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span>جاري الربط مع LiveKit...</span>';
+
+      try {
+        const res = await fetch('/api/outbound/trunk/save/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          msg.className = "p-2.5 rounded-xl text-xs font-semibold bg-emerald-950/80 border border-emerald-800 text-emerald-300";
+          msg.innerText = data.message;
+          await loadOutboundTrunk();
+        } else {
+          msg.className = "p-2.5 rounded-xl text-xs font-semibold bg-rose-950/80 border border-rose-800 text-rose-300";
+          msg.innerText = data.message || "حدث خطأ أثناء حفظ الجذع.";
+        }
+      } catch (err) {
+        msg.className = "p-2.5 rounded-xl text-xs font-semibold bg-rose-950/80 border border-rose-800 text-rose-300";
+        msg.innerText = "فشل الاتصال بالخادم.";
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>حفظ وتفعيل الجذع الخارجي</span>';
+      }
+    }
+
+    async function handleDeleteOutboundTrunk(id) {
+      if (!confirm('هل أنت متأكد من حذف الجذع الخارجي؟ لن تتمكن من إجراء اتصالات صادرة حتى إعادة إعداده.')) return;
+      try {
+        const res = await fetch(`/api/outbound/trunk/${id}/delete/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          await loadOutboundTrunk();
+        } else {
+          alert('فشل الحذف: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء حذف الجذع الخارجي.');
+      }
+    }
+
+    async function openNewAICallModal() {
+      // Populate profiles dropdown from API
+      const select = document.getElementById('ai-call-profile');
+      select.innerHTML = '<option value="">البروفايل النشط حالياً في النظام</option>';
+      try {
+        const res = await fetch('/api/profiles/');
+        const data = await res.json();
+        if (data.status === 'success' && data.profiles) {
+          data.profiles.forEach(p => {
+            select.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)} (${p.dialect_display})</option>`;
+          });
+        }
+      } catch (e) {}
+
+      document.getElementById('ai-call-error').classList.add('hidden');
+      document.getElementById('ai-call-success').classList.add('hidden');
+      document.getElementById('ai-call-modal').classList.remove('hidden');
+      document.getElementById('ai-call-phone').focus();
+    }
+
+    function closeAICallModal() {
+      document.getElementById('ai-call-modal').classList.add('hidden');
+    }
+
+    function applyGoalTemplate(type) {
+      const area = document.getElementById('ai-call-goal');
+      if (type === 'confirm_order') {
+        area.value = "الاتصال بالعميل بلباقة لتأكيد تفاصيل الطلب رقم 1005 (قميص كاجوال وبنطلون جينز)، وسؤاله عن عنوان الشحن المناسب لتأكيد إرسال الشحنة اليوم.";
+      } else if (type === 'survey') {
+        area.value = "الاتصال بالعميل وسؤاله عن رأيه في تجربته الشرائية الأخيرة والمنتجات التي استلمها، وتسجيل أي ملاحظات أو شكاوى يذكرها.";
+      } else if (type === 'reminder') {
+        area.value = "تذكير العميل بموعد التسليم المحدد غداً بين الساعة 2 ظهراً و 5 مساءً، والتأكد من تواجده للاستلام.";
+      }
+    }
+
+    async function handleTriggerAICall(e) {
+      e.preventDefault();
+      const phone = document.getElementById('ai-call-phone').value.trim();
+      const profileId = document.getElementById('ai-call-profile').value;
+      const callGoal = document.getElementById('ai-call-goal').value.trim();
+      const btn = document.getElementById('btn-submit-ai-call');
+      const errEl = document.getElementById('ai-call-error');
+      const succEl = document.getElementById('ai-call-success');
+
+      errEl.classList.add('hidden');
+      succEl.classList.add('hidden');
+
+      if (!phone) {
+        errEl.innerText = "يرجى إدخال رقم الهاتف.";
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span>جاري طلب الرقم وتجهيز المساعد...</span>';
+
+      try {
+        const res = await fetch('/api/outbound/ai-call/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            phone_number: phone,
+            profile_id: profileId || null,
+            call_goal: callGoal
+          })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          succEl.innerHTML = `
+            <div><strong>✅ ${escapeHtml(data.message)}</strong></div>
+            <div class="mt-1 text-[11px] text-emerald-200">الرقم المصحح: <span class="font-mono font-bold">${escapeHtml(data.destination_phone)}</span> | الغرفة: <span class="font-mono">${escapeHtml(data.room_name)}</span></div>
+          `;
+          succEl.classList.remove('hidden');
+          setTimeout(() => {
+            loadCustomerMemory();
+          }, 3000);
+        } else {
+          errEl.innerText = data.message || "فشل بدء المكالمة الصادرة.";
+          errEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        errEl.innerText = "حدث خطأ في الاتصال بالخادم.";
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>📞 بدء الاتصال الآن</span>';
+      }
+    }
+
     // Initialize lists on load
     loadDocuments();
     loadActions();
@@ -2614,6 +2982,7 @@
     loadCustomerMemory();
     loadSipAccounts();
     loadQueues();
+    loadOutboundTrunk();
 
     // Periodic polling to update agent presence states & queue waiting counts
     setInterval(loadQueues, 8000);

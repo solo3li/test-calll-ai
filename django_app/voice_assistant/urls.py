@@ -54,6 +54,14 @@ urlpatterns = [
     path('api/queues/', views.list_call_queues, name='list_call_queues'),
     path('api/queues/create/', views.create_call_queue, name='create_call_queue'),
     path('api/queues/<int:queue_id>/delete/', views.delete_call_queue, name='delete_call_queue'),
+
+    # Generic Outbound SIP Trunk & Calling APIs
+    path('api/outbound/trunk/', views.get_outbound_trunk, name='get_outbound_trunk'),
+    path('api/outbound/trunk/save/', views.save_outbound_trunk, name='save_outbound_trunk'),
+    path('api/outbound/trunk/<int:trunk_id>/delete/', views.delete_outbound_trunk, name='delete_outbound_trunk'),
+    path('api/outbound/ai-call/', views.trigger_ai_outbound_call, name='trigger_ai_outbound_call'),
+    path('api/outbound/agent-call/', views.trigger_agent_outbound_call, name='trigger_agent_outbound_call'),
 ]
+
 
 

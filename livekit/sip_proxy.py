@@ -233,6 +233,55 @@ class SIPProxyProtocol(asyncio.DatagramProtocol):
         if call_id:
             self.client_sessions[call_id] = addr
 
+        # Intercept outbound external phone calls (e.g. Egyptian mobiles or international numbers)
+        if first_line.startswith("INVITE "):
+            req_uri = first_line.split()[1]
+            target_user = self.extract_user(req_uri)
+            from_user = self.extract_user(self.extract_header(text, "from"))
+
+            # Determine if target is an external phone number:
+            # - Starts with 01 and length 11 (Egyptian local)
+            # - Starts with 00 (International)
+            # - Starts with + (E.164)
+            # - Digits with length >= 8 and not 3-digit queue and not 4-digit extension
+            is_external_phone = False
+            norm_phone = target_user
+
+            if target_user.startswith("00"):
+                norm_phone = "+" + target_user[2:]
+                is_external_phone = True
+            elif target_user.startswith("01") and len(target_user) == 11 and target_user.isdigit():
+                norm_phone = "+20" + target_user[1:]
+                is_external_phone = True
+            elif target_user.startswith("+") and len(target_user) >= 8:
+                norm_phone = target_user
+                is_external_phone = True
+            elif target_user.isdigit() and len(target_user) >= 8:
+                norm_phone = "+" + target_user
+                is_external_phone = True
+
+            if is_external_phone and from_user:
+                logger.info(f"[OUTBOUND CALL] MicroSIP agent '{from_user}' dialing external number '{target_user}' -> Normalized: '{norm_phone}'")
+                if self.redis_client:
+                    try:
+                        self.redis_client.set(f"pending_outbound_dial:{from_user}", norm_phone, ex=60)
+                        self.redis_client.set(f"pending_outbound_dial_callid:{call_id}", norm_phone, ex=60)
+                    except Exception as ex:
+                        logger.warning(f"Error caching pending outbound dial: {ex}")
+
+                # Rewrite Request-URI and To header to agent's own SIP username so LiveKit matches trunk
+                new_req_uri = re.sub(r'sip:[^@>:\s]+', f'sip:{from_user}', req_uri)
+                text = text.replace(first_line, f"INVITE {new_req_uri} SIP/2.0", 1)
+
+                to_hdr = self.extract_header(text, "to")
+                if to_hdr:
+                    new_to = re.sub(r'sip:[^@>:\s]+', f'sip:{from_user}', to_hdr)
+                    text = text.replace(f"To: {to_hdr}", f"To: {new_to}", 1)
+                    text = text.replace(f"to: {to_hdr}", f"to: {new_to}", 1)
+
+                data = text.encode()
+                first_line = f"INVITE {new_req_uri} SIP/2.0"
+
         target_host = self.upstream_ip or SIP_UPSTREAM_HOST
         logger.info(f"[CLIENT -> UPSTREAM] {first_line} from {addr} -> {target_host}:{SIP_UPSTREAM_PORT}")
         self.transport.sendto(data, (target_host, SIP_UPSTREAM_PORT))

@@ -233,8 +233,17 @@ class CustomerMemory(models.Model):
         return "سياق وذاكرة العميل التراكمية (استخدمها بذكاء وعفوية للتذكر دون سردها للمستخدم كقائمة):\n" + "\n\n".join(parts)
 
 class CallSession(models.Model):
+    DIRECTION_CHOICES = [
+        ('inbound', 'مكالمة واردة'),
+        ('outbound_agent', 'صادرة (موظف)'),
+        ('outbound_ai', 'صادرة (ذكاء اصطناعي)'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='call_sessions')
     room_name = models.CharField(max_length=120)
+    direction = models.CharField(max_length=32, choices=DIRECTION_CHOICES, default='inbound')
+    destination_phone = models.CharField(max_length=64, blank=True, default='')
+    call_goal = models.TextField(blank=True, default='')
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     duration_seconds = models.PositiveIntegerField(default=0)
@@ -245,16 +254,65 @@ class CallSession(models.Model):
         ordering = ['-started_at']
 
     def __str__(self):
-        return f"جلسة مكالمة {self.room_name} ({self.user.username})"
+        return f"جلسة مكالمة {self.room_name} ({self.get_direction_display()}) - {self.user.username}"
 
     def to_dict(self):
         return {
             "id": self.id,
             "room_name": self.room_name,
+            "direction": self.direction,
+            "direction_display": self.get_direction_display(),
+            "destination_phone": self.destination_phone or "",
+            "call_goal": self.call_goal or "",
             "started_at": self.started_at.strftime("%Y-%m-%d %H:%M"),
             "ended_at": self.ended_at.strftime("%Y-%m-%d %H:%M") if self.ended_at else None,
             "duration_seconds": self.duration_seconds,
             "summary": self.summary or "",
+        }
+
+class OutboundSIPTrunk(models.Model):
+    TRANSPORT_CHOICES = [
+        ('UDP', 'UDP'),
+        ('TCP', 'TCP'),
+        ('TLS', 'TLS'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='outbound_sip_trunks')
+    name = models.CharField(max_length=100, default='حساب المزود الخارجي (Generic SIP Trunk)')
+    sip_host = models.CharField(max_length=255, help_text='عنوان خادم المزود مثل sip.telnyx.com أو mytrunk.pstn.twilio.com')
+    sip_port = models.PositiveIntegerField(default=5060)
+    transport = models.CharField(max_length=10, choices=TRANSPORT_CHOICES, default='UDP')
+    auth_username = models.CharField(max_length=128, blank=True, null=True, help_text='اسم المستخدم للمصادقة في المزود')
+    auth_password = models.CharField(max_length=128, blank=True, null=True, help_text='كلمة المرور في المزود')
+    caller_id = models.CharField(max_length=64, blank=True, null=True, help_text='الرقم المعتمد الذي يظهر للمتصل به بصيغة E.164')
+    livekit_outbound_trunk_id = models.CharField(max_length=128, blank=True, default='', help_text='معرف الجذع الصادر في LiveKit (ST_...)')
+    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default', '-created_at']
+
+    def __str__(self):
+        status = " [نشط]" if self.is_active else " [معطل]"
+        default_str = " [افتراضي]" if self.is_default else ""
+        return f"{self.name} ({self.sip_host}){default_str}{status}"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "sip_host": self.sip_host,
+            "sip_port": self.sip_port,
+            "transport": self.transport,
+            "auth_username": self.auth_username or "",
+            "has_password": bool(self.auth_password),
+            "caller_id": self.caller_id or "",
+            "livekit_outbound_trunk_id": self.livekit_outbound_trunk_id,
+            "is_active": self.is_active,
+            "is_default": self.is_default,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
         }
 
 class UserSIPAccount(models.Model):

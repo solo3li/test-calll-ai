@@ -373,7 +373,7 @@ def fetch_customer_memory_sync(user_id: int) -> dict:
         logger.error(f"Error fetching customer memory for user {user_id}: {e}")
         return {"permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
 
-def save_call_session_and_update_memory_sync(user_id: int, room_name: str, started_at: float, transcript_text: str, summary: str, updated_profile: dict):
+def save_call_session_and_update_memory_sync(user_id: int, room_name: str, started_at: float, transcript_text: str, summary: str, updated_profile: dict, outbound_context: dict = None):
     """Persist completed CallSession and update CustomerMemory in PostgreSQL."""
     if not user_id:
         return
@@ -381,6 +381,17 @@ def save_call_session_and_update_memory_sync(user_id: int, room_name: str, start
         now_dt = datetime.datetime.now(datetime.timezone.utc)
         start_dt = datetime.datetime.fromtimestamp(started_at, tz=datetime.timezone.utc)
         duration = max(0, int((now_dt - start_dt).total_seconds()))
+
+        direction = 'inbound'
+        destination_phone = ''
+        call_goal = ''
+        if outbound_context:
+            if outbound_context.get("is_outbound_ai"):
+                direction = 'outbound_ai'
+            elif outbound_context.get("direction"):
+                direction = outbound_context.get("direction")
+            destination_phone = str(outbound_context.get("destination_phone") or "")
+            call_goal = str(outbound_context.get("call_goal") or "")
 
         conn = psycopg2.connect(
             dbname=POSTGRES_DB,
@@ -390,12 +401,21 @@ def save_call_session_and_update_memory_sync(user_id: int, room_name: str, start
             port=POSTGRES_PORT
         )
         with conn.cursor() as cur:
-            # 1. Insert CallSession
-            cur.execute("""
-                INSERT INTO voice_assistant_callsession 
-                (user_id, room_name, started_at, ended_at, duration_seconds, transcript_text, summary)
-                VALUES (%s, %s, %s, %s, %s, %s, %s);
-            """, (user_id, room_name, start_dt, now_dt, duration, transcript_text, summary))
+            # 1. Check if CallSession already exists for this room_name (e.g. pre-created by outbound trigger)
+            cur.execute("SELECT id FROM voice_assistant_callsession WHERE room_name = %s LIMIT 1;", (room_name,))
+            existing_row = cur.fetchone()
+            if existing_row:
+                cur.execute("""
+                    UPDATE voice_assistant_callsession
+                    SET ended_at = %s, duration_seconds = %s, transcript_text = %s, summary = %s
+                    WHERE id = %s;
+                """, (now_dt, duration, transcript_text, summary, existing_row[0]))
+            else:
+                cur.execute("""
+                    INSERT INTO voice_assistant_callsession 
+                    (user_id, room_name, direction, destination_phone, call_goal, started_at, ended_at, duration_seconds, transcript_text, summary)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """, (user_id, room_name, direction, destination_phone, call_goal, start_dt, now_dt, duration, transcript_text, summary))
 
             # 2. Upsert CustomerMemory
             cur.execute("""
@@ -416,7 +436,7 @@ def save_call_session_and_update_memory_sync(user_id: int, room_name: str, start
     except Exception as e:
         logger.error(f"Error saving CallSession and updating memory: {e}", exc_info=True)
 
-async def distill_and_update_memory(user_id: int, room_name: str, started_at: float, messages: list[dict], current_profile: dict, genai_client):
+async def distill_and_update_memory(user_id: int, room_name: str, started_at: float, messages: list[dict], current_profile: dict, genai_client, outbound_context: dict = None):
     """Background task to extract permanent profile facts and distill short-term episode summary."""
     try:
         user_msgs = [m for m in messages if m.get("speaker") == "user"]
@@ -490,19 +510,33 @@ async def distill_and_update_memory(user_id: int, room_name: str, started_at: fl
             started_at,
             transcript_text,
             summary,
-            updated_profile
+            updated_profile,
+            outbound_context
         )
     except Exception as e:
         logger.error(f"Error in distill_and_update_memory for user {user_id}: {e}", exc_info=True)
 
-def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue_context: dict = None) -> str:
-    """Construct dynamic prompt incorporating dialect, gender, role, style, memory, queue fallback context, and strict guardrails."""
+def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue_context: dict = None, outbound_context: dict = None) -> str:
+    """Construct dynamic prompt incorporating dialect, gender, role, style, memory, queue fallback context, outbound context, and strict guardrails."""
     gender = profile.get("gender", "female")
     dialect = profile.get("dialect", "egyptian")
     role = profile.get("persona_role", "customer_support")
     style = profile.get("speaking_style", "friendly")
     custom = (profile.get("custom_instructions") or "").strip()
     name = profile.get("name", "المساعد")
+
+    outbound_header = ""
+    if outbound_context and outbound_context.get("is_outbound_ai"):
+        goal = (outbound_context.get("call_goal") or "التواصل مع العميل والرد على استفساراته").strip()
+        dest = outbound_context.get("destination_phone") or ""
+        outbound_header = (
+            f"[توجيه فوري ذو أولوية عليا - مكالمة هاتفية صادرة للعميل]:\n"
+            f"أنت المساعد الصوتي الذكي وتتصل هاتفياً بالعميل على رقم هاتفه ({dest}).\n"
+            f"الهدف المطلوب تحقيقه في هذه المكالمة الصادرة:\n\"{goal}\"\n\n"
+            f"تعليمات هامة عند فتح العميل للخط:\n"
+            f"1. بادر فوراً بالترحيب بالعميل بلباقة وعرف باسمك واشرح سبب اتصالك مباشرة وفقاً للهدف المحدد أعلاه.\n"
+            f"2. استمع لرد العميل وتجاوب معه بمرونة واستخدم الأدوات المناسبة للإجابة على استفساراته أو تسجيل طلباته.\n\n"
+        )
 
     fallback_header = ""
     if queue_context and queue_context.get("is_fallback"):
@@ -584,9 +618,9 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
 5. الإجابة من نتائج الأدوات: لخص نتائج الأداة للمستخدم بأسلوبك ولهجتك المحددة، بوضوح وأرقام دقيقة ومباشرة.
 6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{custom_text}
 7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط.{memory_text}"""
-    return (fallback_header + prompt).strip()
+    return (outbound_header + fallback_header + prompt).strip()
 
-async def run_agent_session(room_name: str, user_id: int = None, profile_data: dict = None, queue_context: dict = None):
+async def run_agent_session(room_name: str, user_id: int = None, profile_data: dict = None, queue_context: dict = None, outbound_context: dict = None):
     channel_name = f"rooms:{room_name}"
     logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name} (user_id={user_id})")
     notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعدة الصوتية وتجهيز قاعدة المستندات والإجراءات...")
@@ -732,7 +766,7 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
 
     tools = [{"function_declarations": func_decls}]
 
-    system_instruction_text = build_dynamic_system_instruction(active_profile, memory_card_text, queue_context=queue_context)
+    system_instruction_text = build_dynamic_system_instruction(active_profile, memory_card_text, queue_context=queue_context, outbound_context=outbound_context)
     logger.info(f"Dynamic system instruction compiled (length={len(system_instruction_text)} chars)")
 
     live_config = types.LiveConnectConfig(
@@ -802,6 +836,37 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
         async with client.aio.live.connect(model="gemini-3.1-flash-live-preview", config=live_config) as session:
             logger.info(f"Gemini Live session connected for room '{room_name}'!")
             notify_centrifugo(channel_name, "agent_ready", "المساعدة الصوتية وقاعدة المستندات جاهزة للاستماع إليك الآن!")
+
+            # Outbound AI proactive greeting trigger
+            greeting_triggered = False
+            async def trigger_outbound_greeting():
+                nonlocal greeting_triggered
+                for _ in range(40):
+                    if stop_event.is_set() or greeting_triggered:
+                        return
+                    humans = [p for p in room.remote_participants.values() if p.identity != "pipecat-agent"]
+                    if humans:
+                        await asyncio.sleep(1.0)
+                        if not greeting_triggered and not stop_event.is_set():
+                            greeting_triggered = True
+                            logger.info(f"Human customer detected in outbound room {room_name}. Triggering initial greeting.")
+                            try:
+                                await session.send_client_content(
+                                    turns=[
+                                        types.Content(
+                                            role="user",
+                                            parts=[types.Part(text="العميل فتح الخط وقام بالرد للتو. ابدأ بالتحية فوراً وعرف باسمك واشرح سبب اتصالك وفقاً للهدف المحدد.")]
+                                        )
+                                    ],
+                                    turn_complete=True
+                                )
+                            except Exception as ge:
+                                logger.warning(f"Error triggering outbound greeting: {ge}")
+                        return
+                    await asyncio.sleep(0.5)
+
+            if outbound_context and outbound_context.get("is_outbound_ai"):
+                asyncio.create_task(trigger_outbound_greeting())
 
             # Worker 1: Stream user PCM audio frames to Gemini Live (continuous full-duplex streaming)
             async def send_audio_worker():
@@ -1052,7 +1117,8 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                     started_at=call_started_at,
                     messages=list(call_dialogue_turns),
                     current_profile=dict(memory_data.get("permanent_profile", {}) if memory_data else {}),
-                    genai_client=client
+                    genai_client=client,
+                    outbound_context=outbound_context
                 )
             )
 
@@ -1166,6 +1232,9 @@ async def main():
                 profile_data = None
                 is_queue = False
                 queue_data = None
+                is_outbound_ai = False
+                call_goal = None
+                destination_phone = None
                 try:
                     parsed = json.loads(raw_data)
                     room_name = parsed.get("room_name", raw_data)
@@ -1173,6 +1242,9 @@ async def main():
                     profile_data = parsed.get("profile")
                     is_queue = parsed.get("is_queue", False)
                     queue_data = parsed.get("queue_data")
+                    is_outbound_ai = parsed.get("is_outbound_ai", False)
+                    call_goal = parsed.get("call_goal")
+                    destination_phone = parsed.get("destination_phone")
                 except Exception:
                     pass
 
@@ -1185,13 +1257,21 @@ async def main():
                     logger.info(f"Session for room '{room_name}' is already running. Skipping duplicate dispatch.")
                     continue
 
-                logger.info(f"Received new dispatch for room: {room_name} (user_id={user_id}, is_queue={is_queue})")
+                logger.info(f"Received new dispatch for room: {room_name} (user_id={user_id}, is_queue={is_queue}, is_outbound_ai={is_outbound_ai})")
 
                 def make_cleanup(rm):
                     def _cleanup(fut):
                         logger.info(f"Session task finished for room: {rm}")
                         active_sessions.pop(rm, None)
                     return _cleanup
+
+                outbound_ctx = None
+                if is_outbound_ai:
+                    outbound_ctx = {
+                        "is_outbound_ai": True,
+                        "call_goal": call_goal,
+                        "destination_phone": destination_phone
+                    }
 
                 if is_queue:
                     task = asyncio.create_task(run_queue_session(
@@ -1207,7 +1287,12 @@ async def main():
                         fallback_agent_func=run_agent_session
                     ))
                 else:
-                    task = asyncio.create_task(run_agent_session(room_name, user_id=user_id, profile_data=profile_data))
+                    task = asyncio.create_task(run_agent_session(
+                        room_name,
+                        user_id=user_id,
+                        profile_data=profile_data,
+                        outbound_context=outbound_ctx
+                    ))
 
                 task.add_done_callback(make_cleanup(room_name))
                 active_sessions[room_name] = task
