@@ -1061,11 +1061,11 @@ def create_call_queue(request):
         else:
             member_ids = [int(x) for x in member_ids_raw if str(x).isdigit()]
 
-        valid_sips = UserSIPAccount.objects.filter(user=request.user, id__in=member_ids)
-        for idx, sip_acc in enumerate(valid_sips):
+        valid_employees = EmployeeProfile.objects.filter(id__in=member_ids, is_active=True)
+        for idx, emp in enumerate(valid_employees):
             QueueMembership.objects.create(
                 queue=queue,
-                sip_account=sip_acc,
+                employee=emp,
                 order=idx,
                 is_active=True
             )
@@ -1584,18 +1584,117 @@ def api_employee_me(request):
 def api_list_employees(request):
     """List all employees and active call queues for the internal directory."""
     employee = get_employee_from_token(request)
-    if not employee:
+    if not employee and not request.user.is_authenticated:
         return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
 
-    employees = EmployeeProfile.objects.filter(is_active=True).exclude(id=employee.id).order_by('extension')
+    if employee:
+        employees = EmployeeProfile.objects.filter(is_active=True).exclude(id=employee.id).order_by('extension')
+        current_emp_data = employee.to_dict()
+    else:
+        employees = EmployeeProfile.objects.filter(is_active=True).order_by('extension')
+        current_emp_data = None
+
     queues = CallQueue.objects.filter(is_active=True).order_by('code')
 
     return JsonResponse({
         "status": "success",
-        "current_employee": employee.to_dict(),
+        "current_employee": current_emp_data,
         "employees": [e.to_dict() for e in employees],
         "queues": [q.to_dict() for q in queues]
     })
+
+
+@csrf_exempt
+def api_create_employee(request):
+    """Create a new employee profile and user account from dashboard or API."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    if not request.user.is_authenticated and not get_employee_from_token(request):
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else request.POST
+        display_name = str(data.get('display_name') or '').strip()
+        username = str(data.get('username') or '').strip()
+        extension = str(data.get('extension') or '').strip()
+        department = str(data.get('department') or 'المبيعات').strip()
+        password = str(data.get('password') or 'password123').strip()
+
+        if not display_name or not username or not extension:
+            return JsonResponse({"status": "error", "message": "الاسم واسم المستخدم ورقم التحويلة حقول مطلوبة"}, status=400)
+
+        if EmployeeProfile.objects.filter(extension=extension).exists():
+            return JsonResponse({"status": "error", "message": f"رقم التحويلة '{extension}' مسجل بالفعل لموظف آخر"}, status=400)
+
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({"status": "error", "message": f"اسم المستخدم '{username}' مسجل بالفعل"}, status=400)
+
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            first_name=display_name
+        )
+
+        employee = EmployeeProfile.objects.create(
+            user=user,
+            extension=extension,
+            display_name=display_name,
+            department=department,
+            status='ready',
+            avatar_url=f"https://api.dicebear.com/7.x/bottts/png?seed={extension}"
+        )
+
+        publish_to_centrifugo("employees:presence", {
+            "event": "employee_created",
+            "employee": employee.to_dict()
+        })
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم إنشاء حساب الموظف '{display_name}' (تحويلة {extension}) بنجاح",
+            "employee": employee.to_dict()
+        }, status=201)
+
+    except Exception as e:
+        logger.error(f"Error creating employee: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_delete_employee(request, employee_id):
+    """Delete an employee and their associated user account."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    if not request.user.is_authenticated and not get_employee_from_token(request):
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        employee = EmployeeProfile.objects.filter(id=employee_id).first()
+        if not employee:
+            return JsonResponse({"status": "error", "message": "الموظف غير موجود"}, status=404)
+
+        name = employee.display_name
+        ext = employee.extension
+        user = employee.user
+
+        user.delete()
+
+        publish_to_centrifugo("employees:presence", {
+            "event": "employee_deleted",
+            "employee_id": employee_id,
+            "extension": ext
+        })
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم حذف الموظف '{name}' (تحويلة {ext}) بنجاح"
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting employee: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 
 @csrf_exempt
@@ -1637,7 +1736,18 @@ def api_dial_call(request):
 
     caller = get_employee_from_token(request)
     if not caller:
-        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+        if request.user.is_authenticated:
+            caller = EmployeeProfile.objects.filter(user=request.user).first()
+            if not caller:
+                caller = EmployeeProfile.objects.create(
+                    user=request.user,
+                    extension=f"99{request.user.id}",
+                    display_name=request.user.get_full_name() or request.user.username or "المشرف (لوحة التحكم)",
+                    department="الإدارة",
+                    status="ready"
+                )
+        else:
+            return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
 
     try:
         data = json.loads(request.body.decode('utf-8')) if request.body else {}
@@ -1841,8 +1951,14 @@ def api_hangup_call(request):
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
     employee = get_employee_from_token(request)
+    caller_name = "المشرف"
     if not employee:
-        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+        if request.user.is_authenticated:
+            caller_name = request.user.get_full_name() or request.user.username or "المشرف (لوحة التحكم)"
+        else:
+            return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+    else:
+        caller_name = employee.display_name
 
     try:
         data = json.loads(request.body.decode('utf-8')) if request.body else {}
@@ -1853,13 +1969,13 @@ def api_hangup_call(request):
             publish_to_centrifugo(f"employee:{target_employee_id}", {
                 "event": "call_ended",
                 "room_name": room_name,
-                "ended_by": employee.display_name
+                "ended_by": caller_name
             })
 
         publish_to_centrifugo("queues:broadcast", {
             "event": "call_ended",
             "room_name": room_name,
-            "ended_by": employee.display_name
+            "ended_by": caller_name
         })
 
         return JsonResponse({"status": "success", "message": "Call hung up"})

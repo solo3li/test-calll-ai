@@ -615,49 +615,78 @@
       </div>
     </section>
 
-    <!-- LiveKit SIP & MicroSIP Section -->
-    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl">
+    <!-- Employee Directory & WebRTC Softphone Section -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
       <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
         <div>
           <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <span class="text-blue-400 text-xl">📞</span>
-            خطوط وحسابات الاتصال الهاتفي (LiveKit SIP & MicroSIP)
+            <span class="text-teal-400 text-xl">🎧</span>
+            دليل تحويلات الموظفين ومنظومة الاتصال الداخلي (WebRTC Softphone)
           </h2>
           <p class="text-xs text-slate-400 mt-1">
-            أنشئ خطوط اتصال SIP مخصصة لحسابك للاتصال بالمساعد الصوتي مباشرة من برامج السوفت فون مثل <span class="text-blue-300 font-semibold">MicroSIP</span> مع عزل كامل ومحادثة فورية بالصوت والذاكرة التراكمية.
+            أضف موظفين جدد وتحويلات داخلية، واتصل مباشرة بأي موظف أو طابور عبر <span class="text-teal-300 font-semibold">WebRTC المباشر</span> من المتصفح دون الحاجة لأي برامج خارجية.
           </p>
         </div>
 
         <div class="flex items-center gap-2">
           <button 
             type="button" 
-            onclick="openNewSipModal()" 
-            class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-blue-600/20"
+            onclick="openNewEmployeeModal()" 
+            class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-teal-600/20"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
-            <span>خط SIP جديد</span>
+            <span>➕ موظف جديد</span>
           </button>
+
+          <a 
+            href="http://localhost:8081" 
+            target="_blank" 
+            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-800/80 text-xs font-bold shadow-md transition flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            <span>فتح هاتف الموظف (Web Softphone) ↗</span>
+          </a>
         </div>
       </div>
 
-      <!-- SIP Lines Table -->
+      <!-- Active Call Control Banner -->
+      <div id="dashboard-active-call-banner" class="hidden p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 to-teal-950/90 border border-emerald-700/80 shadow-lg flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <span class="w-3.5 h-3.5 rounded-full bg-emerald-400 animate-ping"></span>
+          <div>
+            <div id="dashboard-call-title" class="text-sm font-bold text-emerald-200">جاري الاتصال...</div>
+            <div id="dashboard-call-sub" class="text-xs text-emerald-400/80 font-mono">يتم الاتصال والمزامنة عبر WebRTC...</div>
+          </div>
+        </div>
+        <button 
+          type="button" 
+          onclick="endDashboardCall()" 
+          class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 shadow-rose-600/30"
+        >
+          <span>إنهاء المكالمة 🔴</span>
+        </button>
+      </div>
+
+      <!-- Employees Directory Table -->
       <div class="mt-4 overflow-x-auto">
         <table class="w-full text-right text-xs">
           <thead>
             <tr class="text-slate-400 border-b border-slate-800/80">
-              <th class="py-2.5 px-3">اسم الخط</th>
-              <th class="py-2.5 px-3 text-center text-cyan-400 font-bold">رقم التحويلة (Extension)</th>
-              <th class="py-2.5 px-3">اسم مستخدم SIP</th>
-              <th class="py-2.5 px-3">خادم الاتصال (Server/Domain)</th>
-              <th class="py-2.5 px-3 text-center">الحالة</th>
+              <th class="py-2.5 px-3">الموظف</th>
+              <th class="py-2.5 px-3 text-center text-cyan-400 font-bold">التحويلة الداخلية</th>
+              <th class="py-2.5 px-3">القسم</th>
+              <th class="py-2.5 px-3 text-center">حالة التواجد</th>
+              <th class="py-2.5 px-3">بروتوكول الصوت</th>
               <th class="py-2.5 px-3 text-center">إجراءات</th>
             </tr>
           </thead>
-          <tbody id="sip-accounts-tbody" class="divide-y divide-slate-800/40">
+          <tbody id="employees-tbody" class="divide-y divide-slate-800/40">
             <tr>
-              <td colspan="6" class="text-center py-6 text-slate-500">جاري تحميل خطوط SIP...</td>
+              <td colspan="6" class="text-center py-6 text-slate-500">جاري تحميل دليل الموظفين...</td>
             </tr>
           </tbody>
         </table>
@@ -925,118 +954,59 @@
     </div>
 
 
-    <!-- New SIP Line Modal -->
-    <div id="new-sip-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+
+
+    <!-- New Employee Modal -->
+    <div id="new-employee-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
       <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
         <div class="flex justify-between items-center pb-3 border-b border-slate-800">
           <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
-            <span>📞</span> إنشاء خط اتصال SIP جديد
+            <span>👤</span> إضافة موظف وتحويلة داخلية جديدة
           </h3>
-          <button type="button" onclick="closeNewSipModal()" class="text-slate-400 hover:text-slate-200">
+          <button type="button" onclick="closeNewEmployeeModal()" class="text-slate-400 hover:text-slate-200">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <form id="new-sip-form" onsubmit="handleCreateSipAccount(event)" class="space-y-3">
+        <form id="new-employee-form" onsubmit="handleCreateEmployee(event)" class="space-y-3">
           <div>
-            <label class="block font-semibold text-slate-300 mb-1">اسم الخط / اسم الموظف</label>
-            <input type="text" id="sip-line-name" required placeholder="مثال: أحمد، سارة، كول سنتر 1" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-blue-500" />
+            <label class="block font-semibold text-slate-300 mb-1">اسم الموظف الكامل *</label>
+            <input type="text" id="emp-name" required placeholder="مثال: خالد المنصور" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-teal-500" />
           </div>
 
-          <div>
-            <label class="block font-semibold text-slate-300 mb-1">رقم التحويلة المختصر (Extension Number)</label>
-            <input type="text" id="sip-line-extension" pattern="[0-9]+" placeholder="تلقائي بالتسلسل (1001، 1002...) أو أدخل رقماً مخصصاً" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-cyan-300 font-mono font-bold focus:outline-none focus:border-cyan-500" />
-            <p class="text-[10px] text-slate-500 mt-1">الرقم الذي سيكتبه زملاؤك على لوحة أرقام MicroSIP للاتصال بك أو تحويل المكالمات إليك مباشرة.</p>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">رقم التحويلة *</label>
+              <input type="text" id="emp-extension" required pattern="[0-9]+" placeholder="مثال: 104" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-cyan-300 font-mono font-bold focus:outline-none focus:border-cyan-500" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">القسم</label>
+              <input type="text" id="emp-department" placeholder="المبيعات، الدعم..." value="المبيعات" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-teal-500" />
+            </div>
           </div>
 
-          <div id="new-sip-error" class="hidden p-2 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-300 text-xs"></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">اسم الدخول (Username) *</label>
+              <input type="text" id="emp-username" required placeholder="khaled_104" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-teal-500" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-300 mb-1">كلمة المرور *</label>
+              <input type="password" id="emp-password" required value="password123" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-teal-500" />
+            </div>
+          </div>
+
+          <div id="new-employee-error" class="hidden p-2 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-300 text-xs"></div>
 
           <div class="flex justify-end gap-2 pt-3 border-t border-slate-800">
-            <button type="button" onclick="closeNewSipModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">إلغاء</button>
-            <button type="submit" id="btn-submit-sip" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition flex items-center gap-1.5">
-              <span>إنشاء الخط وتوليد الإعدادات</span>
+            <button type="button" onclick="closeNewEmployeeModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">إلغاء</button>
+            <button type="submit" id="btn-submit-employee" class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold transition flex items-center gap-1.5">
+              <span>حفظ وإنشاء التحويلة</span>
             </button>
           </div>
         </form>
-      </div>
-    </div>
-
-    <!-- SIP Credentials / MicroSIP Setup Modal -->
-    <div id="sip-details-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
-        <div class="flex justify-between items-center pb-3 border-b border-slate-800">
-          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
-            <span>⚙️</span> بيانات ضبط برنامج MicroSIP
-          </h3>
-          <button type="button" onclick="closeSipDetailsModal()" class="text-slate-400 hover:text-slate-200">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <!-- Extension Highlight Banner -->
-        <div class="p-3 rounded-2xl bg-cyan-950/40 border border-cyan-800/80 flex items-center justify-between gap-3">
-          <div>
-            <span class="text-xs font-bold text-cyan-300 block">📞 رقم التحويلة للاتصال والتحويل الداخلي (Extension):</span>
-            <span class="text-[10px] text-slate-400">يمكنك وزملاؤك كتابة هذا الرقم في خانة التحويل (Transfer) أو لوحة الاتصال:</span>
-          </div>
-          <span id="details-sip-extension-badge" class="font-mono font-black text-xl text-cyan-300 bg-slate-900 px-3.5 py-1 rounded-xl border border-cyan-700/80 shadow-inner">1001</span>
-        </div>
-
-        <div class="p-3 rounded-xl bg-blue-950/50 border border-blue-800/60 text-blue-200 space-y-1.5">
-          <div class="font-bold flex items-center gap-1.5 text-blue-300">
-            <span>💡</span> طريقة الضبط والتحويل في برنامج MicroSIP:
-          </div>
-          <p class="text-[11px] leading-relaxed">
-            افتح برنامج MicroSIP واضغط السهم بجانب اسم الحساب واختر <span class="font-bold text-white">Add Account</span>، وانسخ الحقول التالية واضغط <span class="font-bold text-emerald-400">Save</span>. سيتحول الحساب إلى اللون الأخضر <span class="font-bold text-emerald-400">(Online)</span> مباشرة، ثم اكتب رقم التحويلة (Extension) واضغط زر الاتصال <span class="font-bold text-emerald-400">Call</span>.
-          </p>
-          <div class="pt-1.5 border-t border-blue-800/40 text-[11px] text-amber-200 leading-relaxed">
-            <strong>🔄 ميزة التحويل المباشر (Transfer):</strong> أثناء المكالمة، اضغط زر <span class="px-1.5 py-0.5 rounded bg-slate-800 font-bold text-white border border-slate-700">Transfer</span> في MicroSIP واكتب كود الطابور (مثل <span class="font-mono text-cyan-300 font-bold">200</span> للمبيعات أو <span class="font-mono text-cyan-300 font-bold">300</span> للدعم) أو رقم تحويلة زميلك (مثل <span class="font-mono text-cyan-300 font-bold">1002</span>)، وسيتم تحويل المكالمة فوراً وسلاسة!
-          </div>
-        </div>
-
-        <div class="space-y-2.5 font-mono text-[11px]">
-          <div>
-            <label class="block font-sans font-semibold text-slate-400 mb-0.5">Account Name:</label>
-            <div class="flex items-center gap-2">
-              <input type="text" readonly id="details-sip-name" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-slate-200" />
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block font-sans font-semibold text-slate-400 mb-0.5">SIP Server:</label>
-              <input type="text" readonly id="details-sip-server" value="127.0.0.1:5060" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-cyan-300" />
-            </div>
-            <div>
-              <label class="block font-sans font-semibold text-slate-400 mb-0.5">SIP Proxy:</label>
-              <input type="text" readonly id="details-sip-proxy" value="127.0.0.1:5060" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-cyan-300" />
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block font-sans font-semibold text-slate-400 mb-0.5">User / Login:</label>
-              <input type="text" readonly id="details-sip-user" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-amber-300 font-bold" />
-            </div>
-            <div>
-              <label class="block font-sans font-semibold text-slate-400 mb-0.5">Domain:</label>
-              <input type="text" readonly id="details-sip-domain" value="127.0.0.1" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-slate-200" />
-            </div>
-          </div>
-          <div>
-            <label class="block font-sans font-semibold text-slate-400 mb-0.5">Password:</label>
-            <div class="flex items-center gap-2">
-              <input type="text" readonly id="details-sip-pass" class="w-full px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 rounded-lg text-emerald-300 font-bold" />
-              <button type="button" onclick="copySipPassword()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-sans text-xs border border-slate-700 whitespace-nowrap">نسخ</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex justify-end pt-3 border-t border-slate-800">
-          <button type="button" onclick="closeSipDetailsModal()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition">تم، فهمت</button>
-        </div>
       </div>
     </div>
 
@@ -2387,60 +2357,80 @@
     }
 
     // ==========================================
-    // LiveKit SIP & MicroSIP Management Functions
+    // Employee WebRTC Directory Management
     // ==========================================
-    let currentSipAccounts = [];
+    let currentEmployees = [];
 
-    async function loadSipAccounts() {
-      const tbody = document.getElementById('sip-accounts-tbody');
+    async function loadEmployees() {
+      const tbody = document.getElementById('employees-tbody');
+      if (!tbody) return;
       try {
-        const res = await fetch('/api/sip/');
+        const res = await fetch('/api/employees/');
         const data = await res.json();
         if (data.status !== 'success') return;
 
-        currentSipAccounts = data.accounts || [];
-        if (currentSipAccounts.length === 0) {
+        currentEmployees = data.employees || [];
+        if (currentEmployees.length === 0) {
           tbody.innerHTML = `
             <tr>
               <td colspan="6" class="text-center py-6 text-slate-500 text-xs">
-                لا توجد خطوط SIP مسجلة بعد. اضغط "خط SIP جديد" لإنشاء خط وربط برنامج MicroSIP للاتصال بالـ AI.
+                لا يوجد موظفون مسجلون بعد في النظام.
               </td>
             </tr>
           `;
           return;
         }
 
-        tbody.innerHTML = currentSipAccounts.map(acc => `
+        const statusBadges = {
+          'ready': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>متاح (Ready)</span>',
+          'break': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-800"><span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>استراحة (Break)</span>',
+          'busy': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>مشغول (Busy)</span>',
+          'offline': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">غير متصل</span>'
+        };
+
+        tbody.innerHTML = currentEmployees.map(emp => `
           <tr class="hover:bg-slate-800/30 transition">
-            <td class="py-3 px-3 font-semibold text-slate-200">${escapeHtml(acc.name)}</td>
+            <td class="py-3 px-3 font-semibold text-slate-200 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs">👤</span>
+              <span>${escapeHtml(emp.display_name)}</span>
+            </td>
             <td class="py-3 px-3 text-center">
               <span class="font-mono font-bold text-cyan-300 bg-cyan-950/70 border border-cyan-800 px-2.5 py-1 rounded-lg text-sm shadow-sm">
-                ${escapeHtml(acc.extension || '')}
+                ${escapeHtml(emp.extension)}
               </span>
             </td>
-            <td class="py-3 px-3 font-mono text-slate-400 font-medium">${escapeHtml(acc.sip_username)}</td>
-            <td class="py-3 px-3 font-mono text-slate-300">127.0.0.1:5060</td>
+            <td class="py-3 px-3 text-slate-300">${escapeHtml(emp.department || 'عام')}</td>
             <td class="py-3 px-3 text-center">
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                جاهز للمكالمات
+              ${statusBadges[emp.status] || statusBadges['offline']}
+            </td>
+            <td class="py-3 px-3">
+              <span class="inline-flex items-center gap-1 text-[11px] text-teal-300 font-mono">
+                <span class="w-1.5 h-1.5 rounded-full bg-teal-400"></span> WebRTC LiveKit
               </span>
             </td>
             <td class="py-3 px-3 text-center">
               <div class="flex items-center justify-center gap-1.5">
                 <button 
                   type="button" 
-                  onclick="showSipAccountDetails('${acc.id}')"
-                  class="px-2.5 py-1 rounded-lg bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border border-blue-800 text-[11px] font-semibold transition"
-                  title="عرض بيانات الضبط لـ MicroSIP"
+                  onclick="dialTargetFromDashboard('${escapeHtml(emp.extension)}', '${escapeHtml(emp.display_name)}')"
+                  class="px-2.5 py-1 rounded-lg bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/80 text-[11px] font-bold transition inline-flex items-center gap-1 shadow-sm"
+                  title="اتصال مباشر بالموظف عبر WebRTC"
                 >
-                  إعدادات MicroSIP
+                  <span>📞 اتصال</span>
                 </button>
+                <a 
+                  href="http://localhost:8081" 
+                  target="_blank" 
+                  class="px-2 py-1 rounded-lg bg-teal-950/60 hover:bg-teal-900/80 text-teal-300 border border-teal-800 text-[11px] font-semibold transition inline-flex items-center gap-1"
+                  title="فتح واجهة هاتف الموظف"
+                >
+                  <span>هاتف ↗</span>
+                </a>
                 <button 
                   type="button" 
-                  onclick="deleteSipAccount('${acc.id}', '${escapeHtml(acc.name)}')"
+                  onclick="deleteEmployee(${emp.id}, '${escapeHtml(emp.display_name)}')"
                   class="p-1 rounded-lg hover:bg-rose-950/80 hover:text-rose-300 text-slate-500 transition"
-                  title="حذف الخط"
+                  title="حذف الموظف"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -2451,112 +2441,7 @@
           </tr>
         `).join('');
       } catch (err) {
-        console.error('Error loading SIP accounts:', err);
-      }
-    }
-
-    function openNewSipModal() {
-      document.getElementById('sip-line-name').value = '';
-      const extInput = document.getElementById('sip-line-extension');
-      if (extInput) extInput.value = '';
-      document.getElementById('new-sip-error').classList.add('hidden');
-      document.getElementById('new-sip-modal').classList.remove('hidden');
-    }
-
-    function closeNewSipModal() {
-      document.getElementById('new-sip-modal').classList.add('hidden');
-    }
-
-    async function handleCreateSipAccount(e) {
-      e.preventDefault();
-      const btn = document.getElementById('btn-submit-sip');
-      const errEl = document.getElementById('new-sip-error');
-      const name = document.getElementById('sip-line-name').value.trim();
-      const extInput = document.getElementById('sip-line-extension');
-      const extension = extInput ? extInput.value.trim() : '';
-
-      btn.disabled = true;
-      btn.innerText = 'جاري إنشاء الخط في LiveKit...';
-      errEl.classList.add('hidden');
-
-      try {
-        const res = await fetch('/api/sip/create/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCookie('csrftoken')
-          },
-          body: JSON.stringify({ name, extension })
-        });
-        const data = await res.json();
-        if (data.status === 'success') {
-          closeNewSipModal();
-          await loadSipAccounts();
-          openSipDetailsModal(data.config);
-        } else {
-          errEl.innerText = data.message || 'فشل إنشاء الخط';
-          errEl.classList.remove('hidden');
-        }
-      } catch (err) {
-        errEl.innerText = 'حدث خطأ في الاتصال بالخادم.';
-        errEl.classList.remove('hidden');
-      } finally {
-        btn.disabled = false;
-        btn.innerText = 'إنشاء الخط وتوليد الإعدادات';
-      }
-    }
-
-    function openSipDetailsModal(cfg) {
-      document.getElementById('details-sip-name').value = cfg.account_name || 'AI Assistant';
-      document.getElementById('details-sip-server').value = cfg.sip_server || '127.0.0.1:5060';
-      document.getElementById('details-sip-proxy').value = cfg.sip_proxy || '127.0.0.1:5060';
-      document.getElementById('details-sip-user').value = cfg.username || '';
-      document.getElementById('details-sip-domain').value = cfg.domain || '127.0.0.1';
-      document.getElementById('details-sip-pass').value = cfg.password || '';
-      const extBadge = document.getElementById('details-sip-extension-badge');
-      if (extBadge) extBadge.innerText = cfg.extension || '1001';
-      document.getElementById('sip-details-modal').classList.remove('hidden');
-    }
-
-    function showSipAccountDetails(id) {
-      const acc = currentSipAccounts.find(a => String(a.id) === String(id));
-      if (!acc) return;
-      openSipDetailsModal({
-        account_name: acc.name,
-        sip_server: '127.0.0.1:5060',
-        sip_proxy: '127.0.0.1:5060',
-        username: acc.sip_username,
-        domain: '127.0.0.1',
-        password: acc.sip_password,
-        extension: acc.extension
-      });
-    }
-
-    function closeSipDetailsModal() {
-      document.getElementById('sip-details-modal').classList.add('hidden');
-    }
-
-    function copySipPassword() {
-      const pass = document.getElementById('details-sip-pass').value;
-      navigator.clipboard.writeText(pass);
-      alert('تم نسخ كلمة المرور إلى الحافظة!');
-    }
-
-    async function deleteSipAccount(id, name) {
-      if (!confirm(`هل أنت متأكد من حذف خط SIP "${name}"؟ سيتوقف MicroSIP عن العمل بهذا الخط فوراً.`)) return;
-      try {
-        const res = await fetch(`/api/sip/${id}/delete/`, {
-          method: 'POST',
-          headers: { 'X-CSRFToken': getCookie('csrftoken') }
-        });
-        const data = await res.json();
-        if (data.status === 'success') {
-          await loadSipAccounts();
-        } else {
-          alert('فشل الحذف: ' + (data.message || ''));
-        }
-      } catch (err) {
-        alert('حدث خطأ أثناء حذف خط SIP.');
+        console.error('Error loading employees:', err);
       }
     }
 
@@ -2636,16 +2521,26 @@
               </td>
               <td class="py-3 px-3 text-center">${waitingBadge}</td>
               <td class="py-3 px-3 text-center">
-                <button 
-                  type="button" 
-                  onclick="deleteQueue('${q.id}', '${escapeHtml(q.name)}')"
-                  class="p-1 rounded-lg hover:bg-rose-950/80 hover:text-rose-300 text-slate-500 transition"
-                  title="حذف الطابور"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+                <div class="flex items-center justify-center gap-1.5">
+                  <button 
+                    type="button" 
+                    onclick="dialTargetFromDashboard('${escapeHtml(q.code)}', '${escapeHtml(q.name)}')"
+                    class="px-2.5 py-1 rounded-lg bg-amber-950/70 hover:bg-amber-900 text-amber-300 border border-amber-700/80 text-[11px] font-bold transition inline-flex items-center gap-1 shadow-sm"
+                    title="اتصال وتجربة الطابور عبر WebRTC"
+                  >
+                    <span>📞 اتصال بالطابور</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    onclick="deleteQueue('${q.id}', '${escapeHtml(q.name)}')"
+                    class="p-1 rounded-lg hover:bg-rose-950/80 hover:text-rose-300 text-slate-500 transition"
+                    title="حذف الطابور"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
               </td>
             </tr>
           `;
@@ -2660,19 +2555,19 @@
       document.getElementById('new-queue-error').classList.add('hidden');
 
       const membersListEl = document.getElementById('queue-members-list');
-      if (currentSipAccounts && currentSipAccounts.length > 0) {
-        membersListEl.innerHTML = currentSipAccounts.map(acc => `
+      if (currentEmployees && currentEmployees.length > 0) {
+        membersListEl.innerHTML = currentEmployees.map(emp => `
           <label class="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900/60 border border-slate-800 hover:bg-slate-800/40 cursor-pointer transition">
-            <input type="checkbox" name="member_sip_ids" value="${acc.id}" class="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-amber-500">
-            <span class="text-slate-200 font-medium">${escapeHtml(acc.name)}</span>
-            <span class="font-mono text-cyan-300 font-bold text-[11px] mr-1">[تحويلة: ${escapeHtml(acc.extension || '')}]</span>
-            <span class="font-mono text-slate-500 text-[10px]">(${escapeHtml(acc.sip_username)})</span>
+            <input type="checkbox" name="member_employee_ids" value="${emp.id}" class="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-amber-500">
+            <span class="text-slate-200 font-medium">${escapeHtml(emp.display_name)}</span>
+            <span class="font-mono text-cyan-300 font-bold text-[11px] mr-1">[تحويلة: ${escapeHtml(emp.extension || '')}]</span>
+            <span class="text-slate-400 text-[10px]">(${escapeHtml(emp.department || '')})</span>
           </label>
         `).join('');
       } else {
         membersListEl.innerHTML = `
           <span class="text-slate-500 text-[11px]">
-            لا توجد خطوط SIP مسجلة بعد. أنشئ خط SIP من جدول الخطوط أولاً لتحديده كعضو في هذا الطابور.
+            جاري مزامنة الموظفين من جدول التحويلات...
           </span>
         `;
       }
@@ -2710,7 +2605,7 @@
         formData.append('hold_music', musicFile);
       }
 
-      const checkedMembers = document.querySelectorAll('input[name="member_sip_ids"]:checked');
+      const checkedMembers = document.querySelectorAll('input[name="member_employee_ids"]:checked');
       checkedMembers.forEach(cb => {
         formData.append('member_ids', cb.value);
       });
@@ -2755,6 +2650,213 @@
         }
       } catch (err) {
         alert('حدث خطأ أثناء حذف الطابور.');
+      }
+    }
+
+    // ==========================================
+    // Employee Directory & Modal Functions
+    // ==========================================
+    function openNewEmployeeModal() {
+      const form = document.getElementById('new-employee-form');
+      if (form) form.reset();
+      const err = document.getElementById('new-employee-error');
+      if (err) err.classList.add('hidden');
+      const modal = document.getElementById('new-employee-modal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeNewEmployeeModal() {
+      const modal = document.getElementById('new-employee-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    async function handleCreateEmployee(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit-employee');
+      const errEl = document.getElementById('new-employee-error');
+      const name = document.getElementById('emp-name').value.trim();
+      const ext = document.getElementById('emp-extension').value.trim();
+      const dept = document.getElementById('emp-department').value.trim();
+      const username = document.getElementById('emp-username').value.trim();
+      const password = document.getElementById('emp-password').value.trim();
+
+      btn.disabled = true;
+      btn.innerText = 'جاري حفظ وإنشاء التحويلة...';
+      errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/employees/create/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            display_name: name,
+            extension: ext,
+            department: dept,
+            username: username,
+            password: password
+          })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          closeNewEmployeeModal();
+          await loadEmployees();
+          await loadQueues();
+        } else {
+          errEl.innerText = data.message || 'حدث خطأ أثناء إضافة الموظف';
+          errEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        errEl.innerText = 'فشل الاتصال بالخادم.';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'حفظ وإنشاء التحويلة';
+      }
+    }
+
+    async function deleteEmployee(id, name) {
+      if (!confirm(`هل أنت متأكد من حذف الموظف "${name}" وإلغاء تحويلته؟`)) return;
+      try {
+        const res = await fetch(`/api/employees/${id}/delete/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          await loadEmployees();
+          await loadQueues();
+        } else {
+          alert('فشل الحذف: ' + (data.message || ''));
+        }
+      } catch (err) {
+        alert('حدث خطأ أثناء حذف الموظف.');
+      }
+    }
+
+    // ==========================================
+    // Dashboard WebRTC Calling (Queues & Employees)
+    // ==========================================
+    let dashboardLivekitRoom = null;
+    let dashboardAttachedAudio = null;
+    let dashboardCurrentRoomName = null;
+
+    async function dialTargetFromDashboard(target, targetName) {
+      if (dashboardLivekitRoom) {
+        alert('توجد مكالمة نشطة بالفعل في لوحة التحكم. يرجى إنهاؤها أولاً.');
+        return;
+      }
+
+      const banner = document.getElementById('dashboard-active-call-banner');
+      const callTitle = document.getElementById('dashboard-call-title');
+      const callSub = document.getElementById('dashboard-call-sub');
+
+      if (banner) banner.classList.remove('hidden');
+      if (callTitle) callTitle.innerText = `جاري الاتصال بـ: ${targetName} [${target}]...`;
+      if (callSub) callSub.innerText = 'يتم إنشاء غرفة WebRTC وتنبيه الموظفين عبر الشبكة الداخلية...';
+
+      try {
+        const res = await fetch('/api/calls/dial/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ target: target })
+        });
+        const data = await res.json();
+
+        if (data.status !== 'success') {
+          alert(data.message || 'فشل بدء المكالمة');
+          if (banner) banner.classList.add('hidden');
+          return;
+        }
+
+        dashboardCurrentRoomName = data.room_name;
+        const agentsInfo = (data.notified_agents !== undefined)
+          ? `(تم تنبيه ${data.notified_agents} موظف متاح)`
+          : '';
+
+        if (callTitle) callTitle.innerText = `مكالمة جارية: ${data.target_name || targetName} [${data.target_number || target}]`;
+        if (callSub) callSub.innerText = `متصل عبر WebRTC LiveKit ${agentsInfo} - بانتظار رد الموظف...`;
+
+        dashboardLivekitRoom = new LivekitClient.Room({
+          adaptiveStream: true,
+          dynacast: true
+        });
+
+        dashboardLivekitRoom.on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
+          if (callSub) callSub.innerText = `انضم للمكالمة: ${p.name || p.identity} ✅`;
+        });
+
+        dashboardLivekitRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          if (track.kind === LivekitClient.Track.Kind.Audio) {
+            if (dashboardAttachedAudio) dashboardAttachedAudio.remove();
+            dashboardAttachedAudio = track.attach();
+            document.body.appendChild(dashboardAttachedAudio);
+          }
+        });
+
+        dashboardLivekitRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
+          if (banner) banner.classList.add('hidden');
+          if (dashboardAttachedAudio) {
+            dashboardAttachedAudio.remove();
+            dashboardAttachedAudio = null;
+          }
+          dashboardLivekitRoom = null;
+          dashboardCurrentRoomName = null;
+        });
+
+        await dashboardLivekitRoom.connect(data.livekit_url, data.livekit_token);
+        await dashboardLivekitRoom.localParticipant.setMicrophoneEnabled(true);
+
+      } catch (err) {
+        console.error('Failed to dial from dashboard:', err);
+        alert('حدث خطأ في الاتصال عبر WebRTC: ' + err.message);
+        if (banner) banner.classList.add('hidden');
+        if (dashboardLivekitRoom) {
+          dashboardLivekitRoom.disconnect();
+          dashboardLivekitRoom = null;
+        }
+        dashboardCurrentRoomName = null;
+      }
+    }
+
+    async function endDashboardCall() {
+      const banner = document.getElementById('dashboard-active-call-banner');
+      if (banner) banner.classList.add('hidden');
+
+      const roomToClose = dashboardCurrentRoomName;
+
+      if (dashboardLivekitRoom) {
+        try {
+          await dashboardLivekitRoom.disconnect();
+        } catch (e) {
+          console.error(e);
+        }
+        dashboardLivekitRoom = null;
+      }
+
+      if (dashboardAttachedAudio) {
+        dashboardAttachedAudio.remove();
+        dashboardAttachedAudio = null;
+      }
+
+      dashboardCurrentRoomName = null;
+
+      try {
+        await fetch('/api/calls/hangup/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ room_name: roomToClose })
+        });
+      } catch (e) {
+        // ignore
       }
     }
 
@@ -2980,12 +3082,13 @@
     loadProfiles();
     loadMcpServer();
     loadCustomerMemory();
-    loadSipAccounts();
+    loadEmployees();
     loadQueues();
     loadOutboundTrunk();
 
     // Periodic polling to update agent presence states & queue waiting counts
     setInterval(loadQueues, 8000);
+    setInterval(loadEmployees, 8000);
   </script>
 </body>
 </html>
