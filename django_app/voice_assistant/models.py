@@ -12,7 +12,7 @@ They are re-exported here for backward compatibility.
 from knowledge.models import Document, DocumentChunk
 from agents.models import AgentProfile, UserMCPServer
 from call_center.models import EmployeeProfile, CallQueue, QueueMembership
-from telephony.models import OutboundSIPTrunk
+from telephony.models import OutboundSIPTrunk, InboundPBXTrunk
 from crm.models import CustomerMemory, CallSession
 
 # Backward compatibility alias
@@ -28,6 +28,7 @@ __all__ = [
     'CallQueue',
     'QueueMembership',
     'OutboundSIPTrunk',
+    'InboundPBXTrunk',
     'CustomerMemory',
     'CallSession',
 ]

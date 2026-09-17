@@ -51,6 +51,9 @@ urlpatterns = [
     path('api/outbound/trunk/save/', views.save_outbound_trunk, name='save_outbound_trunk'),
     path('api/outbound/trunk/<int:trunk_id>/delete/', views.delete_outbound_trunk, name='delete_outbound_trunk'),
     path('api/outbound/ai-call/', views.trigger_ai_outbound_call, name='trigger_ai_outbound_call'),
+    path('api/pbx-trunks/', views.list_pbx_trunks, name='list_pbx_trunks'),
+    path('api/pbx-trunks/save/', views.save_pbx_trunk, name='save_pbx_trunk'),
+    path('api/pbx-trunks/<int:trunk_id>/delete/', views.delete_pbx_trunk, name='delete_pbx_trunk'),
 
     # Employee WebRTC & Auth APIs
     path('api/auth/employee-login/', views.api_employee_login, name='api_employee_login'),

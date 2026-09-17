@@ -45,11 +45,16 @@ from crm.views import (
     reset_customer_memory,
 )
 from telephony.views import (
+    normalize_phone_number,
     get_outbound_trunk,
     save_outbound_trunk,
     delete_outbound_trunk,
     trigger_ai_outbound_call,
+    list_pbx_trunks,
+    save_pbx_trunk,
+    delete_pbx_trunk,
 )
+from telephony.models import InboundPBXTrunk
 from call_center.views import (
     api_employee_login,
     api_employee_me,
@@ -311,9 +316,19 @@ def livekit_webhook(request):
                     logger.error(f"Error loading queue {queue_code}: {e}")
 
             if user_id and not profile:
-                active_prof = AgentProfile.objects.filter(user_id=user_id, is_active=True).first()
-                if active_prof:
-                    profile = active_prof.to_dict()
+                if "_pbx_" in room_name:
+                    try:
+                        p_idx = parts.index("pbx")
+                        if len(parts) > p_idx + 1 and parts[p_idx + 1].isdigit():
+                            pbx_t = InboundPBXTrunk.objects.filter(id=int(parts[p_idx + 1])).select_related('target_profile').first()
+                            if pbx_t and pbx_t.target_profile:
+                                profile = pbx_t.target_profile.to_dict()
+                    except Exception:
+                        pass
+                if not profile:
+                    active_prof = AgentProfile.objects.filter(user_id=user_id, is_active=True).first()
+                    if active_prof:
+                        profile = active_prof.to_dict()
 
             pending_dest = None
             if participant_identity.startswith("sip_"):
