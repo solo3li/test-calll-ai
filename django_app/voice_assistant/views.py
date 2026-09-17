@@ -257,6 +257,13 @@ def livekit_webhook(request):
                 "message": "المساعد الصوتي متصل وجاهز للاستماع الآن",
                 "timestamp": time.time(),
             })
+            return HttpResponse("ok")
+
+        # Skip direct human-to-human calls (employee to employee or employee to external PSTN)
+        if room_name.startswith("call_ext_") or room_name.startswith("pstn_out_"):
+            logger.info(f"Direct human-to-human call room '{room_name}' (participant: {participant_identity}). Skipping AI agent dispatch.")
+            return HttpResponse("ok")
+
         else:
             user_id = None
             profile = None
@@ -285,12 +292,22 @@ def livekit_webhook(request):
             if len(parts) >= 5 and parts[3] == "queue":
                 is_queue = True
                 queue_code = parts[4]
+            elif room_name.startswith("queue_") and len(parts) >= 2:
+                is_queue = True
+                queue_code = parts[1]
+
+            if is_queue and queue_code:
                 try:
-                    q_obj = CallQueue.objects.filter(user_id=user_id, code=queue_code, is_active=True).first()
+                    q_filter = {"code": queue_code, "is_active": True}
+                    if user_id:
+                        q_filter["user_id"] = user_id
+                    q_obj = CallQueue.objects.filter(**q_filter).first()
                     if q_obj:
                         queue_data = q_obj.to_dict()
+                        if not user_id:
+                            user_id = q_obj.user_id
                 except Exception as e:
-                    logger.error(f"Error loading queue {queue_code} for user {user_id}: {e}")
+                    logger.error(f"Error loading queue {queue_code}: {e}")
 
             if user_id and not profile:
                 active_prof = AgentProfile.objects.filter(user_id=user_id, is_active=True).first()

@@ -1088,6 +1088,11 @@ async def main():
                 if not room_name:
                     continue
 
+                # Defensive check: Do not dispatch AI agent for direct human-to-human calls
+                if room_name.startswith("call_ext_") or room_name.startswith("pstn_out_"):
+                    logger.info(f"Skipping direct human call room '{room_name}' in agent dispatcher.")
+                    continue
+
                 # Check if session is already running for this room
                 if room_name in active_sessions and not active_sessions[room_name].done():
                     logger.info(f"Session for room '{room_name}' is already running. Skipping duplicate dispatch.")
