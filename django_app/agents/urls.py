@@ -11,11 +11,6 @@ urlpatterns = [
     path('profiles/<int:profile_id>/update/', views.update_profile, name='update_profile'),
     path('profiles/<int:profile_id>/delete/', views.delete_profile, name='delete_profile'),
 
-    # Actions Management APIs
-    path('actions/', views.list_actions, name='list_actions'),
-    path('actions/create/', views.create_action, name='create_action'),
-    path('actions/<int:action_id>/toggle/', views.toggle_action, name='toggle_action'),
-    path('actions/<int:action_id>/delete/', views.delete_action, name='delete_action'),
 
     # External FastMCP Server APIs
     path('mcp/', views.get_mcp_server, name='get_mcp_server'),

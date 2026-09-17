@@ -28,10 +28,6 @@ from knowledge.views import (
     delete_document,
 )
 from agents.views import (
-    list_actions,
-    create_action,
-    toggle_action,
-    delete_action,
     list_profiles,
     create_profile,
     activate_profile,

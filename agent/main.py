@@ -64,7 +64,7 @@ def notify_centrifugo(channel: str, event: str, message: str = "", extra: dict =
         logger.warning(f"Could not notify Centrifugo: {e}")
 
 def fetch_agent_bootstrap_sync(user_id: int) -> dict:
-    """Fetch complete agent bootstrap bundle (profile, actions, mcp, memory) via Django API."""
+    """Fetch complete agent bootstrap bundle (profile, mcp, memory) via Django API."""
     if not user_id:
         return {}
     try:
@@ -107,60 +107,6 @@ def query_knowledge_base_sync(query: str, user_id: int, genai_client=None, top_k
     except Exception as e:
         logger.error(f"Failed to query knowledge API: {e}", exc_info=True)
         return f"حدث خطأ أثناء البحث في المستندات: {e}"
-
-def fetch_user_actions_sync(user_id: int) -> dict[str, dict]:
-    """Fetch active custom HTTP actions for user via Django API."""
-    if not user_id:
-        return {}
-    try:
-        bootstrap = fetch_agent_bootstrap_sync(user_id)
-        actions = bootstrap.get("actions", {})
-        logger.info(f"Loaded {len(actions)} custom HTTP actions for user {user_id}: {list(actions.keys())}")
-        return actions
-    except Exception as e:
-        logger.error(f"Error fetching user actions: {e}")
-        return {}
-
-def execute_http_action_sync(action_def: dict, args: dict) -> str:
-    """Execute custom HTTP action with parameter substitution."""
-    url = action_def.get("url", "")
-    method = (action_def.get("method") or "GET").upper()
-    headers = dict(action_def.get("headers") or {})
-    remaining_args = dict(args or {})
-
-    # Replace path parameters like {order_id} in URL
-    import re
-    path_vars = re.findall(r'\{([a-zA-Z0-9_]+)\}', url)
-    for v in path_vars:
-        if v in remaining_args:
-            val = str(remaining_args.pop(v))
-            url = url.replace(f"{{{v}}}", val)
-
-    logger.info(f"Executing {method} {url} with remaining args: {remaining_args}")
-    try:
-        if method == "GET":
-            resp = requests.get(url, params=remaining_args, headers=headers, timeout=3.5)
-        elif method == "POST":
-            resp = requests.post(url, json=remaining_args, headers=headers, timeout=3.5)
-        elif method == "PUT":
-            resp = requests.put(url, json=remaining_args, headers=headers, timeout=3.5)
-        elif method == "DELETE":
-            resp = requests.delete(url, params=remaining_args, headers=headers, timeout=3.5)
-        else:
-            return f"طريقة HTTP غير مدعومة: {method}"
-
-        try:
-            data = resp.json()
-            return json.dumps(data, ensure_ascii=False)
-        except Exception:
-            return resp.text[:500]
-
-    except requests.Timeout:
-        logger.warning(f"HTTP Action timed out for URL: {url}")
-        return "عذراً، استغرق الخادم وقتاً أطول من المتوقع للرد على الطلب."
-    except Exception as e:
-        logger.error(f"Error executing HTTP action to {url}: {e}")
-        return f"حدث خطأ أثناء الاتصال بالخدمة: {str(e)}"
 
 def fetch_user_mcp_server_sync(user_id: int) -> dict:
     """Fetch active external MCP server and cached tools for user via Django API."""
@@ -574,11 +520,6 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # Fetch User Actions dynamically
-    user_actions = {}
-    if user_id:
-        user_actions = await asyncio.to_thread(fetch_user_actions_sync, user_id)
-
     # Fetch External MCP Tools dynamically
     user_mcp = {}
     mcp_tools = {}
@@ -649,17 +590,6 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
     }
 
     func_decls = [rag_decl]
-
-    # Add custom HTTP actions
-    for act_name, act_data in user_actions.items():
-        decl = {
-            "name": act_name,
-            "description": act_data["description"]
-        }
-        params = act_data.get("parameters_schema")
-        if params and isinstance(params, dict) and params.get("properties"):
-            decl["parameters"] = params
-        func_decls.append(decl)
 
     # Add external MCP tools
     if user_mcp and user_mcp.get("tools"):
@@ -835,20 +765,6 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
                                             id=fc.id,
                                             name=fc.name,
                                             response={"result": search_result}
-                                        ))
-                                    elif fc.name in user_actions:
-                                        act_def = user_actions[fc.name]
-                                        notify_centrifugo(channel_name, "agent_action_executing", f"جاري استدعاء إجراء: {act_def['description'][:30]}...")
-                                        act_args = dict(fc.args or {})
-                                        logger.info(f"Executing custom HTTP action '{fc.name}' with args {act_args} for user {user_id}")
-                                        action_result = await asyncio.to_thread(
-                                            execute_http_action_sync, act_def, act_args
-                                        )
-                                        logger.info(f"Action '{fc.name}' response: {action_result[:150]}")
-                                        function_responses.append(types.FunctionResponse(
-                                            id=fc.id,
-                                            name=fc.name,
-                                            response={"result": action_result}
                                         ))
                                     elif fc.name in mcp_tools:
                                         mcp_info = mcp_tools[fc.name]

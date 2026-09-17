@@ -125,10 +125,9 @@ def run_tests():
     b_data = b_res.json()
     assert b_data["status"] == "success"
     assert "profile" in b_data
-    assert "actions" in b_data
     assert "mcp_servers" in b_data
     assert "customer_memory" in b_data
-    print(f" -> Agent Bootstrap succeeded: loaded profile '{b_data['profile']['name']}', actions, and memory")
+    print(f" -> Agent Bootstrap succeeded: loaded profile '{b_data['profile']['name']}', MCP servers, and memory")
 
     # 10. Internal Knowledge RAG API
     print("\n[10] Testing Internal Knowledge RAG API (/api/knowledge/internal/rag/)...")

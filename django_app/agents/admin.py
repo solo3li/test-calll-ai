@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AgentProfile, UserAction, UserMCPServer
+from .models import AgentProfile, UserMCPServer
 
 @admin.register(AgentProfile)
 class AgentProfileAdmin(admin.ModelAdmin):
@@ -7,13 +7,6 @@ class AgentProfileAdmin(admin.ModelAdmin):
     list_filter = ('is_active', 'gender', 'dialect', 'persona_role', 'user')
     search_fields = ('name', 'custom_instructions', 'user__username')
     readonly_fields = ('created_at', 'updated_at')
-
-@admin.register(UserAction)
-class UserActionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'user', 'method', 'url', 'is_active', 'created_at')
-    list_filter = ('is_active', 'method', 'user')
-    search_fields = ('name', 'description', 'url', 'user__username')
-    readonly_fields = ('created_at',)
 
 @admin.register(UserMCPServer)
 class UserMCPServerAdmin(admin.ModelAdmin):

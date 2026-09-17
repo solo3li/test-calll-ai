@@ -1,10 +1,10 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from django.utils import timezone
-from voice_assistant.models import UserAction, UserMCPServer
+from agents.models import UserMCPServer
 
 class Command(BaseCommand):
-    help = 'Migrate user hamo from custom HTTP actions to dedicated FastMCP store server'
+    help = 'Setup FastMCP store server for user hamo'
 
     def handle(self, *args, **options):
         hamo = User.objects.filter(username='hamo').first()
@@ -12,14 +12,6 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("User 'hamo' does not exist."))
             return
 
-        # 1. Delete old HTTP actions for hamo
-        deleted_count, _ = UserAction.objects.filter(
-            user=hamo,
-            name__in=['search_store_products', 'get_order_status', 'create_store_order']
-        ).delete()
-        self.stdout.write(self.style.SUCCESS(f"Deleted {deleted_count} old HTTP actions for 'hamo'."))
-
-        # 2. Setup FastMCP Server for hamo
         default_tools = [
             {
                 "name": "search_store_products",
