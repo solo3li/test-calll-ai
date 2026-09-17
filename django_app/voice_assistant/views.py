@@ -50,6 +50,7 @@ from telephony.views import (
     save_outbound_trunk,
     delete_outbound_trunk,
     trigger_ai_outbound_call,
+    list_outbound_gateways,
     list_pbx_trunks,
     save_pbx_trunk,
     delete_pbx_trunk,

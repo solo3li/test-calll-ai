@@ -855,8 +855,16 @@
         <form id="ai-call-form" onsubmit="handleTriggerAICall(event)" class="space-y-4">
           <div>
             <label class="block text-slate-300 font-semibold mb-1">رقم هاتف العميل المستهدف *</label>
-            <input type="text" id="ai-call-phone" required placeholder="مثال: 01012345678 أو +2010... أو +966..." class="w-full px-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 font-mono text-sm focus:outline-none focus:border-purple-500" />
-            <p class="text-[10px] text-slate-500 mt-1">يقبل الأرقام المصرية العادية (01x) والأرقام الدولية ويتم تصحيحها تلقائياً.</p>
+            <input type="text" id="ai-call-phone" required placeholder="مثال: 01012345678 أو +2010... أو تحويلة داخلية 101" class="w-full px-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 font-mono text-sm focus:outline-none focus:border-purple-500" />
+            <p class="text-[10px] text-slate-500 mt-1">يقبل الأرقام المصرية العادية (01x)، الدولية (+20...)، أو أرقام التحويلات الداخلية للسنترال (مثل 101 و 200).</p>
+          </div>
+
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">مسار الاتصال الصادر (Outbound Gateway)</label>
+            <select id="ai-call-gateway" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-purple-500">
+              <option value="auto:">المسار الافتراضي للنظام (تلقائي)</option>
+            </select>
+            <p class="text-[10px] text-slate-500 mt-1">يمكنك الاختيار بين خط الاتصال السحابي أو أحد سنترالات الشركة المربوطة (PBX).</p>
           </div>
 
           <div>
@@ -967,6 +975,38 @@
             <input type="text" id="pbx-inbound-numbers" placeholder="مثال: 888, 100, +2010... (مفصولة بفواصل، اتركه فارغاً لقبول الكل)" class="w-full px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-100 font-mono text-[11px] focus:outline-none focus:border-emerald-500" />
           </div>
 
+          <!-- Outbound PBX Settings -->
+          <div class="p-3.5 bg-slate-800/40 rounded-2xl border border-slate-700/60 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <label for="pbx-enable-outbound" class="font-semibold text-slate-200 cursor-pointer flex items-center gap-1.5 text-xs">
+                  <span>🔄 تفعيل الاتصال ثنائي الاتجاه (الصادر والوارد)</span>
+                </label>
+                <p class="text-[10px] text-slate-400 mt-0.5">يتيح للـ AI إجراء مكالمات صادرة وطلب تحويلات الموظفين عبر هذا السنترال.</p>
+              </div>
+              <input type="checkbox" id="pbx-enable-outbound" checked class="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-0 cursor-pointer" onchange="togglePbxOutboundOptions()" />
+            </div>
+
+            <div id="pbx-outbound-options" class="grid grid-cols-2 gap-3 pt-2.5 border-t border-slate-700/40">
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1 text-[11px]">منفذ SIP السنترال (Port)</label>
+                <input type="number" id="pbx-outbound-port" value="5060" class="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label class="block text-slate-300 font-semibold mb-1 text-[11px]">بروتوكول النقل (Transport)</label>
+                <select id="pbx-outbound-transport" class="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-emerald-500">
+                  <option value="UDP" selected>UDP (شائع وقياسي)</option>
+                  <option value="TCP">TCP</option>
+                  <option value="TLS">TLS</option>
+                </select>
+              </div>
+              <div class="col-span-2 flex items-center gap-2 pt-1">
+                <input type="checkbox" id="pbx-is-default-outbound" class="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-0 cursor-pointer" />
+                <label for="pbx-is-default-outbound" class="text-slate-300 text-[11px] cursor-pointer">تعيين هذا السنترال كجذع افتراضي لكافة المكالمات الصادرة في النظام</label>
+              </div>
+            </div>
+          </div>
+
           <div id="pbx-modal-error" class="hidden p-2.5 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300"></div>
           <div id="pbx-modal-success" class="hidden p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300"></div>
 
@@ -1004,6 +1044,17 @@
               </button>
             </div>
             <pre class="bg-slate-950 p-3 rounded-2xl border border-slate-800/80 font-mono text-[11px] text-emerald-300 overflow-x-auto select-all leading-relaxed" id="issabel-peer-content"></pre>
+          </div>
+
+          <!-- USER Details (Incoming to PBX / Outbound from AI) Block -->
+          <div id="issabel-user-box" class="space-y-1.5">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-cyan-400">إعدادات استقبال مكالمات الـ AI في السنترال (USER Details / Incoming Settings):</span>
+              <button type="button" onclick="copyIssabelSnippet('issabel-user-content', this)" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px] font-semibold flex items-center gap-1 transition">
+                <span>📋 نسخ الكود</span>
+              </button>
+            </div>
+            <pre class="bg-slate-950 p-3 rounded-2xl border border-slate-800/80 font-mono text-[11px] text-cyan-300 overflow-x-auto select-all leading-relaxed" id="issabel-user-content"></pre>
           </div>
 
           <!-- Register String Block (shown if creds) -->
@@ -2948,7 +2999,33 @@
       }
     }
 
+    async function loadOutboundGateways() {
+      const select = document.getElementById('ai-call-gateway');
+      if (!select) return;
+      select.innerHTML = '<option value="auto:">المسار الافتراضي للنظام (تلقائي)</option>';
+      try {
+        const res = await fetch('/api/telephony/outbound-gateways/');
+        const data = await res.json();
+        if (data.status === 'success' && data.gateways) {
+          data.gateways.forEach(g => {
+            const val = `${g.type}:${g.id || ''}`;
+            const isDef = g.is_default ? ' ⭐ (الافتراضي)' : '';
+            const icon = g.type === 'pbx' ? '🏢' : '🌐';
+            select.innerHTML += `<option value="${val}">${icon} ${escapeHtml(g.name)}${isDef}</option>`;
+          });
+          if (data.default_gateway) {
+            select.value = `${data.default_gateway.type}:${data.default_gateway.id || ''}`;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load outbound gateways:', e);
+      }
+    }
+
     async function openNewAICallModal() {
+      // Load available outbound gateways (Cloud Trunk + PBX Trunks)
+      await loadOutboundGateways();
+
       // Populate profiles dropdown from API
       const select = document.getElementById('ai-call-profile');
       select.innerHTML = '<option value="">البروفايل النشط حالياً في النظام</option>';
@@ -2988,6 +3065,8 @@
       const phone = document.getElementById('ai-call-phone').value.trim();
       const profileId = document.getElementById('ai-call-profile').value;
       const callGoal = document.getElementById('ai-call-goal').value.trim();
+      const gatewayVal = (document.getElementById('ai-call-gateway') && document.getElementById('ai-call-gateway').value) || 'auto:';
+      const [gwType, gwId] = gatewayVal.split(':');
       const btn = document.getElementById('btn-submit-ai-call');
       const errEl = document.getElementById('ai-call-error');
       const succEl = document.getElementById('ai-call-success');
@@ -3005,23 +3084,27 @@
       btn.innerHTML = '<span>جاري طلب الرقم وتجهيز المساعد...</span>';
 
       try {
+        const payload = {
+          phone_number: phone,
+          profile_id: profileId || null,
+          call_goal: callGoal,
+          gateway_type: gwType || 'auto',
+          gateway_id: gwId ? parseInt(gwId) : null
+        };
+
         const res = await fetch('/api/telephony/ai-call/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCookie('csrftoken')
           },
-          body: JSON.stringify({
-            phone_number: phone,
-            profile_id: profileId || null,
-            call_goal: callGoal
-          })
+          body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (data.status === 'success') {
           succEl.innerHTML = `
             <div><strong>✅ ${escapeHtml(data.message)}</strong></div>
-            <div class="mt-1 text-[11px] text-emerald-200">الرقم المصحح: <span class="font-mono font-bold">${escapeHtml(data.destination_phone)}</span> | الغرفة: <span class="font-mono">${escapeHtml(data.room_name)}</span></div>
+            <div class="mt-1 text-[11px] text-emerald-200">الرقم: <span class="font-mono font-bold">${escapeHtml(data.destination_phone)}</span> | المسار: <span class="font-bold">${escapeHtml(data.gateway_used || 'الافتراضي')}</span> | الغرفة: <span class="font-mono">${escapeHtml(data.room_name)}</span></div>
           `;
           succEl.classList.remove('hidden');
           setTimeout(() => {
@@ -3086,6 +3169,10 @@
             ? `<span class="font-mono text-slate-300">${escapeHtml(t.inbound_numbers.join(', '))}</span>`
             : `<span class="text-slate-500">جميع المكالمات الواردة</span>`;
 
+          const bidiBadge = t.enable_outbound
+            ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-800" title="صادر ووارد">🔄 ${t.is_default_outbound ? 'ثنائي (افتراضي)' : 'ثنائي الاتجاه'}</span>`
+            : `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400">وارد فقط</span>`;
+
           return `
             <div class="bg-slate-800/40 border border-slate-700/50 hover:border-emerald-500/40 transition rounded-2xl p-4 flex flex-col justify-between space-y-4 shadow-lg">
               <div class="space-y-2.5">
@@ -3095,7 +3182,10 @@
                       <span>🏢</span>
                       <span>${escapeHtml(t.name)}</span>
                     </h3>
-                    <div class="mt-1">${authBadge}</div>
+                    <div class="mt-1 flex items-center gap-1.5 flex-wrap">
+                      ${authBadge}
+                      ${bidiBadge}
+                    </div>
                   </div>
                   <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${t.is_active ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800' : 'bg-slate-800 text-slate-400'}">
                     ${t.is_active ? '🟢 متصل' : '⚪ معطل'}
@@ -3115,6 +3205,12 @@
                     <span>LiveKit Trunk:</span>
                     <span class="truncate max-w-[120px]" title="${escapeHtml(t.livekit_trunk_id || '')}">${escapeHtml(t.livekit_trunk_id ? t.livekit_trunk_id.substring(0, 15) + '...' : 'غير مزامن')}</span>
                   </div>
+                  ${t.enable_outbound && t.livekit_outbound_trunk_id ? `
+                  <div class="flex justify-between items-center text-[10px] font-mono text-cyan-400/80">
+                    <span>LK Outbound:</span>
+                    <span class="truncate max-w-[120px]" title="${escapeHtml(t.livekit_outbound_trunk_id)}">${escapeHtml(t.livekit_outbound_trunk_id.substring(0, 15) + '...')}</span>
+                  </div>
+                  ` : ''}
                 </div>
               </div>
 
@@ -3156,6 +3252,16 @@
       if (err) err.classList.add('hidden');
       if (succ) succ.classList.add('hidden');
 
+      const outbCheck = document.getElementById('pbx-enable-outbound');
+      if (outbCheck) outbCheck.checked = true;
+      const portInput = document.getElementById('pbx-outbound-port');
+      if (portInput) portInput.value = 5060;
+      const transInput = document.getElementById('pbx-outbound-transport');
+      if (transInput) transInput.value = 'UDP';
+      const defCheck = document.getElementById('pbx-is-default-outbound');
+      if (defCheck) defCheck.checked = false;
+      togglePbxOutboundOptions();
+
       onPbxAuthModeChange();
       onPbxDestinationChange();
 
@@ -3192,6 +3298,18 @@
     function closeNewPbxModal() {
       const modal = document.getElementById('new-pbx-modal');
       if (modal) modal.classList.add('hidden');
+    }
+
+    function togglePbxOutboundOptions() {
+      const check = document.getElementById('pbx-enable-outbound');
+      const opts = document.getElementById('pbx-outbound-options');
+      if (opts && check) {
+        if (check.checked) {
+          opts.classList.remove('hidden');
+        } else {
+          opts.classList.add('hidden');
+        }
+      }
     }
 
     function onPbxAuthModeChange() {
@@ -3253,6 +3371,11 @@
       const targetQueueId = document.getElementById('pbx-target-queue').value;
       const inboundNumbers = document.getElementById('pbx-inbound-numbers').value.trim();
 
+      const enableOutbound = document.getElementById('pbx-enable-outbound') ? document.getElementById('pbx-enable-outbound').checked : true;
+      const outboundPort = document.getElementById('pbx-outbound-port') ? (parseInt(document.getElementById('pbx-outbound-port').value) || 5060) : 5060;
+      const outboundTransport = document.getElementById('pbx-outbound-transport') ? document.getElementById('pbx-outbound-transport').value : 'UDP';
+      const isDefaultOutbound = document.getElementById('pbx-is-default-outbound') ? document.getElementById('pbx-is-default-outbound').checked : false;
+
       btn.disabled = true;
       btn.innerHTML = '<span>جاري إنشاء الجذع والمزامنة مع LiveKit...</span>';
 
@@ -3265,7 +3388,11 @@
         destination_type: destinationType,
         target_profile_id: targetProfileId || null,
         target_queue_id: targetQueueId || null,
-        inbound_numbers: inboundNumbers
+        inbound_numbers: inboundNumbers,
+        enable_outbound: enableOutbound,
+        outbound_port: outboundPort,
+        outbound_transport: outboundTransport,
+        is_default_outbound: isDefaultOutbound
       };
 
       try {
@@ -3325,17 +3452,31 @@
 
       const titleEl = document.getElementById('issabel-modal-title');
       const peerEl = document.getElementById('issabel-peer-content');
+      const userEl = document.getElementById('issabel-user-content');
+      const userBox = document.getElementById('issabel-user-box');
       const regBox = document.getElementById('issabel-register-box');
       const regEl = document.getElementById('issabel-register-content');
 
       if (titleEl) titleEl.innerText = `كود إعداد السنترال: ${trunk.name}`;
-      if (peerEl) peerEl.innerText = trunk.issabel_config.peer_details || '';
+      if (peerEl) peerEl.innerText = (trunk.issabel_config && trunk.issabel_config.peer_details) || '';
 
-      if (trunk.issabel_config.register_string && trunk.issabel_config.register_string.trim()) {
-        regBox.classList.remove('hidden');
-        regEl.innerText = trunk.issabel_config.register_string;
+      if (userEl) {
+        const userDetails = (trunk.issabel_config && trunk.issabel_config.user_details) || '';
+        userEl.innerText = userDetails;
+        if (userBox) {
+          if (userDetails.trim()) {
+            userBox.classList.remove('hidden');
+          } else {
+            userBox.classList.add('hidden');
+          }
+        }
+      }
+
+      if (trunk.issabel_config && trunk.issabel_config.register_string && trunk.issabel_config.register_string.trim()) {
+        if (regBox) regBox.classList.remove('hidden');
+        if (regEl) regEl.innerText = trunk.issabel_config.register_string;
       } else {
-        regBox.classList.add('hidden');
+        if (regBox) regBox.classList.add('hidden');
       }
 
       const modal = document.getElementById('issabel-code-modal');

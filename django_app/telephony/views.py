@@ -55,7 +55,7 @@ async def _async_create_or_update_outbound_trunk(name, address, port, transport_
         if ":" not in full_address and port:
             full_address = f"{full_address}:{port}"
 
-        numbers = [caller_id.strip()] if caller_id and caller_id.strip() else []
+        numbers = [caller_id.strip()] if caller_id and caller_id.strip() else ['*']
 
         if existing_trunk_id:
             try:
@@ -267,7 +267,7 @@ def delete_outbound_trunk(request, trunk_id):
 @csrf_exempt
 @login_required(login_url='/login/')
 def trigger_ai_outbound_call(request):
-    """Initiate an autonomous outbound AI call to a destination phone number."""
+    """Initiate an autonomous outbound AI call to a destination phone number or internal extension."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
 
@@ -280,23 +280,65 @@ def trigger_ai_outbound_call(request):
         raw_phone = (data.get('phone_number') or '').strip()
         call_goal = (data.get('call_goal') or '').strip()
         profile_id = data.get('profile_id')
+        gateway_type = (data.get('gateway_type') or 'auto').strip()
+        gateway_id = data.get('gateway_id')
 
         if not raw_phone:
-            return JsonResponse({"status": "error", "message": "رقم الهاتف مطلوب للاتصال"}, status=400)
+            return JsonResponse({"status": "error", "message": "رقم الهاتف أو رقم التحويلة مطلوب للاتصال"}, status=400)
 
-        normalized_phone = normalize_phone_number(raw_phone)
-        if not normalized_phone or len(normalized_phone) < 8:
-            return JsonResponse({"status": "error", "message": f"رقم الهاتف غير صالح ({raw_phone}). يرجى التأكد من كتابة الرقم بصيغة صحيحة."}, status=400)
+        # Support internal extension dialing (e.g. 101, 200, 1001) as well as external mobile/landline numbers
+        if len(raw_phone) <= 5 and raw_phone.isdigit():
+            normalized_phone = raw_phone
+        else:
+            normalized_phone = normalize_phone_number(raw_phone)
+            if not normalized_phone or len(normalized_phone) < 8:
+                return JsonResponse({"status": "error", "message": f"رقم الهاتف غير صالح ({raw_phone}). يرجى التأكد من كتابة الرقم بصيغة صحيحة."}, status=400)
 
-        # Get user's active outbound trunk
-        trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True, is_default=True).first()
-        if not trunk:
+        # Resolve outbound gateway (Cloud vs PBX)
+        livekit_outbound_trunk_id = None
+        trunk_name = ""
+        caller_id_val = ""
+
+        if gateway_type == 'pbx' and gateway_id:
+            pbx_t = InboundPBXTrunk.objects.filter(id=gateway_id, user=request.user, is_active=True, enable_outbound=True).first()
+            if not pbx_t or not pbx_t.livekit_outbound_trunk_id:
+                return JsonResponse({"status": "error", "message": "سنترال PBX المختار غير مفعل للصادر أو غير متصل بـ LiveKit"}, status=400)
+            livekit_outbound_trunk_id = pbx_t.livekit_outbound_trunk_id
+            trunk_name = f"سنترال {pbx_t.name}"
+            caller_id_val = pbx_t.inbound_numbers.split(',')[0].strip() if pbx_t.inbound_numbers else ""
+        elif gateway_type == 'cloud':
             trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True).first()
+            if not trunk or not trunk.livekit_outbound_trunk_id:
+                return JsonResponse({"status": "error", "message": "الجذع السحابي العام غير مهيأ. يرجى ضبط بيانات المزود في إعدادات الجذع الخارجي."}, status=400)
+            livekit_outbound_trunk_id = trunk.livekit_outbound_trunk_id
+            trunk_name = trunk.name
+            caller_id_val = trunk.caller_id
+        else:
+            # Auto: check default PBX trunk first, then default cloud trunk
+            default_pbx = InboundPBXTrunk.objects.filter(user=request.user, is_active=True, enable_outbound=True, is_default_outbound=True).first()
+            if default_pbx and default_pbx.livekit_outbound_trunk_id:
+                livekit_outbound_trunk_id = default_pbx.livekit_outbound_trunk_id
+                trunk_name = f"سنترال {default_pbx.name} (افتراضي)"
+                caller_id_val = default_pbx.inbound_numbers.split(',')[0].strip() if default_pbx.inbound_numbers else ""
+            else:
+                trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True, is_default=True).first()
+                if not trunk:
+                    trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True).first()
+                if trunk and trunk.livekit_outbound_trunk_id:
+                    livekit_outbound_trunk_id = trunk.livekit_outbound_trunk_id
+                    trunk_name = trunk.name
+                    caller_id_val = trunk.caller_id
+                else:
+                    any_pbx = InboundPBXTrunk.objects.filter(user=request.user, is_active=True, enable_outbound=True).exclude(livekit_outbound_trunk_id='').first()
+                    if any_pbx:
+                        livekit_outbound_trunk_id = any_pbx.livekit_outbound_trunk_id
+                        trunk_name = f"سنترال {any_pbx.name}"
+                        caller_id_val = any_pbx.inbound_numbers.split(',')[0].strip() if any_pbx.inbound_numbers else ""
 
-        if not trunk or not trunk.livekit_outbound_trunk_id:
+        if not livekit_outbound_trunk_id:
             return JsonResponse({
                 "status": "error",
-                "message": "لا يوجد جذع SIP خارجي مفعل. يرجى أولاً إدخال بيانات المزود (Telnyx أو Twilio) في قسم 'إعدادات الجذع الخارجي' وحفظها."
+                "message": "لا يوجد مسار اتصال صادر مفعل (سحابي أو سنترال محلي). يرجى تفعيل الجذع السحابي أو تمكين المكالمات الصادرة في سنترال Issabel."
             }, status=400)
 
         # Resolve voice profile
@@ -317,12 +359,12 @@ def trigger_ai_outbound_call(request):
             call_goal=call_goal or "مكالمة ذكاء اصطناعي صادرة للعميل"
         )
 
-        # Dial external customer via LiveKit Outbound Trunk
+        # Dial external customer / extension via LiveKit Outbound Trunk
         participant_info = asyncio.run(_async_dial_sip_participant(
-            trunk_id=trunk.livekit_outbound_trunk_id,
+            trunk_id=livekit_outbound_trunk_id,
             destination_phone=normalized_phone,
             room_name=room_name,
-            caller_id=trunk.caller_id
+            caller_id=caller_id_val
         ))
 
         # Push dispatch job to Redis for Voice Assistant agent
@@ -338,16 +380,17 @@ def trigger_ai_outbound_call(request):
         }
         r.lpush("agent_jobs", json.dumps(job_payload, ensure_ascii=False))
 
-        logger.info(f"Triggered AI Outbound Call to {normalized_phone} in room {room_name} (Session {session.id})")
+        logger.info(f"Triggered AI Outbound Call to {normalized_phone} via {trunk_name} in room {room_name} (Session {session.id})")
 
         return JsonResponse({
             "status": "success",
-            "message": f"تم بدء الاتصال الصادر بالرقم {normalized_phone} بنجاح عبر المساعد الذكي",
+            "message": f"تم بدء الاتصال الصادر بالرقم {normalized_phone} بنجاح عبر {trunk_name}",
             "room_name": room_name,
             "session_id": session.id,
             "destination_phone": normalized_phone,
-            "trunk_name": trunk.name,
-            "caller_id": trunk.caller_id or "غير محدد"
+            "trunk_name": trunk_name,
+            "gateway_used": trunk_name,
+            "caller_id": caller_id_val or "غير محدد"
         })
 
     except Exception as e:
@@ -355,14 +398,57 @@ def trigger_ai_outbound_call(request):
         return JsonResponse({"status": "error", "message": f"فشل بدء المكالمة الصادرة: {str(e)}"}, status=500)
 
 
-# ==================== Inbound PBX (Issabel / Asterisk) Integration ====================
+@login_required(login_url='/login/')
+def list_outbound_gateways(request):
+    """List all available outbound dialing routes (Cloud Generic Trunk + PBX Trunks with outbound enabled)."""
+    gateways = []
+
+    # 1. Cloud Provider (Telnyx / Twilio)
+    cloud_trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True).first()
+    if cloud_trunk and cloud_trunk.livekit_outbound_trunk_id:
+        gateways.append({
+            "type": "cloud",
+            "id": cloud_trunk.id,
+            "name": f"🌐 {cloud_trunk.name} (مزود سحابي مباشر)",
+            "caller_id": cloud_trunk.caller_id or "",
+            "is_default": cloud_trunk.is_default
+        })
+
+    # 2. PBX Trunks with outbound enabled
+    pbx_trunks = InboundPBXTrunk.objects.filter(user=request.user, is_active=True, enable_outbound=True)
+    for pt in pbx_trunks:
+        if pt.livekit_outbound_trunk_id:
+            first_num = pt.inbound_numbers.split(',')[0].strip() if pt.inbound_numbers else ""
+            gateways.append({
+                "type": "pbx",
+                "id": pt.id,
+                "name": f"🏢 سنترال {pt.name} (خطوط محلية / PRI / GSM)",
+                "caller_id": first_num,
+                "is_default": pt.is_default_outbound
+            })
+
+    default_gw = next((g for g in gateways if g.get('is_default')), gateways[0] if gateways else None)
+
+    return JsonResponse({
+        "status": "success",
+        "gateways": gateways,
+        "default_gateway": default_gw
+    })
+
+
+# ==================== Bidirectional PBX (Issabel / Asterisk) Integration ====================
 
 async def _async_create_pbx_inbound_trunk_and_rule(
     name, auth_mode, pbx_ip, auth_username, auth_password, inbound_numbers_str,
     destination_type, target_queue_code, user_id, trunk_db_id,
-    existing_trunk_id=None, existing_rule_id=None
+    existing_trunk_id=None, existing_rule_id=None,
+    enable_outbound=True, outbound_port=5060, outbound_transport='UDP',
+    existing_outbound_trunk_id=None
 ):
     lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+    trunk_id = ""
+    rule_id = ""
+    outbound_trunk_id = ""
     try:
         if existing_rule_id:
             try:
@@ -374,14 +460,20 @@ async def _async_create_pbx_inbound_trunk_and_rule(
                 await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=existing_trunk_id))
             except Exception as ex:
                 logger.warning(f"Error cleaning prior inbound trunk {existing_trunk_id}: {ex}")
+        if existing_outbound_trunk_id:
+            try:
+                await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=existing_outbound_trunk_id))
+            except Exception as ex:
+                logger.warning(f"Error cleaning prior outbound trunk {existing_outbound_trunk_id}: {ex}")
 
         numbers = [n.strip() for n in inbound_numbers_str.split(",") if n.strip()] if inbound_numbers_str else []
         allowed_addresses = [pbx_ip.strip()] if auth_mode == 'ip' and pbx_ip and pbx_ip.strip() else []
         u_name = auth_username.strip() if auth_mode == 'credentials' and auth_username else ""
         u_pass = auth_password.strip() if auth_mode == 'credentials' and auth_password else ""
 
+        # 1. Inbound Trunk
         trunk_info = api.SIPInboundTrunkInfo(
-            name=f"PBX {trunk_db_id} - {name} (User {user_id})",
+            name=f"PBX Inbound {trunk_db_id} - {name} (User {user_id})",
             numbers=numbers,
             allowed_addresses=allowed_addresses,
             auth_username=u_name,
@@ -390,6 +482,7 @@ async def _async_create_pbx_inbound_trunk_and_rule(
         created_trunk = await lk.sip.create_sip_inbound_trunk(api.CreateSIPInboundTrunkRequest(trunk=trunk_info))
         trunk_id = created_trunk.sip_trunk_id
 
+        # 2. Dispatch Rule
         if destination_type in ('call_queue', 'queue') and target_queue_code:
             room_prefix = f"room_user_{user_id}_queue_{target_queue_code}_pbx_{trunk_db_id}_"
         else:
@@ -407,12 +500,56 @@ async def _async_create_pbx_inbound_trunk_and_rule(
         created_rule = await lk.sip.create_sip_dispatch_rule(rule_req)
         rule_id = created_rule.sip_dispatch_rule_id
 
-        return trunk_id, rule_id
+        # 3. Outbound Trunk (if enabled and pbx_ip is set)
+        if enable_outbound and pbx_ip and pbx_ip.strip():
+            trans_map = {
+                'UDP': api.SIPTransport.SIP_TRANSPORT_UDP,
+                'TCP': api.SIPTransport.SIP_TRANSPORT_TCP,
+                'TLS': api.SIPTransport.SIP_TRANSPORT_TLS,
+            }
+            trans_enum = trans_map.get(str(outbound_transport).upper(), api.SIPTransport.SIP_TRANSPORT_UDP)
+            full_addr = pbx_ip.strip()
+            if ":" not in full_addr and outbound_port:
+                full_addr = f"{full_addr}:{outbound_port}"
+
+            outbound_nums = list(numbers)
+            if '*' not in outbound_nums:
+                outbound_nums.append('*')
+
+            out_trunk_info = api.SIPOutboundTrunkInfo(
+                name=f"PBX Outbound {trunk_db_id} - {name} (User {user_id})",
+                address=full_addr,
+                transport=trans_enum,
+                numbers=outbound_nums,
+                auth_username=u_name,
+                auth_password=u_pass,
+            )
+            created_out = await lk.sip.create_sip_outbound_trunk(api.CreateSIPOutboundTrunkRequest(trunk=out_trunk_info))
+            outbound_trunk_id = created_out.sip_trunk_id
+
+        return trunk_id, rule_id, outbound_trunk_id
+    except Exception:
+        if rule_id:
+            try:
+                await lk.sip.delete_sip_dispatch_rule(api.DeleteSIPDispatchRuleRequest(sip_dispatch_rule_id=rule_id))
+            except Exception:
+                pass
+        if trunk_id:
+            try:
+                await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=trunk_id))
+            except Exception:
+                pass
+        if outbound_trunk_id:
+            try:
+                await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=outbound_trunk_id))
+            except Exception:
+                pass
+        raise
     finally:
         await lk.aclose()
 
 
-async def _async_delete_pbx_trunk_and_rule(trunk_id, rule_id):
+async def _async_delete_pbx_trunk_and_rule(trunk_id, rule_id, outbound_trunk_id=None):
     lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
     try:
         if rule_id:
@@ -425,6 +562,11 @@ async def _async_delete_pbx_trunk_and_rule(trunk_id, rule_id):
                 await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=trunk_id))
             except Exception as ex:
                 logger.warning(f"Error deleting inbound trunk {trunk_id}: {ex}")
+        if outbound_trunk_id:
+            try:
+                await lk.sip.delete_sip_trunk(api.DeleteSIPTrunkRequest(sip_trunk_id=outbound_trunk_id))
+            except Exception as ex:
+                logger.warning(f"Error deleting outbound trunk {outbound_trunk_id}: {ex}")
     finally:
         await lk.aclose()
 
@@ -444,7 +586,7 @@ def list_pbx_trunks(request):
 
 @login_required(login_url='/login/')
 def save_pbx_trunk(request):
-    """Create or update an Inbound PBX Trunk (Issabel / Asterisk) and sync with LiveKit SIP."""
+    """Create or update a Bidirectional PBX Trunk (Issabel / Asterisk) and sync with LiveKit SIP."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
@@ -464,6 +606,10 @@ def save_pbx_trunk(request):
             destination_type = 'call_queue'
         target_queue_id = data.get('target_queue_id')
         target_profile_id = data.get('target_profile_id')
+        enable_outbound = bool(data.get('enable_outbound', True))
+        outbound_port = int(data.get('outbound_port') or 5060)
+        outbound_transport = str(data.get('outbound_transport') or 'UDP').strip().upper()
+        is_default_outbound = bool(data.get('is_default_outbound', False))
         is_active = bool(data.get('is_active', True))
 
         if auth_mode not in ['ip', 'credentials']:
@@ -487,6 +633,9 @@ def save_pbx_trunk(request):
         if target_profile_id:
             target_profile = AgentProfile.objects.filter(id=target_profile_id, user=request.user).first()
 
+        if is_default_outbound:
+            InboundPBXTrunk.objects.filter(user=request.user).update(is_default_outbound=False)
+
         trunk = None
         if trunk_id:
             trunk = get_object_or_404(InboundPBXTrunk, id=trunk_id, user=request.user)
@@ -500,6 +649,10 @@ def save_pbx_trunk(request):
             trunk.destination_type = destination_type
             trunk.target_queue = target_queue
             trunk.target_profile = target_profile
+            trunk.enable_outbound = enable_outbound
+            trunk.outbound_port = outbound_port
+            trunk.outbound_transport = outbound_transport
+            trunk.is_default_outbound = is_default_outbound
             trunk.is_active = is_active
             trunk.save()
         else:
@@ -517,11 +670,15 @@ def save_pbx_trunk(request):
                 destination_type=destination_type,
                 target_queue=target_queue,
                 target_profile=target_profile,
+                enable_outbound=enable_outbound,
+                outbound_port=outbound_port,
+                outbound_transport=outbound_transport,
+                is_default_outbound=is_default_outbound,
                 is_active=is_active
             )
 
         target_queue_code = target_queue.code if target_queue else None
-        livekit_trunk_id, livekit_rule_id = asyncio.run(_async_create_pbx_inbound_trunk_and_rule(
+        livekit_trunk_id, livekit_rule_id, livekit_outbound_trunk_id = asyncio.run(_async_create_pbx_inbound_trunk_and_rule(
             name=trunk.name,
             auth_mode=trunk.auth_mode,
             pbx_ip=trunk.pbx_ip,
@@ -533,17 +690,22 @@ def save_pbx_trunk(request):
             user_id=request.user.id,
             trunk_db_id=trunk.id,
             existing_trunk_id=trunk.livekit_trunk_id or None,
-            existing_rule_id=trunk.livekit_rule_id or None
+            existing_rule_id=trunk.livekit_rule_id or None,
+            enable_outbound=trunk.enable_outbound,
+            outbound_port=trunk.outbound_port,
+            outbound_transport=trunk.outbound_transport,
+            existing_outbound_trunk_id=trunk.livekit_outbound_trunk_id or None
         ))
 
         trunk.livekit_trunk_id = livekit_trunk_id
         trunk.livekit_rule_id = livekit_rule_id
-        trunk.save(update_fields=['livekit_trunk_id', 'livekit_rule_id'])
+        trunk.livekit_outbound_trunk_id = livekit_outbound_trunk_id
+        trunk.save(update_fields=['livekit_trunk_id', 'livekit_rule_id', 'livekit_outbound_trunk_id'])
 
         host_domain = getattr(settings, 'SIP_PUBLIC_DOMAIN', request.get_host().split(':')[0])
         return JsonResponse({
             "status": "success",
-            "message": "تم حفظ وإعداد ربط سنترال Issabel في LiveKit بنجاح",
+            "message": "تم حفظ وإعداد ربط سنترال Issabel ثنائي الاتجاه في LiveKit بنجاح",
             "trunk": trunk.to_dict(host_domain=host_domain)
         })
 
@@ -554,13 +716,17 @@ def save_pbx_trunk(request):
 
 @login_required(login_url='/login/')
 def delete_pbx_trunk(request, trunk_id):
-    """Delete an Inbound PBX Trunk and remove its LiveKit resources."""
+    """Delete a PBX Trunk and remove all its LiveKit inbound/outbound resources."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
     try:
         trunk = get_object_or_404(InboundPBXTrunk, id=trunk_id, user=request.user)
-        asyncio.run(_async_delete_pbx_trunk_and_rule(trunk.livekit_trunk_id, trunk.livekit_rule_id))
+        asyncio.run(_async_delete_pbx_trunk_and_rule(
+            trunk.livekit_trunk_id,
+            trunk.livekit_rule_id,
+            trunk.livekit_outbound_trunk_id
+        ))
         trunk.delete()
         return JsonResponse({"status": "success", "message": "تم حذف السنترال وإلغاء الربط بنجاح"})
     except Exception as e:
