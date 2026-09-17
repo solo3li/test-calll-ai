@@ -481,7 +481,7 @@
     </section>
 
     <!-- Two-Tier Customer Memory Section -->
-    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl">
+    <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
       <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-800">
         <div>
           <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -489,7 +489,7 @@
             ذاكرة العميل الذكية (Two-Tier Distilled Memory)
           </h2>
           <p class="text-xs text-slate-400 mt-1">
-            تجمع بين <span class="text-amber-300 font-semibold">الذاكرة الدائمة</span> (اسمك وتفضيلاتك) و <span class="text-cyan-300 font-semibold">الذاكرة اللحظية</span> (ملخص آخر مكالمة والأمور المعلقة) باستهلاك مقتصد للتوكن (~120 توكن).
+            تجمع بين <span class="text-amber-300 font-semibold">الذاكرة الدائمة</span> و <span class="text-cyan-300 font-semibold">الذاكرة اللحظية</span> معزولة ومخصصة لكل رقم عميل يتصل بالنظام.
           </p>
         </div>
 
@@ -516,6 +516,36 @@
             </svg>
             <span>تصفير الذاكرة</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Customer Selector & Search Toolbar -->
+      <div class="bg-slate-950/60 border border-slate-800 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div class="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+          <span class="text-slate-300 font-bold flex items-center gap-1">
+            <span>🔍</span> فحص ذاكرة رقم:
+          </span>
+          <select 
+            id="crm-customer-select" 
+            onchange="onCustomerSelectChange(this.value)"
+            class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-slate-100 text-xs focus:ring-1 focus:ring-amber-500 font-mono"
+          >
+            <option value="web_dashboard">💻 web_dashboard (جلسة المتصفح)</option>
+          </select>
+          <div class="relative flex-1 min-w-[160px]">
+            <input 
+              id="crm-customer-search" 
+              type="text" 
+              placeholder="بحث برقم الهاتف أو الاسم..." 
+              oninput="debounceCustomerSearch(this.value)"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-slate-100 text-xs placeholder-slate-500 focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-slate-400">العميل المعروض:</span>
+          <span id="crm-active-customer-badge" class="font-mono text-xs font-bold text-amber-300 bg-amber-950/70 px-2.5 py-1 rounded-lg border border-amber-800/80">web_dashboard</span>
         </div>
       </div>
 
@@ -1929,11 +1959,68 @@
     }
 
     // ==========================================
-    // Customer Memory Management Functions
+    // Customer Memory Management Functions (Multi-Customer)
     // ==========================================
-    async function loadCustomerMemory() {
+    let currentSelectedPhone = 'web_dashboard';
+    let customerSearchTimer = null;
+
+    function debounceCustomerSearch(query) {
+      clearTimeout(customerSearchTimer);
+      customerSearchTimer = setTimeout(() => {
+        loadCustomersList(query);
+      }, 300);
+    }
+
+    async function loadCustomersList(query = '') {
       try {
-        const res = await fetch('/api/crm/memory/');
+        const url = query ? `/api/crm/customers/?q=${encodeURIComponent(query)}` : '/api/crm/customers/';
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.status !== 'success') return;
+
+        const selectEl = document.getElementById('crm-customer-select');
+        if (!selectEl) return;
+
+        const customers = data.customers || [];
+        let html = '<option value="web_dashboard">💻 web_dashboard (جلسة المتصفح)</option>';
+
+        let hasSelectedInList = (currentSelectedPhone === 'web_dashboard');
+
+        customers.forEach(c => {
+          if (c.phone_number === 'web_dashboard') return;
+          const isSel = (c.phone_number === currentSelectedPhone);
+          if (isSel) hasSelectedInList = true;
+          const displayName = c.customer_name ? `${c.phone_number} (${c.customer_name})` : c.phone_number;
+          html += `<option value="${escapeHtml(c.phone_number)}" ${isSel ? 'selected' : ''}>📞 ${escapeHtml(displayName)}</option>`;
+        });
+
+        if (!hasSelectedInList && currentSelectedPhone && currentSelectedPhone !== 'web_dashboard') {
+          html += `<option value="${escapeHtml(currentSelectedPhone)}" selected>📞 ${escapeHtml(currentSelectedPhone)}</option>`;
+        }
+
+        selectEl.innerHTML = html;
+        selectEl.value = currentSelectedPhone;
+      } catch (err) {
+        console.error('Error loading customers list:', err);
+      }
+    }
+
+    function onCustomerSelectChange(phone) {
+      currentSelectedPhone = phone || 'web_dashboard';
+      const badge = document.getElementById('crm-active-customer-badge');
+      if (badge) badge.innerText = currentSelectedPhone;
+      loadCustomerMemory(currentSelectedPhone);
+    }
+
+    async function loadCustomerMemory(phone) {
+      const targetPhone = phone || currentSelectedPhone || 'web_dashboard';
+      currentSelectedPhone = targetPhone;
+
+      const badge = document.getElementById('crm-active-customer-badge');
+      if (badge) badge.innerText = targetPhone;
+
+      try {
+        const res = await fetch(`/api/crm/memory/?phone=${encodeURIComponent(targetPhone)}`);
         const data = await res.json();
         if (data.status !== 'success') return;
 
@@ -1946,7 +2033,7 @@
         if (!prof || Object.keys(prof).length === 0) {
           permEl.innerHTML = `
             <div class="text-center py-4 text-slate-500">
-              لا توجد بيانات دائمة مسجلة بعد. سيتعلم المساعد اسمك وتفضيلاتك تلقائياً أثناء المكالمات!
+              لا توجد بيانات دائمة مسجلة لهذا الرقم بعد. سيتعلم المساعد اسمه وتفضيلاته تلقائياً أثناء المكالمات!
             </div>
           `;
         } else {
@@ -1954,8 +2041,8 @@
           if (prof.customer_name) {
             itemsHtml += `<div class="flex items-center gap-2"><span class="text-amber-400 font-semibold">👤 الاسم:</span> <span class="text-slate-100 font-bold">${escapeHtml(prof.customer_name)}</span></div>`;
           }
-          if (prof.phone) {
-            itemsHtml += `<div class="flex items-center gap-2"><span class="text-amber-400 font-semibold">📞 الهاتف:</span> <span class="text-slate-200">${escapeHtml(prof.phone)}</span></div>`;
+          if (prof.phone || memory.phone_number) {
+            itemsHtml += `<div class="flex items-center gap-2"><span class="text-amber-400 font-semibold">📞 الهاتف:</span> <span class="text-slate-200 font-mono">${escapeHtml(prof.phone || memory.phone_number)}</span></div>`;
           }
           if (prof.address || prof.city) {
             itemsHtml += `<div class="flex items-center gap-2"><span class="text-amber-400 font-semibold">📍 العنوان:</span> <span class="text-slate-200">${escapeHtml(prof.address || prof.city)}</span></div>`;
@@ -1988,7 +2075,7 @@
         } else {
           immEl.innerHTML = `
             <div class="text-center py-4 text-slate-500">
-              لا يوجد ملخص لمكالمة سابقة حتى الآن.
+              لا يوجد ملخص لمكالمة سابقة حتى الآن لهذا الرقم.
             </div>
           `;
         }
@@ -1996,7 +2083,7 @@
         // 3. Render Recent Calls
         const callsEl = document.getElementById('memory-recent-calls');
         if (!calls || calls.length === 0) {
-          callsEl.innerHTML = '<div class="text-slate-500 text-center py-2">لا توجد مكالمات سابقة مسجلة.</div>';
+          callsEl.innerHTML = '<div class="text-slate-500 text-center py-2">لا توجد مكالمات سابقة مسجلة لهذا الرقم.</div>';
         } else {
           callsEl.innerHTML = calls.map(c => {
             let dirBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-semibold">📞 واردة</span>';
@@ -2005,12 +2092,14 @@
             } else if (c.direction === 'outbound_agent') {
               dirBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-950/80 border border-blue-700/60 text-blue-300 font-semibold">👤 صادرة (موظف)</span>';
             }
+            const callerBadge = c.caller_phone ? `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 font-mono text-amber-300">📱 ${escapeHtml(c.caller_phone)}</span>` : '';
             const destHtml = c.destination_phone ? `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 font-mono text-cyan-300">🎯 ${escapeHtml(c.destination_phone)}</span>` : '';
             return `
             <div class="p-3 rounded-2xl bg-slate-800/40 border border-slate-700/40 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
               <div class="space-y-1">
                 <div class="flex flex-wrap items-center gap-2">
                   ${dirBadge}
+                  ${callerBadge}
                   ${destHtml}
                   <span class="font-mono text-xs text-slate-300 font-semibold">${escapeHtml(c.room_name)}</span>
                   <span class="text-[10px] text-slate-500 font-mono">📅 ${c.started_at}</span>
@@ -2028,15 +2117,21 @@
     }
 
     async function resetCustomerMemory() {
-      if (!confirm('هل أنت متأكد من تصفير ذاكرة العميل؟ سيتم مسح البيانات الدائمة وملخص المكالمات السابق.')) return;
+      const targetPhone = currentSelectedPhone || 'web_dashboard';
+      if (!confirm(`هل أنت متأكد من تصفير ذاكرة العميل للرقم (${targetPhone})؟ سيتم مسح البيانات الدائمة والملخص الخاص به.`)) return;
       try {
         const res = await fetch('/api/crm/memory/reset/', {
           method: 'POST',
-          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken') 
+          },
+          body: JSON.stringify({ phone: targetPhone })
         });
         const data = await res.json();
         if (data.status === 'success') {
-          await loadCustomerMemory();
+          await loadCustomerMemory(targetPhone);
+          await loadCustomersList();
         } else {
           alert('فشل تصفير الذاكرة: ' + (data.message || ''));
         }
@@ -2766,6 +2861,7 @@
     loadDocuments();
     loadProfiles();
     loadMcpServer();
+    loadCustomersList();
     loadCustomerMemory();
     loadEmployees();
     loadQueues();

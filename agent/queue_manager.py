@@ -70,14 +70,15 @@ async def play_hold_audio_loop(audio_source, stop_event: asyncio.Event, custom_a
 async def run_queue_session(
     room_name: str,
     user_id: int,
-    queue_data: dict,
-    profile_data: dict,
-    livekit_url: str,
-    api_key: str,
-    api_secret: str,
-    redis_client: redis.Redis,
-    notify_func,
-    fallback_agent_func
+    caller_phone: str = "web_dashboard",
+    queue_data: dict = None,
+    profile_data: dict = None,
+    livekit_url: str = "",
+    api_key: str = "",
+    api_secret: str = "",
+    redis_client: redis.Redis = None,
+    notify_func = None,
+    fallback_agent_func = None
 ):
     channel_name = f"rooms:{room_name}"
     queue_name = queue_data.get("name", "طابور الانتظار") if queue_data else "طابور الانتظار"
@@ -268,4 +269,4 @@ async def run_queue_session(
         "queue_code": queue_code,
         "wait_seconds": elapsed,
     }
-    await fallback_agent_func(room_name, user_id=user_id, profile_data=profile_data, queue_context=queue_context)
+    await fallback_agent_func(room_name, user_id=user_id, caller_phone=caller_phone, profile_data=profile_data, queue_context=queue_context)

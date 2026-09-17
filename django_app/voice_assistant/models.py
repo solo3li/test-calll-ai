@@ -15,12 +15,16 @@ from call_center.models import EmployeeProfile, CallQueue, QueueMembership
 from telephony.models import OutboundSIPTrunk
 from crm.models import CustomerMemory, CallSession
 
+# Backward compatibility alias
+UserSIPAccount = EmployeeProfile
+
 __all__ = [
     'Document',
     'DocumentChunk',
     'AgentProfile',
     'UserMCPServer',
     'EmployeeProfile',
+    'UserSIPAccount',
     'CallQueue',
     'QueueMembership',
     'OutboundSIPTrunk',

@@ -2,7 +2,9 @@ from django.db import models
 from django.contrib.auth.models import User
 
 class CustomerMemory(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='customer_memory')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customer_memories')
+    phone_number = models.CharField(max_length=32, db_index=True, default='web_dashboard')
+    customer_name = models.CharField(max_length=120, blank=True, default='')
     permanent_profile = models.JSONField(default=dict, blank=True)
     last_interaction_summary = models.TextField(blank=True, default='')
     last_interaction_at = models.DateTimeField(null=True, blank=True)
@@ -13,14 +15,21 @@ class CustomerMemory(models.Model):
     class Meta:
         db_table = 'voice_assistant_customermemory'
         ordering = ['-updated_at']
+        unique_together = ('user', 'phone_number')
 
     def __str__(self):
-        return f"ذاكرة العميل: {self.user.username}"
+        display = self.customer_name or self.phone_number
+        return f"ذاكرة العميل: {display} ({self.user.username})"
 
     def to_dict(self):
+        c_name = self.customer_name
+        if not c_name and isinstance(self.permanent_profile, dict):
+            c_name = self.permanent_profile.get("customer_name") or ""
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "phone_number": self.phone_number,
+            "customer_name": c_name,
             "permanent_profile": self.permanent_profile or {},
             "last_interaction_summary": self.last_interaction_summary or "",
             "last_interaction_at": self.last_interaction_at.strftime("%Y-%m-%d %H:%M") if self.last_interaction_at else None,
@@ -34,10 +43,12 @@ class CustomerMemory(models.Model):
         prof = self.permanent_profile or {}
         if prof:
             items = []
-            if prof.get("customer_name"):
-                items.append(f"اسم العميل: {prof['customer_name']}")
-            if prof.get("phone"):
-                items.append(f"الهاتف: {prof['phone']}")
+            name_val = self.customer_name or prof.get("customer_name")
+            if name_val:
+                items.append(f"اسم العميل: {name_val}")
+            phone_val = self.phone_number if self.phone_number != 'web_dashboard' else prof.get("phone")
+            if phone_val:
+                items.append(f"الهاتف: {phone_val}")
             if prof.get("city") or prof.get("address"):
                 items.append(f"العنوان/المدينة: {prof.get('city') or prof.get('address')}")
             if prof.get("preferences"):
@@ -69,6 +80,7 @@ class CallSession(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='call_sessions')
     room_name = models.CharField(max_length=120)
     direction = models.CharField(max_length=32, choices=DIRECTION_CHOICES, default='inbound')
+    caller_phone = models.CharField(max_length=64, blank=True, default='')
     destination_phone = models.CharField(max_length=64, blank=True, default='')
     call_goal = models.TextField(blank=True, default='')
     started_at = models.DateTimeField(auto_now_add=True)
@@ -90,6 +102,7 @@ class CallSession(models.Model):
             "room_name": self.room_name,
             "direction": self.direction,
             "direction_display": self.get_direction_display(),
+            "caller_phone": self.caller_phone or "",
             "destination_phone": self.destination_phone or "",
             "call_goal": self.call_goal or "",
             "started_at": self.started_at.strftime("%Y-%m-%d %H:%M"),
@@ -97,3 +110,4 @@ class CallSession(models.Model):
             "duration_seconds": self.duration_seconds,
             "summary": self.summary or "",
         }
+

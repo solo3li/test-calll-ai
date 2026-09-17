@@ -37,6 +37,7 @@ urlpatterns = [
     path('api/mcp/delete/', views.delete_mcp_server, name='delete_mcp_server'),
 
     # Customer Memory & Call History APIs
+    path('api/customers/', views.list_customers_memory, name='list_customers_memory'),
     path('api/memory/', views.get_customer_memory, name='get_customer_memory'),
     path('api/memory/reset/', views.reset_customer_memory, name='reset_customer_memory'),
 

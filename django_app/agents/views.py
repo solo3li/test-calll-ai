@@ -369,9 +369,14 @@ def api_internal_agent_bootstrap(request):
 
         # 3. Customer Memory (Lazy import to avoid circular dependency)
         from crm.models import CustomerMemory
-        memory = CustomerMemory.objects.filter(user=user).first()
+        caller_phone = str(data.get('caller_phone') or 'web_dashboard').strip()
+        memory = CustomerMemory.objects.filter(user=user, phone_number=caller_phone).first()
+        if not memory and caller_phone != 'web_dashboard' and len(caller_phone) >= 7:
+            memory = CustomerMemory.objects.filter(user=user, phone_number__endswith=caller_phone[-8:]).first()
         memory_data = memory.to_dict() if memory else {
-            "permanent_profile": "",
+            "phone_number": caller_phone,
+            "customer_name": "",
+            "permanent_profile": {},
             "last_interaction_summary": "",
             "total_calls_count": 0
         }

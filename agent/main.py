@@ -63,7 +63,7 @@ def notify_centrifugo(channel: str, event: str, message: str = "", extra: dict =
     except Exception as e:
         logger.warning(f"Could not notify Centrifugo: {e}")
 
-def fetch_agent_bootstrap_sync(user_id: int) -> dict:
+def fetch_agent_bootstrap_sync(user_id: int, caller_phone: str = "web_dashboard") -> dict:
     """Fetch complete agent bootstrap bundle (profile, mcp, memory) via Django API."""
     if not user_id:
         return {}
@@ -73,7 +73,7 @@ def fetch_agent_bootstrap_sync(user_id: int) -> dict:
             "X-Internal-API-Key": INTERNAL_API_KEY,
             "Content-Type": "application/json"
         }
-        res = requests.post(url, json={"user_id": user_id}, headers=headers, timeout=5)
+        res = requests.post(url, json={"user_id": user_id, "caller_phone": caller_phone}, headers=headers, timeout=5)
         if res.status_code == 200:
             return res.json()
         logger.error(f"Bootstrap API error ({res.status_code}): {res.text}")
@@ -197,12 +197,12 @@ def fetch_user_active_profile_sync(user_id: int) -> dict:
         logger.error(f"Error fetching active profile for user {user_id}: {e}")
         return default_profile
 
-def fetch_customer_memory_sync(user_id: int) -> dict:
-    """Fetch customer memory (permanent profile + immediate summary) via Django API."""
+def fetch_customer_memory_sync(user_id: int, caller_phone: str = "web_dashboard") -> dict:
+    """Fetch customer memory (permanent profile + immediate summary) for a specific phone number via Django API."""
     if not user_id:
         return {}
     try:
-        bootstrap = fetch_agent_bootstrap_sync(user_id)
+        bootstrap = fetch_agent_bootstrap_sync(user_id, caller_phone)
         mem = bootstrap.get("customer_memory", {})
         prof = mem.get("permanent_profile") or {}
         if isinstance(prof, str):
@@ -217,8 +217,9 @@ def fetch_customer_memory_sync(user_id: int) -> dict:
             items = []
             if prof.get("customer_name"):
                 items.append(f"اسم العميل المفضل: {prof['customer_name']}")
-            if prof.get("phone"):
-                items.append(f"الهاتف: {prof['phone']}")
+            phone_val = caller_phone if caller_phone != 'web_dashboard' else prof.get("phone")
+            if phone_val:
+                items.append(f"الهاتف: {phone_val}")
             if prof.get("city") or prof.get("address"):
                 items.append(f"العنوان/المدينة: {prof.get('city') or prof.get('address')}")
             if prof.get("preferences"):
@@ -236,20 +237,22 @@ def fetch_customer_memory_sync(user_id: int) -> dict:
 
         card_text = ""
         if parts:
-            card_text = "ذاكرة وسياق العميل من المكالمات السابقة (استخدمها بذكاء وعفوية للتذكر والترحيب بالمتابعة):\n" + "\n\n".join(parts)
+            phone_label = f" ({caller_phone})" if caller_phone and caller_phone != 'web_dashboard' else ""
+            card_text = f"ذاكرة وسياق العميل{phone_label} من المكالمات السابقة (استخدمها بذكاء وعفوية للتذكر والترحيب بالمتابعة):\n" + "\n\n".join(parts)
 
         return {
+            "phone_number": caller_phone,
             "permanent_profile": prof,
             "last_interaction_summary": summary,
             "card_text": card_text,
             "total_calls_count": mem.get("total_calls_count", 0)
         }
     except Exception as e:
-        logger.error(f"Error fetching customer memory for user {user_id}: {e}")
-        return {"permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
+        logger.error(f"Error fetching customer memory for user {user_id} ({caller_phone}): {e}")
+        return {"phone_number": caller_phone, "permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
 
-def save_call_session_and_update_memory_sync(user_id: int, room_name: str, started_at: float, transcript_text: str, summary: str, updated_profile: dict, outbound_context: dict = None):
-    """Persist completed CallSession and update CustomerMemory via Django CRM API."""
+def save_call_session_and_update_memory_sync(user_id: int, room_name: str, started_at: float, transcript_text: str, summary: str, updated_profile: dict, caller_phone: str = "web_dashboard", outbound_context: dict = None):
+    """Persist completed CallSession and update CustomerMemory for (user, caller_phone) via Django CRM API."""
     if not user_id:
         return
     try:
@@ -275,6 +278,7 @@ def save_call_session_and_update_memory_sync(user_id: int, room_name: str, start
         payload = {
             "user_id": user_id,
             "room_name": room_name,
+            "caller_phone": caller_phone,
             "started_at": started_at,
             "duration_seconds": duration,
             "direction": direction,
@@ -286,13 +290,13 @@ def save_call_session_and_update_memory_sync(user_id: int, room_name: str, start
         }
         res = requests.post(url, json=payload, headers=headers, timeout=5)
         if res.status_code == 200:
-            logger.info(f"Successfully saved CallSession & CustomerMemory via Django CRM API for user {user_id}")
+            logger.info(f"Successfully saved CallSession & CustomerMemory via Django CRM API for ({user_id}, {caller_phone})")
         else:
             logger.error(f"Error saving CallSession via CRM API ({res.status_code}): {res.text}")
     except Exception as e:
         logger.error(f"Failed to save call session via Django API: {e}", exc_info=True)
 
-async def distill_and_update_memory(user_id: int, room_name: str, started_at: float, messages: list[dict], current_profile: dict, genai_client, outbound_context: dict = None):
+async def distill_and_update_memory(user_id: int, room_name: str, started_at: float, messages: list[dict], current_profile: dict, caller_phone: str = "web_dashboard", genai_client = None, outbound_context: dict = None):
     """Background task to extract permanent profile facts and distill short-term episode summary."""
     try:
         user_msgs = [m for m in messages if m.get("speaker") == "user"]
@@ -357,7 +361,14 @@ async def distill_and_update_memory(user_id: int, room_name: str, started_at: fl
                         existing_prefs.append(p_str)
                 updated_profile["preferences"] = existing_prefs[:6]
 
-        logger.info(f"Distillation complete for user {user_id}. Summary: {summary[:80]}...")
+        # Dynamic binding: if caller was anonymous/web but explicitly stated their phone number in the call
+        extracted_phone = updated_profile.get("phone")
+        final_phone = caller_phone
+        if extracted_phone and str(extracted_phone).strip() and caller_phone in ['web_dashboard', 'anonymous', 'unknown', '']:
+            final_phone = str(extracted_phone).strip()
+            logger.info(f"Dynamically bound call in room {room_name} to extracted phone '{final_phone}'")
+
+        logger.info(f"Distillation complete for ({user_id}, {final_phone}). Summary: {summary[:80]}...")
 
         await asyncio.to_thread(
             save_call_session_and_update_memory_sync,
@@ -367,6 +378,7 @@ async def distill_and_update_memory(user_id: int, room_name: str, started_at: fl
             transcript_text,
             summary,
             updated_profile,
+            final_phone,
             outbound_context
         )
     except Exception as e:
@@ -476,9 +488,9 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
 7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط.{memory_text}"""
     return (outbound_header + fallback_header + prompt).strip()
 
-async def run_agent_session(room_name: str, user_id: int = None, profile_data: dict = None, queue_context: dict = None, outbound_context: dict = None):
+async def run_agent_session(room_name: str, user_id: int = None, caller_phone: str = "web_dashboard", profile_data: dict = None, queue_context: dict = None, outbound_context: dict = None):
     channel_name = f"rooms:{room_name}"
-    logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name} (user_id={user_id})")
+    logger.info(f"Starting Gemini Live Voice Agent session for room: {room_name} (user_id={user_id}, caller_phone={caller_phone})")
     notify_centrifugo(channel_name, "agent_starting", "جاري تهيئة المساعدة الصوتية وتجهيز قاعدة المستندات والإجراءات...")
 
     # 1. Create LiveKit Access Token for Agent
@@ -540,10 +552,10 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
     memory_data = {}
     memory_card_text = ""
     if user_id:
-        memory_data = await asyncio.to_thread(fetch_customer_memory_sync, user_id)
+        memory_data = await asyncio.to_thread(fetch_customer_memory_sync, user_id, caller_phone)
         memory_card_text = memory_data.get("card_text", "")
         if memory_card_text:
-            logger.info(f"Loaded customer memory for user {user_id} ({len(memory_card_text)} chars)")
+            logger.info(f"Loaded customer memory for user {user_id} [phone={caller_phone}] ({len(memory_card_text)} chars)")
 
     # Fetch User Active Profile dynamically
     active_profile = None
@@ -935,10 +947,11 @@ async def run_agent_session(room_name: str, user_id: int = None, profile_data: d
         await room.disconnect()
         notify_centrifugo(channel_name, "agent_disconnected", "تم إنهاء جلسة المساعدة الصوتية.")
         if user_id and call_dialogue_turns:
-            logger.info(f"Triggering background memory distillation for user {user_id} with {len(call_dialogue_turns)} turns.")
+            logger.info(f"Triggering background memory distillation for user {user_id} [phone={caller_phone}] with {len(call_dialogue_turns)} turns.")
             asyncio.create_task(
                 distill_and_update_memory(
                     user_id=user_id,
+                    caller_phone=caller_phone,
                     room_name=room_name,
                     started_at=call_started_at,
                     messages=list(call_dialogue_turns),
@@ -1071,16 +1084,20 @@ async def main():
                 is_outbound_ai = False
                 call_goal = None
                 destination_phone = None
+                caller_phone = "web_dashboard"
                 try:
                     parsed = json.loads(raw_data)
                     room_name = parsed.get("room_name", raw_data)
                     user_id = parsed.get("user_id")
+                    caller_phone = parsed.get("caller_phone") or "web_dashboard"
                     profile_data = parsed.get("profile")
                     is_queue = parsed.get("is_queue", False)
                     queue_data = parsed.get("queue_data")
                     is_outbound_ai = parsed.get("is_outbound_ai", False)
                     call_goal = parsed.get("call_goal")
                     destination_phone = parsed.get("destination_phone")
+                    if is_outbound_ai and destination_phone:
+                        caller_phone = destination_phone
                 except Exception:
                     pass
 
@@ -1098,7 +1115,7 @@ async def main():
                     logger.info(f"Session for room '{room_name}' is already running. Skipping duplicate dispatch.")
                     continue
 
-                logger.info(f"Received new dispatch for room: {room_name} (user_id={user_id}, is_queue={is_queue}, is_outbound_ai={is_outbound_ai})")
+                logger.info(f"Received new dispatch for room: {room_name} (user_id={user_id}, caller_phone={caller_phone}, is_queue={is_queue}, is_outbound_ai={is_outbound_ai})")
 
                 def make_cleanup(rm):
                     def _cleanup(fut):
@@ -1118,6 +1135,7 @@ async def main():
                     task = asyncio.create_task(run_queue_session(
                         room_name=room_name,
                         user_id=user_id,
+                        caller_phone=caller_phone,
                         queue_data=queue_data,
                         profile_data=profile_data,
                         livekit_url=LIVEKIT_INTERNAL_URL,
@@ -1131,6 +1149,7 @@ async def main():
                     task = asyncio.create_task(run_agent_session(
                         room_name,
                         user_id=user_id,
+                        caller_phone=caller_phone,
                         profile_data=profile_data,
                         outbound_context=outbound_ctx
                     ))

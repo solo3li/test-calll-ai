@@ -40,6 +40,7 @@ from agents.views import (
     delete_mcp_server,
 )
 from crm.views import (
+    list_customers_memory,
     get_customer_memory,
     reset_customer_memory,
 )
@@ -365,7 +366,16 @@ def livekit_webhook(request):
                 logger.info(f"Participant joined outbound room {room_name}. Already dispatched.")
                 return HttpResponse("ok")
 
-            logger.info(f"Human participant '{participant_identity}' (user_id={user_id}, is_queue={is_queue}) joined room {room_name}. Queuing Voice Agent...")
+            caller_phone = 'web_dashboard'
+            if participant_identity.startswith("sip_"):
+                raw_sip = participant_identity.replace("sip_sip_", "").replace("sip_", "")
+                raw_sip = raw_sip.split("@")[0].replace("sip:", "")
+                if raw_sip:
+                    caller_phone = raw_sip
+            elif participant_identity.startswith("customer_"):
+                caller_phone = participant_identity.replace("customer_", "")
+
+            logger.info(f"Human participant '{participant_identity}' (user_id={user_id}, caller_phone={caller_phone}, is_queue={is_queue}) joined room {room_name}. Queuing Voice Agent...")
             publish_to_centrifugo(channel, {
                 "event": "agent_queued",
                 "message": f"تم رصد انضمام متصل لطابور الانتظار (كود: {queue_code})..." if is_queue else "تم رصد انضمام المستخدم. جاري استدعاء المساعد الصوتي وتجهيز قاعدة المستندات...",
@@ -377,6 +387,7 @@ def livekit_webhook(request):
                 job_payload = json.dumps({
                     "room_name": room_name,
                     "user_id": user_id,
+                    "caller_phone": caller_phone,
                     "profile": profile,
                     "is_queue": is_queue,
                     "queue_code": queue_code,
