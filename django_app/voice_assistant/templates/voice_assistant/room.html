@@ -3165,8 +3165,14 @@
             ? `<div class="flex items-center gap-1.5 text-xs text-purple-300 font-semibold"><span>🤖</span> <span>المساعد الذكي (Smart IVR)</span> ${t.target_profile_name ? `<span class="text-[10px] text-slate-400 font-normal">(${escapeHtml(t.target_profile_name)})</span>` : ''}</div>`
             : `<div class="flex items-center gap-1.5 text-xs text-amber-300 font-semibold"><span>👥</span> <span>طابور: ${escapeHtml(t.target_queue_name || 'غير محدد')} [${escapeHtml(t.target_queue_code || '')}]</span></div>`;
 
-          const numbersBadge = t.inbound_numbers && t.inbound_numbers.length > 0
-            ? `<span class="font-mono text-slate-300">${escapeHtml(t.inbound_numbers.join(', '))}</span>`
+          let numDisplay = '';
+          if (Array.isArray(t.inbound_numbers)) {
+            numDisplay = t.inbound_numbers.join(', ');
+          } else if (typeof t.inbound_numbers === 'string') {
+            numDisplay = t.inbound_numbers.trim();
+          }
+          const numbersBadge = numDisplay
+            ? `<span class="font-mono text-slate-300">${escapeHtml(numDisplay)}</span>`
             : `<span class="text-slate-500">جميع المكالمات الواردة</span>`;
 
           const bidiBadge = t.enable_outbound
