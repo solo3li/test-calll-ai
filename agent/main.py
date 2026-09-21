@@ -108,31 +108,36 @@ def query_knowledge_base_sync(query: str, user_id: int, genai_client=None, top_k
         logger.error(f"Failed to query knowledge API: {e}", exc_info=True)
         return f"حدث خطأ أثناء البحث في المستندات: {e}"
 
-def fetch_user_mcp_server_sync(user_id: int) -> dict:
-    """Fetch active external MCP server and cached tools for user via Django API."""
+def fetch_user_mcp_servers_sync(user_id: int) -> list:
+    """Fetch all active external MCP servers and cached tools for user via Django API."""
     if not user_id:
-        return {}
+        return []
     try:
         bootstrap = fetch_agent_bootstrap_sync(user_id)
         servers = bootstrap.get("mcp_servers", [])
-        if servers:
-            s = servers[0]
+        clean_servers = []
+        for s in servers:
+            if not s or not s.get("is_active", True):
+                continue
             tools = s.get("cached_tools", [])
             if isinstance(tools, str):
                 try:
                     tools = json.loads(tools)
                 except Exception:
                     tools = []
-            return {
+            clean_servers.append({
                 "server_url": s.get("server_url", ""),
                 "auth_token": s.get("auth_token", ""),
                 "tools": tools or [],
                 "name": s.get("name", "خادم MCP")
-            }
-        return {}
+            })
+        return clean_servers
     except Exception as e:
-        logger.error(f"Error fetching MCP server for user {user_id}: {e}")
-        return {}
+        logger.error(f"Error fetching MCP servers for user {user_id}: {e}")
+        return []
+
+# Backwards compatibility alias
+fetch_user_mcp_server_sync = fetch_user_mcp_servers_sync
 
 async def execute_mcp_tool_call(server_url: str, auth_token: str, tool_name: str, arguments: dict) -> str:
     """Execute tool call on external MCP SSE server with strict timeout and fallback."""
@@ -532,20 +537,25 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # Fetch External MCP Tools dynamically
-    user_mcp = {}
+    # Fetch External MCP Tools dynamically from ALL active servers
+    mcp_servers_list = []
     mcp_tools = {}
     if user_id:
-        user_mcp = await asyncio.to_thread(fetch_user_mcp_server_sync, user_id)
-        if user_mcp and user_mcp.get("tools"):
-            for t in user_mcp["tools"]:
+        mcp_servers_list = await asyncio.to_thread(fetch_user_mcp_servers_sync, user_id)
+        for s in mcp_servers_list:
+            s_url = s.get("server_url")
+            s_token = s.get("auth_token", "")
+            s_name = s.get("name", "FastMCP")
+            for t in s.get("tools", []):
                 t_name = t.get("name")
                 if not t_name:
                     continue
                 mcp_tools[t_name] = {
-                    "server_url": user_mcp["server_url"],
-                    "auth_token": user_mcp.get("auth_token", ""),
-                    "description": t.get("description", "")
+                    "server_url": s_url,
+                    "auth_token": s_token,
+                    "server_name": s_name,
+                    "description": t.get("description", ""),
+                    "parameters": t.get("parameters")
                 }
 
     # Fetch Customer Memory dynamically (Permanent profile + Working memory)
@@ -603,18 +613,18 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
 
     func_decls = [rag_decl]
 
-    # Add external MCP tools
-    if user_mcp and user_mcp.get("tools"):
-        for t in user_mcp["tools"]:
-            decl = {
-                "name": t.get("name"),
-                "description": t.get("description", "")
-            }
-            params = t.get("parameters")
-            if params and isinstance(params, dict) and params.get("properties"):
-                decl["parameters"] = params
-            func_decls.append(decl)
-        logger.info(f"Loaded {len(user_mcp['tools'])} MCP tools from {user_mcp['server_url']}: {list(mcp_tools.keys())}")
+    # Add external MCP tools from all active servers
+    for t_name, t_info in mcp_tools.items():
+        decl = {
+            "name": t_name,
+            "description": t_info.get("description", "")
+        }
+        params = t_info.get("parameters")
+        if params and isinstance(params, dict) and params.get("properties"):
+            decl["parameters"] = params
+        func_decls.append(decl)
+    if mcp_tools:
+        logger.info(f"Loaded {len(mcp_tools)} total MCP tools across {len(mcp_servers_list)} active servers: {list(mcp_tools.keys())}")
 
     tools = [{"function_declarations": func_decls}]
 
@@ -781,9 +791,10 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
                                     elif fc.name in mcp_tools:
                                         mcp_info = mcp_tools[fc.name]
                                         desc = mcp_info["description"][:30] if mcp_info["description"] else fc.name
-                                        notify_centrifugo(channel_name, "agent_action_executing", f"جاري استدعاء أداة FastMCP: {desc}...")
+                                        s_name = mcp_info.get("server_name", "FastMCP")
+                                        notify_centrifugo(channel_name, "agent_action_executing", f"جاري استدعاء أداة {s_name}: {desc}...")
                                         act_args = dict(fc.args or {})
-                                        logger.info(f"Executing MCP tool '{fc.name}' with args {act_args} on {mcp_info['server_url']}")
+                                        logger.info(f"Executing MCP tool '{fc.name}' with args {act_args} on [{s_name}] {mcp_info['server_url']}")
                                         action_result = await execute_mcp_tool_call(
                                             mcp_info["server_url"],
                                             mcp_info["auth_token"],

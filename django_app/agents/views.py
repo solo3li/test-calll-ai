@@ -211,36 +211,47 @@ def fetch_mcp_tools_sync(url: str, auth_token: str = "", timeout: float = 6.0):
 
 @login_required(login_url='/login/')
 def get_mcp_server(request):
-    """Get the current user's MCP server configuration and discovered tools."""
-    server = UserMCPServer.objects.filter(user=request.user).first()
-    if not server:
-        server = UserMCPServer.objects.create(
+    """Get the current user's MCP servers list and aggregated statistics."""
+    servers = list(UserMCPServer.objects.filter(user=request.user).order_by('-created_at'))
+    if not servers:
+        # Create default store MCP server if none exists
+        default_server = UserMCPServer.objects.create(
             user=request.user,
             name="خادم المتجر الرئيسي (FastMCP)",
             server_url="http://mock-store:8002/sse",
             is_active=True
         )
         try:
-            tools = fetch_mcp_tools_sync(server.server_url, server.auth_token)
-            server.cached_tools = tools
-            server.last_synced_at = timezone.now()
-            server.save()
+            tools = fetch_mcp_tools_sync(default_server.server_url, default_server.auth_token)
+            default_server.cached_tools = tools
+            default_server.last_synced_at = timezone.now()
+            default_server.save()
         except Exception as e:
             logger.warning(f"Initial MCP sync failed: {e}")
+        servers = [default_server]
+
+    server_list = [s.to_dict() for s in servers]
+    active_count = sum(1 for s in servers if s.is_active)
+    total_tools = sum(len(s.cached_tools or []) for s in servers if s.is_active)
 
     return JsonResponse({
         "status": "success",
-        "server": server.to_dict()
+        "servers": server_list,
+        "server": server_list[0] if server_list else None,
+        "total_servers": len(servers),
+        "active_servers": active_count,
+        "total_tools": total_tools
     })
 
 @login_required(login_url='/login/')
 def save_mcp_server(request):
-    """Update MCP server configuration and trigger an automatic handshake sync."""
+    """Create or update an MCP server configuration and trigger an automatic handshake sync."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
     try:
         data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+        server_id = data.get('id') or data.get('server_id')
         name = data.get('name', '').strip() or 'خادم FastMCP'
         server_url = data.get('server_url', '').strip()
         auth_token = data.get('auth_token', '').strip()
@@ -249,11 +260,20 @@ def save_mcp_server(request):
         if not server_url:
             return JsonResponse({"status": "error", "message": "رابط الخادم مطلوب."}, status=400)
 
-        server, _ = UserMCPServer.objects.get_or_create(user=request.user)
-        server.name = name
-        server.server_url = server_url
-        server.auth_token = auth_token
-        server.is_active = is_active
+        if server_id:
+            server = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+            server.name = name
+            server.server_url = server_url
+            server.auth_token = auth_token
+            server.is_active = is_active
+        else:
+            server = UserMCPServer.objects.create(
+                user=request.user,
+                name=name,
+                server_url=server_url,
+                auth_token=auth_token,
+                is_active=is_active
+            )
 
         try:
             tools = fetch_mcp_tools_sync(server_url, auth_token, timeout=5.0)
@@ -275,38 +295,77 @@ def save_mcp_server(request):
 
 @login_required(login_url='/login/')
 def sync_mcp_server(request):
-    """Trigger an on-demand re-sync of MCP tools from the remote server."""
+    """Trigger an on-demand re-sync of MCP tools from remote server(s)."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
-    server = UserMCPServer.objects.filter(user=request.user).first()
-    if not server:
-        return JsonResponse({"status": "error", "message": "لا يوجد خادم MCP مسجل."}, status=404)
-
     try:
-        tools = fetch_mcp_tools_sync(server.server_url, server.auth_token, timeout=8.0)
-        server.cached_tools = tools
-        server.last_synced_at = timezone.now()
-        server.save()
+        data = json.loads(request.body) if (request.body and request.content_type == 'application/json') else request.POST
+    except Exception:
+        data = {}
+
+    server_id = data.get('id') or data.get('server_id') or request.GET.get('id')
+    if server_id:
+        server = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+        try:
+            tools = fetch_mcp_tools_sync(server.server_url, server.auth_token, timeout=8.0)
+            server.cached_tools = tools
+            server.last_synced_at = timezone.now()
+            server.save()
+            return JsonResponse({
+                "status": "success",
+                "message": f"تم تحديث أدوات '{server.name}' بنجاح. تم اكتشاف {len(tools)} أداة.",
+                "server": server.to_dict()
+            })
+        except Exception as e:
+            logger.error(f"Failed to sync MCP tools from {server.server_url}: {e}")
+            return JsonResponse({
+                "status": "error",
+                "message": f"فشل الاتصال بخادم '{server.name}': {str(e)}"
+            }, status=502)
+    else:
+        # Sync all active servers for user
+        servers = UserMCPServer.objects.filter(user=request.user)
+        if not servers.exists():
+            return JsonResponse({"status": "error", "message": "لا يوجد خادم MCP مسجل."}, status=404)
+        total_discovered = 0
+        errors = []
+        for s in servers:
+            try:
+                tools = fetch_mcp_tools_sync(s.server_url, s.auth_token, timeout=6.0)
+                s.cached_tools = tools
+                s.last_synced_at = timezone.now()
+                s.save()
+                total_discovered += len(tools)
+            except Exception as e:
+                errors.append(f"{s.name}: {e}")
+        
+        msg = f"تم تحديث الأدوات بنجاح. إجمالي الأدوات المكتشفة: {total_discovered} أداة."
+        if errors:
+            msg += f" (تعذر الاتصال بـ: {', '.join(errors)})"
         return JsonResponse({
             "status": "success",
-            "message": f"تم تحديث الأدوات بنجاح. تم اكتشاف {len(tools)} أداة.",
-            "server": server.to_dict()
+            "message": msg,
+            "servers": [s.to_dict() for s in UserMCPServer.objects.filter(user=request.user)]
         })
-    except Exception as e:
-        logger.error(f"Failed to sync MCP tools from {server.server_url}: {e}")
-        return JsonResponse({
-            "status": "error",
-            "message": f"فشل الاتصال بخادم MCP: {str(e)}"
-        }, status=502)
 
 @login_required(login_url='/login/')
 def toggle_mcp_server(request):
-    """Toggle whether MCP tools are enabled in Gemini Live session."""
+    """Toggle whether a specific MCP server is enabled for voice calls."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
-    server = UserMCPServer.objects.filter(user=request.user).first()
+    try:
+        data = json.loads(request.body) if (request.body and request.content_type == 'application/json') else request.POST
+    except Exception:
+        data = {}
+
+    server_id = data.get('id') or data.get('server_id') or request.GET.get('id')
+    if server_id:
+        server = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+    else:
+        server = UserMCPServer.objects.filter(user=request.user).first()
+
     if not server:
         return JsonResponse({"status": "error", "message": "لا يوجد خادم مسجل."}, status=404)
 
@@ -315,18 +374,35 @@ def toggle_mcp_server(request):
     status_str = "تفعيل" if server.is_active else "تعطيل"
     return JsonResponse({
         "status": "success",
-        "message": f"تم {status_str} أدوات خادم MCP بنجاح.",
-        "is_active": server.is_active
+        "message": f"تم {status_str} خادم '{server.name}' بنجاح.",
+        "is_active": server.is_active,
+        "server": server.to_dict()
     })
 
 @login_required(login_url='/login/')
 def delete_mcp_server(request):
-    """Delete the MCP server configuration."""
+    """Delete a specific MCP server configuration."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
-    UserMCPServer.objects.filter(user=request.user).delete()
-    return JsonResponse({"status": "success", "message": "تم حذف إعدادات خادم MCP بنجاح."})
+    try:
+        data = json.loads(request.body) if (request.body and request.content_type == 'application/json') else request.POST
+    except Exception:
+        data = {}
+
+    server_id = data.get('id') or data.get('server_id') or request.GET.get('id')
+    if server_id:
+        server = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+        server_name = server.name
+        server.delete()
+        return JsonResponse({"status": "success", "message": f"تم حذف خادم '{server_name}' بنجاح."})
+    else:
+        server = UserMCPServer.objects.filter(user=request.user).first()
+        if server:
+            server_name = server.name
+            server.delete()
+            return JsonResponse({"status": "success", "message": f"تم حذف خادم '{server_name}' بنجاح."})
+        return JsonResponse({"status": "error", "message": "لا يوجد خادم لحذفه."}, status=404)
 
 # ==================== Internal AI Agent Bootstrap API ====================
 
