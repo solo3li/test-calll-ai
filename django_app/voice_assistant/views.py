@@ -167,6 +167,32 @@ def get_tokens(request):
     """
     Generate authentication tokens for LiveKit and Centrifugo for the authenticated user.
     """
+    # Pre-call Wallet Balance Verification (OpenRouter prepaid model)
+    try:
+        from billing.models import BillingConfig, UserWallet
+        billing_cfg = BillingConfig.get_config()
+        wallet, _ = UserWallet.objects.get_or_create(
+            user=request.user,
+            defaults={
+                'balance': billing_cfg.initial_welcome_credit,
+                'currency': billing_cfg.currency,
+                'total_deposited': billing_cfg.initial_welcome_credit,
+            }
+        )
+        if wallet.balance < billing_cfg.cost_per_minute:
+            sym = billing_cfg.get_currency_symbol()
+            return JsonResponse({
+                "status": "error",
+                "code": "insufficient_balance",
+                "message": f"رصيدك الحالي ({wallet.balance:.2f} {sym}) غير كافٍ لبدء مكالمة جديدة. الحد الأدنى المطلوب هو تكلفة دقيقة واحدة ({billing_cfg.cost_per_minute:.2f} {sym}). يرجى شحن الرصيد للمتابعة.",
+                "balance": float(wallet.balance),
+                "cost_per_minute": float(billing_cfg.cost_per_minute),
+                "currency": wallet.currency,
+                "currency_symbol": sym,
+            }, status=402)
+    except Exception as b_chk_err:
+        logger.warning(f"Failed to check wallet balance before call: {b_chk_err}")
+
     room_name = request.GET.get('room') or f"room_user_{request.user.id}_{uuid.uuid4().hex[:6]}"
     user_identity = f"user_{request.user.id}_{request.user.username}"
     channel_name = f"rooms:{room_name}"

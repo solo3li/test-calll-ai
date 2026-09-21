@@ -86,6 +86,8 @@ class CallSession(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     duration_seconds = models.PositiveIntegerField(default=0)
+    billed_minutes = models.PositiveIntegerField(default=0, verbose_name="الدقائق المحتسبة (Ceiling)")
+    cost = models.DecimalField(max_digits=10, decimal_places=4, default=0.0000, verbose_name="تكلفة المكالمة")
     transcript_text = models.TextField(blank=True, default='')
     summary = models.TextField(blank=True, default='')
 
@@ -108,6 +110,11 @@ class CallSession(models.Model):
             "started_at": self.started_at.strftime("%Y-%m-%d %H:%M"),
             "ended_at": self.ended_at.strftime("%Y-%m-%d %H:%M") if self.ended_at else None,
             "duration_seconds": self.duration_seconds,
+            "billed_minutes": self.billed_minutes,
+            "cost": float(self.cost),
+            "cost_formatted": f"{self.cost:.2f}",
             "summary": self.summary or "",
+            "transcript_text": self.transcript_text or "",
         }
+
 

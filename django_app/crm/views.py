@@ -215,6 +215,50 @@ def api_internal_save_call_session_and_memory(request):
                 summary=summary
             )
 
+        # 1.1 Calculate billing with strict ceiling rounding and deduct from user wallet
+        billed_minutes = 0
+        call_cost = 0.0
+        try:
+            from decimal import Decimal
+            from billing.models import BillingConfig, UserWallet, BillingTransaction
+            config = BillingConfig.get_config()
+            b_mins, cost_dec = config.calculate_cost(duration_seconds)
+            billed_minutes = b_mins
+            call_cost = float(cost_dec)
+
+            wallet, _ = UserWallet.objects.get_or_create(
+                user=user,
+                defaults={
+                    'balance': config.initial_welcome_credit,
+                    'currency': config.currency,
+                    'total_deposited': config.initial_welcome_credit,
+                    'total_spent': Decimal('0.0000'),
+                }
+            )
+            wallet.balance -= cost_dec
+            wallet.total_spent += cost_dec
+            wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
+
+            BillingTransaction.objects.create(
+                wallet=wallet,
+                call_session=session,
+                transaction_type='call_deduction',
+                amount=-cost_dec,
+                balance_after=wallet.balance,
+                currency=wallet.currency,
+                actual_seconds=duration_seconds,
+                billed_minutes=billed_minutes,
+                rate_applied=config.cost_per_minute,
+                description=f"مكالمة {session.get_direction_display()} ({billed_minutes} دقيقة تقريب لأعلى - {duration_seconds} ثانية)"
+            )
+
+            session.billed_minutes = billed_minutes
+            session.cost = cost_dec
+            session.save(update_fields=['billed_minutes', 'cost'])
+            logger.info(f"Billed {billed_minutes} mins ({cost_dec} {wallet.currency}) for room {room_name} from user {user.username}")
+        except Exception as b_err:
+            logger.error(f"Error processing call billing for room {room_name}: {b_err}", exc_info=True)
+
         # 2. Upsert CustomerMemory for (user, caller_phone)
         memory, _ = CustomerMemory.objects.get_or_create(user=user, phone_number=caller_phone)
         if customer_name:
@@ -240,9 +284,107 @@ def api_internal_save_call_session_and_memory(request):
             "session_id": session.id,
             "caller_phone": caller_phone,
             "phone_number": caller_phone,
+            "duration_seconds": duration_seconds,
+            "billed_minutes": billed_minutes,
+            "cost": call_cost,
             "total_calls_count": memory.total_calls_count
         })
 
     except Exception as e:
         logger.error(f"Error saving CallSession and memory: {e}", exc_info=True)
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+# ==================== Call Detail Records (CDR) API ====================
+
+@login_required(login_url='/login/')
+def list_all_calls(request):
+    """
+    List and filter all Call Detail Records (CDR) for the authenticated user
+    with advanced filters (search, direction, date presets, duration ranges).
+    """
+    try:
+        from django.db.models import Q, Sum
+        from django.utils import timezone
+
+        calls = CallSession.objects.filter(user=request.user)
+
+        # 1. Search filter
+        search = request.GET.get('search', '').strip()
+        if search:
+            calls = calls.filter(
+                Q(caller_phone__icontains=search) |
+                Q(destination_phone__icontains=search) |
+                Q(room_name__icontains=search) |
+                Q(call_goal__icontains=search) |
+                Q(summary__icontains=search)
+            )
+
+        # 2. Direction filter
+        direction = request.GET.get('direction', '').strip()
+        if direction and direction != 'all':
+            calls = calls.filter(direction=direction)
+
+        # 3. Date presets / range
+        date_preset = request.GET.get('date_preset', '').strip()
+        now = timezone.now()
+
+        if date_preset == 'today':
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            calls = calls.filter(started_at__gte=start_of_day)
+        elif date_preset == 'last_7_days':
+            start_7 = now - datetime.timedelta(days=7)
+            calls = calls.filter(started_at__gte=start_7)
+        elif date_preset == 'this_month':
+            start_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            calls = calls.filter(started_at__gte=start_month)
+        else:
+            from_date = request.GET.get('from_date', '').strip()
+            to_date = request.GET.get('to_date', '').strip()
+            if from_date:
+                try:
+                    f_dt = datetime.datetime.strptime(from_date, '%Y-%m-%d')
+                    calls = calls.filter(started_at__date__gte=f_dt.date())
+                except ValueError:
+                    pass
+            if to_date:
+                try:
+                    t_dt = datetime.datetime.strptime(to_date, '%Y-%m-%d')
+                    calls = calls.filter(started_at__date__lte=t_dt.date())
+                except ValueError:
+                    pass
+
+        # 4. Duration filter
+        duration_filter = request.GET.get('duration', '').strip()
+        if duration_filter == 'under_1m':
+            calls = calls.filter(duration_seconds__lt=60)
+        elif duration_filter == '1m_to_5m':
+            calls = calls.filter(duration_seconds__gte=60, duration_seconds__lte=300)
+        elif duration_filter == 'over_5m':
+            calls = calls.filter(duration_seconds__gt=300)
+
+        # Compute aggregate metrics on filtered set
+        stats = calls.aggregate(
+            total_duration=Sum('duration_seconds'),
+            total_minutes=Sum('billed_minutes'),
+            total_cost=Sum('cost')
+        )
+
+        limit = int(request.GET.get('limit', 100))
+        results = [c.to_dict() for c in calls[:limit]]
+
+        return JsonResponse({
+            "status": "success",
+            "calls": results,
+            "count": len(results),
+            "stats": {
+                "total_calls": calls.count(),
+                "total_duration_seconds": stats.get('total_duration') or 0,
+                "total_billed_minutes": stats.get('total_minutes') or 0,
+                "total_cost": float(stats.get('total_cost') or 0.0),
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error in list_all_calls: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+

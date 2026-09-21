@@ -286,6 +286,32 @@ def trigger_ai_outbound_call(request):
         if not raw_phone:
             return JsonResponse({"status": "error", "message": "رقم الهاتف أو رقم التحويلة مطلوب للاتصال"}, status=400)
 
+        # Check user wallet balance
+        try:
+            from billing.models import BillingConfig, UserWallet
+            billing_cfg = BillingConfig.get_config()
+            wallet, _ = UserWallet.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    'balance': billing_cfg.initial_welcome_credit,
+                    'currency': billing_cfg.currency,
+                    'total_deposited': billing_cfg.initial_welcome_credit,
+                }
+            )
+            if wallet.balance < billing_cfg.cost_per_minute:
+                sym = billing_cfg.get_currency_symbol()
+                return JsonResponse({
+                    "status": "error",
+                    "code": "insufficient_balance",
+                    "message": f"رصيدك الحالي ({wallet.balance:.2f} {sym}) غير كافٍ لبدء مكالمة صادرة. الحد الأدنى المطلوب هو ({billing_cfg.cost_per_minute:.2f} {sym}). يرجى شحن الرصيد للمتابعة.",
+                    "balance": float(wallet.balance),
+                    "cost_per_minute": float(billing_cfg.cost_per_minute),
+                    "currency": wallet.currency,
+                    "currency_symbol": sym,
+                }, status=402)
+        except Exception as b_err:
+            logger.warning(f"Error checking wallet for outbound call: {b_err}")
+
         # Support internal extension dialing (e.g. 101, 200, 1001) as well as external mobile/landline numbers
         if len(raw_phone) <= 5 and raw_phone.isdigit():
             normalized_phone = raw_phone

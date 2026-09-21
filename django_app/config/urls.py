@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/call-center/', include('call_center.urls')),
     path('api/telephony/', include('telephony.urls')),
     path('api/crm/', include('crm.urls')),
+    path('api/billing/', include('billing.urls')),
     path('', include('voice_assistant.urls')),
 ]
 

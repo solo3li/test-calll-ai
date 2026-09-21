@@ -188,6 +188,18 @@
           <span class="text-base shrink-0">🛍️</span>
           <span class="nav-text" data-i18n="nav_store">متجر وأدوات MCP</span>
         </button>
+
+        <!-- 8. Usage & Billing (OpenRouter style) -->
+        <button type="button" onclick="switchTab('billing')" id="nav-btn-billing" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+          <span class="text-base shrink-0">💳</span>
+          <span class="nav-text" data-i18n="nav_billing">الرصيد والفواتير</span>
+        </button>
+
+        <!-- 9. All Calls & CDR -->
+        <button type="button" onclick="switchTab('calls')" id="nav-btn-calls" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+          <span class="text-base shrink-0">📋</span>
+          <span class="nav-text" data-i18n="nav_calls">سجل المكالمات (CDR)</span>
+        </button>
       </nav>
     </div>
 
@@ -234,6 +246,15 @@
         <span id="centrifugo-status" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FAF7F2] border border-[#EAE3D9] text-[#6E645D] font-medium shadow-sm">
           <span class="w-2 h-2 rounded-full bg-[#C5A880]"></span> Centrifugo: جاري التحقق...
         </span>
+
+        <!-- Header Wallet Balance Pill (OpenRouter Style) -->
+        <button type="button" onclick="switchTab('billing')" id="header-wallet-badge" class="group inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#D4AF37]/60 text-[#680E23] text-xs font-bold shadow-sm transition hover:shadow cursor-pointer">
+          <span class="text-sm">🪙</span>
+          <span class="text-[#8C827A] font-normal text-[11px]" data-i18n="header_balance">الرصيد:</span>
+          <span id="header-balance-val" class="font-mono text-xs font-bold text-[#680E23]">--.--</span>
+          <span id="header-balance-curr" class="text-[10px] text-[#6E645D]">USD</span>
+          <span class="w-4 h-4 rounded-full bg-[#680E23] text-white flex items-center justify-center text-[10px] group-hover:scale-110 transition font-bold" title="شحن الرصيد">+</span>
+        </button>
 
         <!-- Bilingual Switcher Toggle Button -->
         <button type="button" onclick="toggleLanguage()" id="lang-switch-btn" class="px-3.5 py-1.5 rounded-full bg-[#FAF0F2] border border-[#E8CCD2] text-[#680E23] text-xs font-bold hover:bg-[#F3E2E6] transition flex items-center gap-1.5 shadow-sm">
@@ -1600,6 +1621,406 @@
     </div>
       </div>
 
+      <!-- ==================== Tab 8: Usage & Billing (OpenRouter Prepaid Model) ==================== -->
+      <div id="tab-billing" class="tab-panel space-y-6">
+        <!-- Billing Header Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm">
+          <div>
+            <h3 class="text-lg font-bold text-[#680E23] flex items-center gap-2">
+              <span>💳</span> <span data-i18n="billing_title">حساب الاستخدام والرصيد</span>
+            </h3>
+            <p class="text-xs text-[#6E645D] mt-1" data-i18n="billing_subtitle">نظام رصيد مسبق الدفع (OpenRouter Style) مع خصم تكلفة الدقائق بالتقريب لأعلى دقيقة مرتفع</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="loadWalletData()" class="px-3.5 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] text-[#680E23] border border-[#DDD5C7] text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
+              <span>🔄</span> <span>تحديث الرصيد</span>
+            </button>
+            <button type="button" onclick="openTopupModal()" class="px-5 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white text-xs font-bold transition flex items-center gap-2 shadow-md hover:shadow-lg">
+              <span>⚡</span> <span data-i18n="billing_btn_topup">شحن الرصيد الآن</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Top Hero Grid: Balance & Rates -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <!-- Card 1: Available Balance Hero -->
+          <div class="md:col-span-2 p-6 rounded-3xl bg-gradient-to-br from-white via-[#FAF7F2] to-[#F5EFE6] border-2 border-[#D4AF37]/50 shadow-md space-y-4 relative overflow-hidden">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="text-xs font-semibold text-[#8C827A] uppercase tracking-wider block" data-i18n="billing_balance_title">الرصيد المتاح حالياً (Available Balance)</span>
+                <div class="flex items-baseline gap-2 mt-2">
+                  <span id="billing-wallet-balance" class="text-4xl sm:text-5xl font-extrabold font-mono text-[#680E23]">--.--</span>
+                  <span id="billing-wallet-currency" class="px-2.5 py-0.5 rounded-full bg-[#FAF0F2] text-[#680E23] font-bold text-xs border border-[#E8CCD2]">USD ($)</span>
+                </div>
+              </div>
+              <div class="text-end">
+                <span id="billing-call-status-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> جاهز للاتصال
+                </span>
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-[#EAE3D9] flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="text-[#6E645D]">التسعيرة الحالية للدقيقة:</span>
+                <span id="billing-rate-pill" class="px-2.5 py-0.5 rounded-md bg-[#680E23] text-white font-mono font-bold text-xs">$0.0500</span>
+                <span class="text-[11px] text-[#8C827A]">(تقريب لأعلى دقيقة مرتفع)</span>
+              </div>
+              <button type="button" onclick="openTopupModal()" class="text-[#680E23] hover:text-[#4A0817] font-bold text-xs underline flex items-center gap-1">
+                <span>+ إضافة رصيد للمحفظة</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 2: Pricing Policy & Admin Control -->
+          <div class="p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-3 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between pb-2 border-b border-[#EAE3D9]">
+                <h4 class="font-bold text-[#1C1917] text-xs flex items-center gap-1.5">
+                  <span>⚙️</span> <span data-i18n="billing_rate_info">إعدادات التسعير</span>
+                </h4>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-[#FAF7F2] border border-[#DDD5C7] text-[#680E23] font-semibold">Django Admin</span>
+              </div>
+              <ul class="text-xs text-[#443D39] space-y-2 mt-3 leading-relaxed">
+                <li class="flex items-start gap-1.5">
+                  <span class="text-[#D4AF37] font-bold shrink-0">✔</span>
+                  <span><strong>التقريب المرتفع (Ceiling):</strong> أي ثانية في الدقيقة التالية تُحسب كدقيقة كاملة.</span>
+                </li>
+                <li class="flex items-start gap-1.5">
+                  <span class="text-[#D4AF37] font-bold shrink-0">✔</span>
+                  <span><strong>التحكم الإداري:</strong> يمكنك تغيير سعر الدقيقة والعملة فوراً من لوحة الإدارة.</span>
+                </li>
+                <li class="flex items-start gap-1.5">
+                  <span class="text-[#D4AF37] font-bold shrink-0">✔</span>
+                  <span><strong>الحد الأدنى:</strong> <span id="billing-min-required-text" class="font-mono font-semibold text-[#680E23]">$0.05</span> لبدء أي مكالمة.</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="pt-2 border-t border-[#EAE3D9]">
+              <a href="/admin/billing/billingconfig/" target="_blank" class="w-full py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] text-[#680E23] border border-[#DDD5C7] text-xs font-bold transition flex items-center justify-center gap-1 shadow-sm">
+                <span>⚙️ تعديل الأسعار في Django Admin</span>
+                <span>↗</span>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Secondary Metrics Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm flex items-center justify-between">
+            <div>
+              <span class="text-xs text-[#8C827A]" data-i18n="billing_deposited">إجمالي المبالغ المشحونة</span>
+              <p id="billing-stat-deposited" class="text-xl font-bold font-mono text-[#1C1917] mt-1">$0.00</p>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center text-lg">
+              📥
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm flex items-center justify-between">
+            <div>
+              <span class="text-xs text-[#8C827A]" data-i18n="billing_spent">إجمالي المستهلك بالمكالمات</span>
+              <p id="billing-stat-spent" class="text-xl font-bold font-mono text-[#680E23] mt-1">$0.00</p>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-[#FAF0F2] border border-[#E8CCD2] text-[#680E23] flex items-center justify-center text-lg">
+              📤
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm flex items-center justify-between">
+            <div>
+              <span class="text-xs text-[#8C827A]">إجمالي الدقائق المحتسبة</span>
+              <p id="billing-stat-minutes" class="text-xl font-bold font-mono text-[#1C1917] mt-1">0 دقيقة</p>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 text-[#680E23] flex items-center justify-center text-lg">
+              ⏱️
+            </div>
+          </div>
+        </div>
+
+        <!-- Transactions Ledger Table -->
+        <div class="p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#EAE3D9]">
+            <div>
+              <h4 class="font-bold text-[#1C1917] text-sm flex items-center gap-2">
+                <span>📑</span> <span data-i18n="billing_ledger_title">سجل الحركات المالية (Financial Ledger)</span>
+              </h4>
+              <p class="text-xs text-[#8C827A] mt-0.5">توثيق كامل لكل عملية شحن، خصم مكالمة، وتحديث رصيد لحظي</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="filter-tx-type" onchange="loadTransactions(this.value)" class="px-3 py-1.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-xs text-[#1C1917] focus:outline-none focus:border-[#680E23]">
+                <option value="all">جميع الحركات</option>
+                <option value="call_deduction">خصم مكالمات صوتية</option>
+                <option value="topup">شحن رصيد</option>
+                <option value="welcome_bonus">رصيد ترحيبي</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-start">
+              <thead>
+                <tr class="border-b border-[#EAE3D9] bg-[#FAF7F2] text-[#6E645D]">
+                  <th class="py-3 px-4 text-start font-bold">التاريخ والوقت</th>
+                  <th class="py-3 px-4 text-start font-bold">نوع الحركة</th>
+                  <th class="py-3 px-4 text-start font-bold">المبلغ</th>
+                  <th class="py-3 px-4 text-start font-bold">الرصيد بعد الحركة</th>
+                  <th class="py-3 px-4 text-start font-bold">الدقائق / الثواني</th>
+                  <th class="py-3 px-4 text-start font-bold">السعر المطبق</th>
+                  <th class="py-3 px-4 text-start font-bold">البيان والتفاصيل</th>
+                </tr>
+              </thead>
+              <tbody id="billing-transactions-tbody" class="divide-y divide-[#EAE3D9]">
+                <tr>
+                  <td colspan="7" class="py-8 text-center text-[#8C827A]">
+                    جاري تحميل سجل الحركات المالية...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab 9: All Calls CDR with Advanced Filters ==================== -->
+      <div id="tab-calls" class="tab-panel space-y-6">
+        <!-- Calls Header Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm">
+          <div>
+            <h3 class="text-lg font-bold text-[#680E23] flex items-center gap-2">
+              <span>📋</span> <span data-i18n="calls_title">سجل كافة المكالمات (CDR)</span>
+            </h3>
+            <p class="text-xs text-[#6E645D] mt-1" data-i18n="calls_subtitle">عرض شامل لكافة المكالمات الواردة والصادرة مع فلاتر ذكية وإحصائيات الاستهلاك المالي</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="loadCallsList()" class="px-3.5 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] text-[#680E23] border border-[#DDD5C7] text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
+              <span>🔄</span> <span>تحديث السجل</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Filtered Metrics Summary Banner -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]" data-i18n="calls_stat_total">إجمالي المكالمات</span>
+            <p id="calls-stat-total" class="text-2xl font-bold font-mono text-[#680E23] mt-1">0</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]" data-i18n="calls_stat_minutes">الدقائق المحتسبة (Ceiling)</span>
+            <p id="calls-stat-minutes" class="text-2xl font-bold font-mono text-[#1C1917] mt-1">0 د</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]" data-i18n="calls_stat_cost">التكلفة الإجمالية</span>
+            <p id="calls-stat-cost" class="text-2xl font-bold font-mono text-emerald-700 mt-1">$0.00</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]">إجمالي الثواني الصوتية</span>
+            <p id="calls-stat-seconds" class="text-2xl font-bold font-mono text-[#6E645D] mt-1">0 ث</p>
+          </div>
+        </div>
+
+        <!-- Advanced Filter Toolbar -->
+        <div class="p-5 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#EAE3D9]">
+            <h4 class="font-bold text-[#1C1917] text-xs flex items-center gap-1.5">
+              <span>🔍</span> <span>فلاتر البحث والتصفية المتقدمة (CDR Filters)</span>
+            </h4>
+            <button type="button" onclick="resetCallsFilter()" class="text-xs text-[#680E23] hover:underline font-semibold flex items-center gap-1">
+              <span>✕ إعادة تعيين الفلاتر</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+            <!-- Search Input -->
+            <div class="md:col-span-2">
+              <label class="block font-semibold text-[#443D39] mb-1">بحث نصي</label>
+              <div class="relative">
+                <input 
+                  type="text" 
+                  id="filter-calls-search" 
+                  placeholder="رقم الهاتف، اسم العميل، اسم الغرفة، أو الهدف..." 
+                  oninput="debounceCallsFilter()"
+                  class="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]"
+                />
+              </div>
+            </div>
+
+            <!-- Direction Filter -->
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1" data-i18n="calls_filter_direction">اتجاه المكالمة</label>
+              <select id="filter-calls-direction" onchange="loadCallsList()" class="w-full px-3 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]">
+                <option value="all">جميع الاتجاهات</option>
+                <option value="inbound">مكالمة واردة</option>
+                <option value="outbound_ai">صادرة (ذكاء اصطناعي)</option>
+                <option value="outbound_agent">صادرة (موظف)</option>
+              </select>
+            </div>
+
+            <!-- Duration Filter -->
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1" data-i18n="calls_filter_duration">مدة المكالمة</label>
+              <select id="filter-calls-duration" onchange="loadCallsList()" class="w-full px-3 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]">
+                <option value="all">جميع المدد</option>
+                <option value="under_1m">أقل من دقيقة (&lt; 60ث)</option>
+                <option value="1m_to_5m">من 1 إلى 5 دقائق</option>
+                <option value="over_5m">أكثر من 5 دقائق</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Date Preset Quick Pills -->
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <span class="text-xs font-semibold text-[#6E645D]" data-i18n="calls_filter_date">النطاق الزمني:</span>
+            <button type="button" onclick="setCallsDatePreset('all')" id="btn-preset-all" class="preset-date-btn px-3 py-1 rounded-lg text-xs font-semibold bg-[#680E23] text-white transition">الكل</button>
+            <button type="button" onclick="setCallsDatePreset('today')" id="btn-preset-today" class="preset-date-btn px-3 py-1 rounded-lg text-xs font-semibold bg-[#FAF7F2] border border-[#DDD5C7] text-[#443D39] hover:bg-[#F5EFE6] transition">اليوم</button>
+            <button type="button" onclick="setCallsDatePreset('last_7_days')" id="btn-preset-last_7_days" class="preset-date-btn px-3 py-1 rounded-lg text-xs font-semibold bg-[#FAF7F2] border border-[#DDD5C7] text-[#443D39] hover:bg-[#F5EFE6] transition">آخر 7 أيام</button>
+            <button type="button" onclick="setCallsDatePreset('this_month')" id="btn-preset-this_month" class="preset-date-btn px-3 py-1 rounded-lg text-xs font-semibold bg-[#FAF7F2] border border-[#DDD5C7] text-[#443D39] hover:bg-[#F5EFE6] transition">هذا الشهر</button>
+          </div>
+        </div>
+
+        <!-- Calls Data Table -->
+        <div class="p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-4">
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-start">
+              <thead>
+                <tr class="border-b border-[#EAE3D9] bg-[#FAF7F2] text-[#6E645D]">
+                  <th class="py-3 px-4 text-start font-bold">وقت المكالمة</th>
+                  <th class="py-3 px-4 text-start font-bold">الاتجاه</th>
+                  <th class="py-3 px-4 text-start font-bold">الطرف / العميل</th>
+                  <th class="py-3 px-4 text-start font-bold">الغرفة / المساعد</th>
+                  <th class="py-3 px-4 text-start font-bold">المدة الفعلية</th>
+                  <th class="py-3 px-4 text-start font-bold">الدقائق المحتسبة</th>
+                  <th class="py-3 px-4 text-start font-bold">التكلفة</th>
+                  <th class="py-3 px-4 text-start font-bold">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="calls-table-tbody" class="divide-y divide-[#EAE3D9]">
+                <tr>
+                  <td colspan="8" class="py-8 text-center text-[#8C827A]">
+                    جاري تحميل سجل المكالمات...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Top-Up Modal (OpenRouter Style) ==================== -->
+      <div id="topup-modal" class="fixed inset-0 z-50 bg-[#1C1917]/50 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white border-2 border-[#D4AF37]/50 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+          <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9]">
+            <h3 class="text-base font-bold text-[#680E23] flex items-center gap-2">
+              <span>⚡</span> <span>شحن رصيد المحفظة (Instant Top-Up)</span>
+            </h3>
+            <button type="button" onclick="closeTopupModal()" class="text-[#6E645D] hover:text-[#1C1917] text-lg font-bold">✕</button>
+          </div>
+
+          <p class="text-[#443D39] text-xs leading-relaxed">
+            أدخل المبلغ المطلوب شحنه أو اختر من المبالغ السريعة. يتم إيداع الرصيد فوراً في محفظتك المسبقة الدفع.
+          </p>
+
+          <!-- Fast Preset Amount Buttons -->
+          <div>
+            <label class="block font-semibold text-[#443D39] mb-1.5">مبالغ شحن سريعة:</label>
+            <div class="grid grid-cols-4 gap-2">
+              <button type="button" onclick="setTopupAmount(10)" class="py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#680E23] font-mono font-bold text-xs transition">10 $</button>
+              <button type="button" onclick="setTopupAmount(25)" class="py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#680E23] font-mono font-bold text-xs transition">25 $</button>
+              <button type="button" onclick="setTopupAmount(50)" class="py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#680E23] font-mono font-bold text-xs transition">50 $</button>
+              <button type="button" onclick="setTopupAmount(100)" class="py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#680E23] font-mono font-bold text-xs transition">100 $</button>
+            </div>
+          </div>
+
+          <!-- Custom Amount Input -->
+          <div>
+            <label class="block font-semibold text-[#443D39] mb-1">المبلغ المطلوب شحنه *</label>
+            <div class="relative">
+              <input 
+                type="number" 
+                id="topup-amount-input" 
+                step="1" 
+                min="1" 
+                value="25" 
+                required 
+                class="w-full px-3 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] font-mono font-bold text-base focus:outline-none focus:border-[#680E23]" 
+              />
+            </div>
+          </div>
+
+          <div id="topup-modal-alert" class="hidden p-2.5 rounded-xl text-xs"></div>
+
+          <div class="flex justify-end gap-2 pt-3 border-t border-[#EAE3D9]">
+            <button type="button" onclick="closeTopupModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] transition">إلغاء</button>
+            <button type="button" onclick="submitTopup()" id="btn-submit-topup" class="px-5 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-bold transition flex items-center gap-1.5 shadow">
+              <span>تأكيد الشحن الفوري</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Call Details & Transcript Modal ==================== -->
+      <div id="call-detail-modal" class="fixed inset-0 z-50 bg-[#1C1917]/50 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white border border-[#EAE3D9] rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4 text-xs max-h-[85vh] flex flex-col">
+          <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9] shrink-0">
+            <div>
+              <h3 id="cdm-title" class="text-base font-bold text-[#680E23] flex items-center gap-2">
+                <span>📞</span> <span>تفاصيل المكالمة والملخص الذكي</span>
+              </h3>
+              <p id="cdm-subtitle" class="text-xs text-[#8C827A] mt-0.5">جلسة المكالمة</p>
+            </div>
+            <button type="button" onclick="closeCallDetailModal()" class="text-[#6E645D] hover:text-[#1C1917] text-lg font-bold">✕</button>
+          </div>
+
+          <div class="overflow-y-auto space-y-4 flex-1 pe-1">
+            <!-- Financial & Duration Highlights -->
+            <div class="grid grid-cols-4 gap-2 text-center">
+              <div class="p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD5C7]">
+                <span class="text-[10px] text-[#8C827A] block">المدة الفعلية</span>
+                <span id="cdm-duration" class="font-mono font-bold text-[#1C1917]">00:00</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD5C7]">
+                <span class="text-[10px] text-[#8C827A] block">الدقائق المحتسبة</span>
+                <span id="cdm-billed-mins" class="font-mono font-bold text-[#680E23]">0 دقيقة</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD5C7]">
+                <span class="text-[10px] text-[#8C827A] block">التكلفة</span>
+                <span id="cdm-cost" class="font-mono font-bold text-emerald-700">$0.00</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD5C7]">
+                <span class="text-[10px] text-[#8C827A] block">الاتجاه</span>
+                <span id="cdm-direction" class="font-semibold text-[#1C1917]">واردة</span>
+              </div>
+            </div>
+
+            <!-- Call Summary -->
+            <div class="p-4 rounded-2xl bg-[#FAF7F2] border border-[#EAE3D9] space-y-1.5">
+              <h5 class="font-bold text-[#680E23] text-xs flex items-center gap-1.5">
+                <span>💡</span> <span>ملخص المكالمة التراكمي (AI Summary):</span>
+              </h5>
+              <p id="cdm-summary" class="text-[#443D39] text-xs leading-relaxed">
+                لا يوجد ملخص مسجل لهذه المكالمة.
+              </p>
+            </div>
+
+            <!-- Full Transcript -->
+            <div class="space-y-2">
+              <h5 class="font-bold text-[#1C1917] text-xs flex items-center gap-1.5">
+                <span>📝</span> <span>نص المحادثة الكامل (Full Transcript):</span>
+              </h5>
+              <div id="cdm-transcript" class="p-3.5 rounded-2xl bg-[#FAF7F2] border border-[#DDD5C7] text-xs leading-relaxed text-[#1C1917] max-h-48 overflow-y-auto whitespace-pre-wrap font-sans">
+                لا يوجد نص مفرغ متاح.
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-3 border-t border-[#EAE3D9] shrink-0">
+            <button type="button" onclick="closeCallDetailModal()" class="px-4 py-2 rounded-xl bg-[#680E23] text-white font-semibold transition">إغلاق</button>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 
@@ -1650,6 +2071,25 @@
         nav_telephony: "الربط الهاتفي والسنترال",
         nav_crm: "ذاكرة وسجل العملاء",
         nav_store: "متجر وأدوات MCP",
+        nav_billing: "الرصيد والفواتير",
+        nav_calls: "سجل المكالمات (CDR)",
+        header_balance: "الرصيد:",
+        billing_title: "حساب الاستخدام والرصيد",
+        billing_subtitle: "نظام رصيد مسبق الدفع (OpenRouter Style) مع خصم تكلفة الدقائق بالتقريب لأعلى دقيقة مرتفع",
+        billing_balance_title: "الرصيد المتاح حالياً",
+        billing_rate_info: "إعدادات التسعير",
+        billing_btn_topup: "شحن الرصيد الآن",
+        billing_spent: "إجمالي المستهلك",
+        billing_deposited: "إجمالي المشحون",
+        billing_ledger_title: "سجل الحركات المالية (Ledger)",
+        calls_title: "سجل كافة المكالمات (CDR)",
+        calls_subtitle: "عرض شامل لكافة المكالمات الواردة والصادرة مع فلاتر ذكية وإحصائيات الاستهلاك المالي",
+        calls_filter_direction: "اتجاه المكالمة",
+        calls_filter_duration: "مدة المكالمة",
+        calls_filter_date: "النطاق الزمني:",
+        calls_stat_total: "إجمالي المكالمات",
+        calls_stat_minutes: "الدقائق المحتسبة",
+        calls_stat_cost: "التكلفة الإجمالية",
         subtab_employees: "دليل الموظفين والتحويلات",
         subtab_queues: "طوابير الانتظار ومجموعات العمل",
         subtab_outbound: "المكالمات الصادرة والجذع الخارجي (SIP Trunk)",
@@ -1691,6 +2131,25 @@
         nav_telephony: "Telephony & PBX",
         nav_crm: "Customer CRM & Memory",
         nav_store: "FastMCP Store & Tools",
+        nav_billing: "Billing & Wallet",
+        nav_calls: "Call Logs (CDR)",
+        header_balance: "Balance:",
+        billing_title: "Usage & Account Balance",
+        billing_subtitle: "Prepaid wallet management with strict minute-ceiling calculation",
+        billing_balance_title: "Available Balance",
+        billing_rate_info: "Applied Rate",
+        billing_btn_topup: "Top-up Balance",
+        billing_spent: "Total Spent",
+        billing_deposited: "Total Deposited",
+        billing_ledger_title: "Financial Ledger",
+        calls_title: "Call Detail Records (CDR)",
+        calls_subtitle: "Comprehensive call log with advanced filtering, metrics, and memory inspection",
+        calls_filter_direction: "Direction",
+        calls_filter_duration: "Duration",
+        calls_filter_date: "Date Range:",
+        calls_stat_total: "Total Calls",
+        calls_stat_minutes: "Billed Minutes",
+        calls_stat_cost: "Total Cost",
         subtab_employees: "Employees & Extensions",
         subtab_queues: "Call Queues & Routing",
         subtab_outbound: "Outbound SIP Trunk & Auto-Dialer",
@@ -2109,7 +2568,13 @@
         const res = await fetch('/api/token/?t=' + Date.now());
         const data = await res.json();
         if (data.status !== 'success') {
-          throw new Error('فشل جلب رموز الاتصال من الخادم');
+          if (data.code === 'insufficient_balance' || res.status === 402) {
+            alert('⚠️ ' + (data.message || 'رصيد حسابك الحالي غير كافٍ لبدء مكالمة جديدة. يرجى شحن الرصيد للمتابعة.'));
+            openTopupModal();
+            cleanupCall();
+            return;
+          }
+          throw new Error(data.message || 'فشل جلب رموز الاتصال من الخادم');
         }
 
         callStatus.innerText = 'جاري الاتصال بـ LiveKit...';
@@ -2258,6 +2723,11 @@
       btnEnd.disabled = true;
       callStatus.innerText = 'تم إنهاء المكالمة';
       subStatus.innerText = 'اضغط بدء المحادثة للاتصال مجدداً';
+      // Automatically refresh wallet balance and calls list after call ends
+      setTimeout(() => {
+        loadWalletData();
+        loadCallsList();
+      }, 2000);
     }
 
     // ==================== Document Ingestion Handling ====================
@@ -4217,6 +4687,364 @@
       });
     }
 
+    // ==========================================
+    // Billing, Wallet & Call Detail Records (CDR)
+    // ==========================================
+    let cachedCalls = [];
+    let currentCallsDatePreset = 'all';
+    let callsSearchTimeout = null;
+
+    async function loadWalletData() {
+      try {
+        const res = await fetch('/api/billing/wallet/');
+        const data = await res.json();
+        if (data.status === 'success') {
+          const w = data.wallet;
+          const cfg = data.config;
+          const sym = cfg.currency_symbol || '$';
+
+          // Update header badge
+          const hVal = document.getElementById('header-balance-val');
+          const hCurr = document.getElementById('header-balance-curr');
+          if (hVal) hVal.innerText = w.balance.toFixed(2);
+          if (hCurr) hCurr.innerText = w.currency;
+
+          // Update billing tab cards
+          const bVal = document.getElementById('billing-wallet-balance');
+          const bCurr = document.getElementById('billing-wallet-currency');
+          if (bVal) bVal.innerText = w.balance.toFixed(2);
+          if (bCurr) bCurr.innerText = `${w.currency} (${sym})`;
+
+          const rPill = document.getElementById('billing-rate-pill');
+          if (rPill) rPill.innerText = `${sym}${cfg.cost_per_minute.toFixed(4)} / دقيقة`;
+
+          const mText = document.getElementById('billing-min-required-text');
+          if (mText) mText.innerText = `${sym}${cfg.min_balance_to_call.toFixed(2)}`;
+
+          const sDep = document.getElementById('billing-stat-deposited');
+          if (sDep) sDep.innerText = `${sym}${w.total_deposited.toFixed(2)}`;
+
+          const sSpent = document.getElementById('billing-stat-spent');
+          if (sSpent) sSpent.innerText = `${sym}${w.total_spent.toFixed(2)}`;
+
+          // Status Badge
+          const statusBadge = document.getElementById('billing-call-status-badge');
+          if (statusBadge) {
+            if (data.can_call) {
+              statusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm';
+              statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> جاهز للاتصال';
+            } else {
+              statusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-300 shadow-sm';
+              statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500"></span> رصيد غير كافٍ - يرجى الشحن';
+            }
+          }
+
+          if (data.recent_transactions) {
+            renderTransactionsTable(data.recent_transactions, sym);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading wallet data:', err);
+      }
+    }
+
+    async function loadTransactions(type = 'all') {
+      try {
+        const url = type && type !== 'all' ? `/api/billing/transactions/?type=${encodeURIComponent(type)}` : '/api/billing/transactions/';
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.status === 'success') {
+          renderTransactionsTable(data.transactions, data.wallet?.currency_symbol || '$');
+        }
+      } catch (err) {
+        console.error('Error loading transactions:', err);
+      }
+    }
+
+    function renderTransactionsTable(txs, sym = '$') {
+      const tbody = document.getElementById('billing-transactions-tbody');
+      if (!tbody) return;
+
+      if (!txs || txs.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-[#8C827A]">
+              لا توجد حركات مالية مسجلة حتى الآن.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = txs.map(t => {
+        const isPositive = t.amount >= 0;
+        const amountBadge = isPositive 
+          ? `<span class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">${t.amount_formatted}</span>`
+          : `<span class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">${t.amount_formatted}</span>`;
+
+        let typeBadge = '';
+        if (t.transaction_type === 'topup') {
+          typeBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">⚡ شحن رصيد</span>`;
+        } else if (t.transaction_type === 'call_deduction') {
+          typeBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF0F2] text-[#680E23] border border-[#E8CCD2]">📞 خصم مكالمة</span>`;
+        } else {
+          typeBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF7F2] text-[#6E645D] border border-[#DDD5C7]">${t.transaction_type_display}</span>`;
+        }
+
+        const minsDisplay = t.billed_minutes > 0
+          ? `<span class="font-mono font-bold text-[#680E23]">${t.billed_minutes} د</span> <span class="text-[10px] text-[#8C827A]">(${t.actual_seconds} ث)</span>`
+          : `<span class="text-[#8C827A]">-</span>`;
+
+        const rateDisplay = t.rate_applied > 0
+          ? `<span class="font-mono">${sym}${t.rate_applied.toFixed(4)}</span>`
+          : `<span class="text-[#8C827A]">-</span>`;
+
+        return `
+          <tr class="hover:bg-[#F5EFE6]/50 transition">
+            <td class="py-3 px-4 text-[#6E645D] font-mono text-[11px]">${t.created_at}</td>
+            <td class="py-3 px-4">${typeBadge}</td>
+            <td class="py-3 px-4">${amountBadge}</td>
+            <td class="py-3 px-4 font-mono font-semibold text-[#1C1917]">${t.balance_after_formatted}</td>
+            <td class="py-3 px-4">${minsDisplay}</td>
+            <td class="py-3 px-4">${rateDisplay}</td>
+            <td class="py-3 px-4 text-[#443D39] max-w-xs truncate" title="${t.description || ''}">${t.description || '-'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openTopupModal() {
+      const m = document.getElementById('topup-modal');
+      const alertBox = document.getElementById('topup-modal-alert');
+      if (alertBox) alertBox.classList.add('hidden');
+      if (m) m.classList.remove('hidden');
+    }
+
+    function closeTopupModal() {
+      const m = document.getElementById('topup-modal');
+      if (m) m.classList.add('hidden');
+    }
+
+    function setTopupAmount(amt) {
+      const inp = document.getElementById('topup-amount-input');
+      if (inp) inp.value = amt;
+    }
+
+    async function submitTopup() {
+      const inp = document.getElementById('topup-amount-input');
+      const btn = document.getElementById('btn-submit-topup');
+      const alertBox = document.getElementById('topup-modal-alert');
+      if (!inp || !btn) return;
+
+      const amt = parseFloat(inp.value);
+      if (isNaN(amt) || amt <= 0) {
+        if (alertBox) {
+          alertBox.className = 'p-2.5 rounded-xl text-xs bg-rose-100 text-rose-800 border border-rose-200';
+          alertBox.innerText = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.';
+          alertBox.classList.remove('hidden');
+        }
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = 'جاري الإيداع...';
+
+      try {
+        const res = await fetch('/api/billing/topup/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ amount: amt })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          if (alertBox) {
+            alertBox.className = 'p-2.5 rounded-xl text-xs bg-emerald-100 text-emerald-800 border border-emerald-200';
+            alertBox.innerText = data.message || 'تم شحن الرصيد بنجاح!';
+            alertBox.classList.remove('hidden');
+          }
+          await loadWalletData();
+          await loadTransactions('all');
+          setTimeout(() => {
+            closeTopupModal();
+            btn.disabled = false;
+            btn.innerText = 'تأكيد الشحن الفوري';
+          }, 800);
+        } else {
+          if (alertBox) {
+            alertBox.className = 'p-2.5 rounded-xl text-xs bg-rose-100 text-rose-800 border border-rose-200';
+            alertBox.innerText = data.message || 'فشل الشحن.';
+            alertBox.classList.remove('hidden');
+          }
+          btn.disabled = false;
+          btn.innerText = 'تأكيد الشحن الفوري';
+        }
+      } catch (err) {
+        if (alertBox) {
+          alertBox.className = 'p-2.5 rounded-xl text-xs bg-rose-100 text-rose-800 border border-rose-200';
+          alertBox.innerText = 'حدث خطأ في الاتصال بالخادم.';
+          alertBox.classList.remove('hidden');
+        }
+        btn.disabled = false;
+        btn.innerText = 'تأكيد الشحن الفوري';
+      }
+    }
+
+    // CDR / All Calls Logic
+    async function loadCallsList() {
+      const searchVal = (document.getElementById('filter-calls-search')?.value || '').trim();
+      const dirVal = document.getElementById('filter-calls-direction')?.value || 'all';
+      const durVal = document.getElementById('filter-calls-duration')?.value || 'all';
+
+      const params = new URLSearchParams();
+      if (searchVal) params.set('search', searchVal);
+      if (dirVal && dirVal !== 'all') params.set('direction', dirVal);
+      if (durVal && durVal !== 'all') params.set('duration', durVal);
+      if (currentCallsDatePreset && currentCallsDatePreset !== 'all') {
+        params.set('date_preset', currentCallsDatePreset);
+      }
+
+      try {
+        const res = await fetch('/api/crm/calls/?' + params.toString());
+        const data = await res.json();
+        if (data.status === 'success') {
+          cachedCalls = data.calls || [];
+
+          // Update stats banner
+          const sTotal = document.getElementById('calls-stat-total');
+          const sMins = document.getElementById('calls-stat-minutes');
+          const sCost = document.getElementById('calls-stat-cost');
+          const sSecs = document.getElementById('calls-stat-seconds');
+          const bMins = document.getElementById('billing-stat-minutes');
+
+          if (sTotal) sTotal.innerText = data.stats.total_calls;
+          if (sMins) sMins.innerText = `${data.stats.total_billed_minutes} د`;
+          if (sCost) sCost.innerText = `$${data.stats.total_cost.toFixed(2)}`;
+          if (sSecs) sSecs.innerText = `${data.stats.total_duration_seconds} ث`;
+          if (bMins) bMins.innerText = `${data.stats.total_billed_minutes} دقيقة`;
+
+          renderCallsTable(cachedCalls);
+        }
+      } catch (err) {
+        console.error('Error loading calls list:', err);
+      }
+    }
+
+    function renderCallsTable(calls) {
+      const tbody = document.getElementById('calls-table-tbody');
+      if (!tbody) return;
+
+      if (!calls || calls.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="py-8 text-center text-[#8C827A]">
+              لا توجد مكالمات تطابق معايير البحث والتصفية المحددة.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = calls.map(c => {
+        let dirBadge = '';
+        if (c.direction === 'inbound') {
+          dirBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">📥 واردة</span>`;
+        } else if (c.direction === 'outbound_ai') {
+          dirBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF0F2] text-[#680E23] border border-[#E8CCD2]">🤖 صادرة AI</span>`;
+        } else {
+          dirBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">👤 صادرة موظف</span>`;
+        }
+
+        const party = c.destination_phone || c.caller_phone || 'Web Dashboard';
+        const m = Math.floor(c.duration_seconds / 60);
+        const s = c.duration_seconds % 60;
+        const durFormatted = `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+
+        return `
+          <tr class="hover:bg-[#F5EFE6]/50 transition">
+            <td class="py-3 px-4 text-[#6E645D] font-mono text-[11px] whitespace-nowrap">${c.started_at}</td>
+            <td class="py-3 px-4">${dirBadge}</td>
+            <td class="py-3 px-4 font-mono font-bold text-[#1C1917]">${party}</td>
+            <td class="py-3 px-4 text-[#443D39] max-w-[130px] truncate" title="${c.room_name}">${c.room_name}</td>
+            <td class="py-3 px-4 font-mono text-[#6E645D]">${durFormatted}</td>
+            <td class="py-3 px-4">
+              <span class="px-2 py-0.5 rounded-md font-mono font-bold bg-[#FAF0F2] text-[#680E23] border border-[#E8CCD2] text-[11px]">${c.billed_minutes || 0} دقيقة</span>
+            </td>
+            <td class="py-3 px-4 font-mono font-bold text-emerald-700">$${(c.cost || 0).toFixed(2)}</td>
+            <td class="py-3 px-4 whitespace-nowrap">
+              <button type="button" onclick="openCallDetailModal(${c.id})" class="px-2.5 py-1 rounded-lg bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#680E23] text-xs font-semibold transition inline-flex items-center gap-1 shadow-sm">
+                <span>👁️ التفاصيل</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function debounceCallsFilter() {
+      if (callsSearchTimeout) clearTimeout(callsSearchTimeout);
+      callsSearchTimeout = setTimeout(loadCallsList, 300);
+    }
+
+    function setCallsDatePreset(preset) {
+      currentCallsDatePreset = preset;
+      document.querySelectorAll('.preset-date-btn').forEach(b => {
+        b.className = 'preset-date-btn px-3 py-1 rounded-lg text-xs font-semibold bg-[#FAF7F2] border border-[#DDD5C7] text-[#443D39] hover:bg-[#F5EFE6] transition';
+      });
+      const activeBtn = document.getElementById('btn-preset-' + preset);
+      if (activeBtn) {
+        activeBtn.className = 'preset-date-btn px-3 py-1 rounded-lg text-xs font-semibold bg-[#680E23] text-white transition';
+      }
+      loadCallsList();
+    }
+
+    function resetCallsFilter() {
+      const sInp = document.getElementById('filter-calls-search');
+      const dirSel = document.getElementById('filter-calls-direction');
+      const durSel = document.getElementById('filter-calls-duration');
+      if (sInp) sInp.value = '';
+      if (dirSel) dirSel.value = 'all';
+      if (durSel) durSel.value = 'all';
+      setCallsDatePreset('all');
+    }
+
+    function openCallDetailModal(callId) {
+      const call = cachedCalls.find(c => c.id === callId);
+      if (!call) return;
+
+      const titleEl = document.getElementById('cdm-title');
+      const subEl = document.getElementById('cdm-subtitle');
+      const durEl = document.getElementById('cdm-duration');
+      const bMinsEl = document.getElementById('cdm-billed-mins');
+      const costEl = document.getElementById('cdm-cost');
+      const dirEl = document.getElementById('cdm-direction');
+      const sumEl = document.getElementById('cdm-summary');
+      const trEl = document.getElementById('cdm-transcript');
+
+      const m = Math.floor(call.duration_seconds / 60);
+      const s = call.duration_seconds % 60;
+      const durFormatted = `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+
+      if (titleEl) titleEl.innerText = `تفاصيل المكالمة: ${call.room_name}`;
+      if (subEl) subEl.innerText = `التاريخ: ${call.started_at} | الطرف: ${call.destination_phone || call.caller_phone || 'Web'}`;
+      if (durEl) durEl.innerText = durFormatted;
+      if (bMinsEl) bMinsEl.innerText = `${call.billed_minutes || 0} دقيقة (Ceiling)`;
+      if (costEl) costEl.innerText = `$${(call.cost || 0).toFixed(2)}`;
+      if (dirEl) dirEl.innerText = call.direction_display || call.direction;
+      if (sumEl) sumEl.innerText = call.summary || 'لا يوجد ملخص تراكمي مسجل لهذه المكالمة.';
+      if (trEl) trEl.innerText = call.transcript_text || 'لا يوجد نص محادثة مفرغ.';
+
+      const mBox = document.getElementById('call-detail-modal');
+      if (mBox) mBox.classList.remove('hidden');
+    }
+
+    function closeCallDetailModal() {
+      const mBox = document.getElementById('call-detail-modal');
+      if (mBox) mBox.classList.add('hidden');
+    }
+
     // Initialize lists on load
     loadDocuments();
     loadProfiles();
@@ -4227,6 +5055,9 @@
     loadQueues();
     loadOutboundTrunk();
     loadPbxTrunks();
+    loadWalletData();
+    loadCallsList();
+    loadTransactions('all');
 
     // Periodic polling to update agent presence states & queue waiting counts
     setInterval(loadQueues, 8000);
