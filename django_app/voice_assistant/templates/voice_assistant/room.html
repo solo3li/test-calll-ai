@@ -218,6 +218,13 @@
         <span class="text-base shrink-0">📋</span>
         <span class="nav-text" data-i18n="nav_calls">سجل المكالمات (CDR)</span>
       </button>
+
+      <!-- 10. Partner & SaaS Portal -->
+      <button type="button" onclick="handlePartnerNavClick()" id="nav-btn-partner" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+        <span class="text-base shrink-0">💼</span>
+        <span class="nav-text" data-i18n="nav_partner">الشريك والـ SaaS</span>
+        <span id="partner-nav-badge" class="hidden px-2 py-0.5 text-[9px] font-bold rounded-full bg-[#D4AF37] text-[#4A0817]">PRO</span>
+      </button>
     </nav>
 
     <!-- Sidebar Bottom Profile / Status (Pinned) -->
@@ -1866,6 +1873,269 @@
         </div>
       </div>
 
+      <!-- ==================== Tab 10: Partner & SaaS Portal ==================== -->
+      <div id="tab-partner" class="tab-panel space-y-6">
+        <!-- Partner Header & Refresh -->
+        <div class="flex flex-wrap items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm">
+          <div>
+            <h3 class="text-lg font-bold text-[#680E23] flex items-center gap-2">
+              <span>💼</span> <span>برنامج الشركاء وحلول الـ SaaS (Partner & Reseller Portal)</span>
+            </h3>
+            <p class="text-xs text-[#6E645D] mt-1">
+              إدارة عملاء الساس التابعين، مفاتيح الربط البرمجي (Headless API)، الـ Webhook، وتتبع استهلاك المكالمات المجمعة بالسعر المخفض.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="loadPartnerDashboard()" class="px-3.5 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] text-[#680E23] border border-[#DDD5C7] text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
+              <span>🔄</span> <span>تحديث البيانات</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Partner Status Notice Banner (if pending or unregistered) -->
+        <div id="partner-status-banner" class="hidden p-4 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3"></div>
+
+        <!-- Partner KPIs Metric Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]">رصيد محفظة الشريك المتاحة</span>
+            <p id="partner-kpi-balance" class="text-2xl font-bold font-mono text-[#680E23] mt-1">$0.00</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]">سعر الدقيقة المخصص لك</span>
+            <p id="partner-kpi-rate" class="text-2xl font-bold font-mono text-emerald-700 mt-1">$0.0300</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]">إجمالي عملاء الساس النشطين</span>
+            <p id="partner-kpi-clients" class="text-2xl font-bold font-mono text-[#1C1917] mt-1">0</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-[#EAE3D9] shadow-sm">
+            <span class="text-xs text-[#8C827A]">إجمالي الدقائق المستهلكة لعملائك</span>
+            <p id="partner-kpi-minutes" class="text-2xl font-bold font-mono text-[#6E645D] mt-1">0 د</p>
+          </div>
+        </div>
+
+        <!-- Developer Credentials & Shared MCP Configuration -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Card 1: API Key & Webhook Settings -->
+          <div class="p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-4">
+            <h4 class="font-bold text-[#1C1917] text-sm flex items-center gap-2 pb-3 border-b border-[#EAE3D9]">
+              <span>🔑</span> <span>بيانات الربط البرمجي الخلفي (Headless API Access)</span>
+            </h4>
+
+            <div class="space-y-3 text-xs">
+              <div>
+                <label class="block font-semibold text-[#443D39] mb-1">كود الشريك (Partner Code)</label>
+                <div class="flex items-center gap-2">
+                  <input type="text" id="partner-code-input" readonly class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#680E23] font-mono font-bold" />
+                  <button type="button" onclick="copyPartnerText('partner-code-input')" class="px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#443D39] font-semibold">نسخ</button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block font-semibold text-[#443D39] mb-1">مفتاح الوصول الرئيسي (X-Partner-Key)</label>
+                <div class="flex items-center gap-2">
+                  <input type="password" id="partner-api-key-input" readonly class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] font-mono" />
+                  <button type="button" onclick="togglePartnerKeyVisibility()" id="btn-toggle-partner-key" class="px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#443D39] font-semibold">إظهار</button>
+                  <button type="button" onclick="copyPartnerText('partner-api-key-input')" class="px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#443D39] font-semibold">نسخ</button>
+                  <button type="button" onclick="regeneratePartnerApiKey()" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold" title="إعادة توليد المفتاح">🔄</button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block font-semibold text-[#443D39] mb-1">رابط استقبال الـ Webhook الخاص بنظامك</label>
+                <div class="flex items-center gap-2">
+                  <input type="url" id="partner-webhook-url-input" placeholder="https://your-saas.com/api/voice-webhooks/" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] font-mono focus:outline-none focus:border-[#680E23]" />
+                  <button type="button" onclick="savePartnerSettings()" class="px-4 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-semibold transition shrink-0">حفظ</button>
+                  <button type="button" onclick="testPartnerWebhook()" class="px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#680E23] font-semibold transition shrink-0">اختبار فحص الاتصال</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Shared MCP Server Configuration -->
+          <div class="p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-4">
+            <h4 class="font-bold text-[#1C1917] text-sm flex items-center gap-2 pb-3 border-b border-[#EAE3D9]">
+              <span>🧩</span> <span>خادم الـ MCP الموروث لعملائك (Shared SaaS Tools)</span>
+            </h4>
+
+            <p class="text-xs text-[#6E645D] leading-relaxed">
+              اختر خادم أدوات MCP من خوادمك المربوطة ليتم توريثه وتفعيله تلقائياً لكافة عملاء الساس التابعين لك. عند استدعاء الوكيل الصوتي لأي أداة على هذا الخادم، سيتم تمرير معرف العميل المتحدث <code class="text-[#680E23] bg-[#FAF7F2] px-1 py-0.5 rounded font-mono">X-Client-ID</code> تلقائياً.
+            </p>
+
+            <div class="space-y-3 text-xs pt-2">
+              <div>
+                <label class="block font-semibold text-[#443D39] mb-1">خادم الـ MCP المشترك الافتراضي</label>
+                <select id="partner-shared-mcp-select" class="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]">
+                  <option value="">-- بدون خادم موروث --</option>
+                </select>
+              </div>
+
+              <div class="flex justify-end pt-2">
+                <button type="button" onclick="savePartnerSettings()" class="px-5 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-semibold transition shadow-sm">
+                  حفظ خادم الـ MCP المشترك
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sub-Clients Management Table -->
+        <div class="p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#EAE3D9]">
+            <div>
+              <h4 class="font-bold text-[#1C1917] text-sm flex items-center gap-1.5">
+                <span>👥</span> <span>إدارة عملاء الساس التابعين (Sub-Clients)</span>
+              </h4>
+              <p class="text-xs text-[#8C827A] mt-0.5">قائمة بجميع حسابات العملاء التي تم إنشاؤها عبر الـ API الخلفي التابع لنظامك</p>
+            </div>
+            <span class="text-xs text-[#6E645D]">يتم الخصم من محفظتك المركزية بالسعر المخفض</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-start">
+              <thead>
+                <tr class="border-b border-[#EAE3D9] bg-[#FAF7F2] text-[#6E645D]">
+                  <th class="py-3 px-4 text-start font-bold">معرف العميل (ID)</th>
+                  <th class="py-3 px-4 text-start font-bold">الاسم والبيانات</th>
+                  <th class="py-3 px-4 text-start font-bold">المعرف الخارجي (Ref)</th>
+                  <th class="py-3 px-4 text-start font-bold">تاريخ الانضمام</th>
+                  <th class="py-3 px-4 text-start font-bold">الدقائق المستهلكة</th>
+                  <th class="py-3 px-4 text-start font-bold">إجمالي التكلفة</th>
+                  <th class="py-3 px-4 text-start font-bold">سقف الاستهلاك (Cap)</th>
+                  <th class="py-3 px-4 text-start font-bold">الحالة</th>
+                  <th class="py-3 px-4 text-start font-bold">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="partner-clients-tbody" class="divide-y divide-[#EAE3D9]">
+                <tr>
+                  <td colspan="9" class="py-8 text-center text-[#8C827A]">
+                    جاري تحميل عملاء الساس...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Sub-Clients CDR Live Call Logs Table -->
+        <div class="p-6 rounded-3xl bg-white border border-[#EAE3D9] shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#EAE3D9]">
+            <div>
+              <h4 class="font-bold text-[#1C1917] text-sm flex items-center gap-1.5">
+                <span>📋</span> <span>سجل مكالمات عملاء الساس (Partner Sub-Clients CDR)</span>
+              </h4>
+              <p class="text-xs text-[#8C827A] mt-0.5">تفاصيل استهلاك مكالمات عملائك والدقائق المخصومة من رصيدك بالسعر المخفض</p>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-start">
+              <thead>
+                <tr class="border-b border-[#EAE3D9] bg-[#FAF7F2] text-[#6E645D]">
+                  <th class="py-3 px-4 text-start font-bold">وقت المكالمة</th>
+                  <th class="py-3 px-4 text-start font-bold">العميل التابع</th>
+                  <th class="py-3 px-4 text-start font-bold">الاتجاه والطرف</th>
+                  <th class="py-3 px-4 text-start font-bold">المدة بالثواني</th>
+                  <th class="py-3 px-4 text-start font-bold">الدقائق (Ceiling)</th>
+                  <th class="py-3 px-4 text-start font-bold">التكلفة المخصومة</th>
+                  <th class="py-3 px-4 text-start font-bold">الملخص الذكي</th>
+                </tr>
+              </thead>
+              <tbody id="partner-calls-tbody" class="divide-y divide-[#EAE3D9]">
+                <tr>
+                  <td colspan="7" class="py-8 text-center text-[#8C827A]">
+                    لا توجد مكالمات مسجلة لعملاء الشريك حتى الآن.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Partner Application Modal ==================== -->
+      <div id="partner-apply-modal" class="fixed inset-0 z-50 bg-[#1C1917]/50 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white border-2 border-[#D4AF37]/50 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
+          <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9]">
+            <h3 class="text-base font-bold text-[#680E23] flex items-center gap-2">
+              <span>💼</span> <span>طلب الانضمام كشريك SaaS و موزع معتمد</span>
+            </h3>
+            <button type="button" onclick="closePartnerApplyModal()" class="text-[#6E645D] hover:text-[#1C1917] text-lg font-bold">✕</button>
+          </div>
+
+          <p class="text-[#443D39] leading-relaxed">
+            انضم لبرنامج الشركاء لربط نظامك أو منصتك عبر الـ APIs الخلفية، وتوفير خدمات المساعد الصوتي لعملائك بتسعير جملة مخفض للدقيقة وتحكم كامل.
+          </p>
+
+          <div id="partner-apply-alert" class="hidden p-3 rounded-xl text-xs"></div>
+
+          <form id="partner-apply-form" onsubmit="submitPartnerApply(event)" class="space-y-3">
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1">اسم الشركة أو المنصة (SaaS Name) *</label>
+              <input type="text" id="partner-apply-company" required placeholder="مثال: متجر بلس للحلول الرقمية" class="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]" />
+            </div>
+
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1">موقع المنصة الإلكتروني</label>
+              <input type="url" id="partner-apply-website" placeholder="https://example.com" class="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]" />
+            </div>
+
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1">نبذة عن النشاط وحجم الاستخدام المتوقع</label>
+              <textarea id="partner-apply-desc" rows="3" placeholder="وصف موجز عن كيفية استخدام الذكاء الاصطناعي والصوت لخدمة عملائك..." class="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]"></textarea>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-3 border-t border-[#EAE3D9]">
+              <button type="button" onclick="closePartnerApplyModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] transition">إلغاء</button>
+              <button type="submit" id="btn-submit-partner-apply" class="px-5 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-bold transition flex items-center gap-1.5 shadow">
+                <span>إرسال الطلب للمراجعة</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ==================== Client Cap Adjustment Modal ==================== -->
+      <div id="partner-cap-modal" class="fixed inset-0 z-50 bg-[#1C1917]/50 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white border border-[#EAE3D9] rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+          <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9]">
+            <h3 class="text-base font-bold text-[#680E23] flex items-center gap-2">
+              <span>⚙️</span> <span>تعديل سقف استهلاك العميل (Usage Cap)</span>
+            </h3>
+            <button type="button" onclick="closeClientCapModal()" class="text-[#6E645D] hover:text-[#1C1917] text-lg font-bold">✕</button>
+          </div>
+
+          <input type="hidden" id="cap-modal-client-id" />
+
+          <div class="space-y-3">
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1">سقف الإنفاق بالدولار (Spending Cap $)</label>
+              <input type="number" id="cap-modal-spending" step="0.5" placeholder="اتركه فارغاً لعدم وضع حد مالي" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]" />
+              <span class="text-[10px] text-[#8C827A] block mt-0.5">الحد الأقصى للتكلفة المسموح بها لهذا العميل</span>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1">سقف الدقائق (Minute Cap)</label>
+              <input type="number" id="cap-modal-minutes" step="1" placeholder="اتركه فارغاً لعدم وضع حد للدقائق" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]" />
+              <span class="text-[10px] text-[#8C827A] block mt-0.5">الحد الأقصى للدقائق الصوتية المسموح بها</span>
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+              <input type="checkbox" id="cap-modal-active" class="rounded accent-[#680E23]" />
+              <label for="cap-modal-active" class="font-semibold text-[#443D39]">تفعيل حساب العميل والسماح له بإجراء واستقبال المكالمات</label>
+            </div>
+          </div>
+
+          <div id="cap-modal-alert" class="hidden p-2 rounded-xl text-xs"></div>
+
+          <div class="flex justify-end gap-2 pt-3 border-t border-[#EAE3D9]">
+            <button type="button" onclick="closeClientCapModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] transition">إلغاء</button>
+            <button type="button" onclick="saveClientCap()" id="btn-save-client-cap" class="px-5 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-bold transition">حفظ السقف</button>
+          </div>
+        </div>
+      </div>
+
       <!-- ==================== Top-Up Modal (OpenRouter Style) ==================== -->
       <div id="topup-modal" class="fixed inset-0 z-50 bg-[#1C1917]/50 backdrop-blur-sm flex items-center justify-center p-4 hidden">
         <div class="bg-white border-2 border-[#D4AF37]/50 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
@@ -2030,6 +2300,7 @@
         nav_store: "متجر وأدوات MCP",
         nav_billing: "الرصيد والفواتير",
         nav_calls: "سجل المكالمات (CDR)",
+        nav_partner: "الشريك والـ SaaS",
         header_balance: "الرصيد:",
         billing_title: "حساب الاستخدام والرصيد",
         billing_subtitle: "نظام رصيد مسبق الدفع (OpenRouter Style) مع خصم تكلفة الدقائق بالتقريب لأعلى دقيقة مرتفع",
@@ -2088,6 +2359,7 @@
         nav_store: "FastMCP Store & Tools",
         nav_billing: "Billing & Wallet",
         nav_calls: "Call Logs (CDR)",
+        nav_partner: "Partner & SaaS",
         header_balance: "Balance:",
         billing_title: "Usage & Account Balance",
         billing_subtitle: "Prepaid wallet management with strict minute-ceiling calculation",
@@ -2242,6 +2514,8 @@
         loadWalletData();
       } else if (tabId === 'calls') {
         loadCallsList();
+      } else if (tabId === 'partner') {
+        loadPartnerDashboard();
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -5061,7 +5335,373 @@
       if (mBox) mBox.classList.add('hidden');
     }
 
+    // =========================================================================
+    // Partner & SaaS Portal Logic
+    // =========================================================================
+    let currentPartnerData = null;
+
+    async function checkPartnerStatusOnLoad() {
+      try {
+        const res = await fetch('/api/partner/v1/dashboard/');
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentPartnerData = data.partner;
+          const badge = document.getElementById('partner-nav-badge');
+          if (badge) {
+            badge.innerText = data.partner.status === 'approved' ? 'PRO' : 'معلق';
+            badge.classList.remove('hidden');
+          }
+        }
+      } catch (e) {
+        console.warn('Error checking partner status:', e);
+      }
+    }
+
+    async function handlePartnerNavClick() {
+      try {
+        const res = await fetch('/api/partner/v1/dashboard/');
+        const data = await res.json();
+        if (data.status === 'success' && data.partner.status === 'approved') {
+          switchTab('partner');
+        } else if (data.status === 'success' && data.partner.status === 'pending') {
+          openPartnerApplyModal(data.partner);
+        } else {
+          openPartnerApplyModal(null);
+        }
+      } catch (e) {
+        openPartnerApplyModal(null);
+      }
+    }
+
+    function openPartnerApplyModal(existing) {
+      const m = document.getElementById('partner-apply-modal');
+      const alertBox = document.getElementById('partner-apply-alert');
+      const form = document.getElementById('partner-apply-form');
+      const submitBtn = document.getElementById('btn-submit-partner-apply');
+
+      if (alertBox) {
+        if (existing && existing.status === 'pending') {
+          alertBox.className = 'p-3 rounded-xl text-xs bg-amber-50 text-amber-900 border border-amber-200 block';
+          alertBox.innerHTML = `⚠️ <strong>طلبك قيد المراجعة:</strong> تم استلام طلبك لشركة <strong>${existing.company_name}</strong> وجاري مراجعته من الإدارة لتفعيل تسعير الجملة والمفاتيح.`;
+        } else if (existing && existing.status === 'rejected') {
+          alertBox.className = 'p-3 rounded-xl text-xs bg-rose-50 text-rose-900 border border-rose-200 block';
+          alertBox.innerHTML = `❌ تم رفض الطلب السابق. يمكنك إعادة التقديم أدناه.`;
+        } else {
+          alertBox.className = 'hidden';
+        }
+      }
+
+      if (existing) {
+        const cInp = document.getElementById('partner-apply-company');
+        const wInp = document.getElementById('partner-apply-website');
+        const dInp = document.getElementById('partner-apply-desc');
+        if (cInp) cInp.value = existing.company_name || '';
+        if (wInp) wInp.value = existing.website || '';
+        if (dInp) dInp.value = existing.description || '';
+      }
+
+      if (m) m.classList.remove('hidden');
+    }
+
+    function closePartnerApplyModal() {
+      const m = document.getElementById('partner-apply-modal');
+      if (m) m.classList.add('hidden');
+    }
+
+    async function submitPartnerApply(event) {
+      event.preventDefault();
+      const btn = document.getElementById('btn-submit-partner-apply');
+      const company = document.getElementById('partner-apply-company').value.trim();
+      const website = document.getElementById('partner-apply-website').value.trim();
+      const description = document.getElementById('partner-apply-desc').value.trim();
+      const alertBox = document.getElementById('partner-apply-alert');
+
+      if (!company) return;
+
+      btn.disabled = true;
+      btn.innerText = 'جاري الإرسال...';
+
+      try {
+        const res = await fetch('/api/partner/v1/apply/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ company_name: company, website: website, description: description })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          if (alertBox) {
+            alertBox.className = 'p-3 rounded-xl text-xs bg-emerald-50 text-emerald-900 border border-emerald-200 block';
+            alertBox.innerText = data.message;
+          }
+          setTimeout(() => {
+            closePartnerApplyModal();
+            checkPartnerStatusOnLoad();
+          }, 1500);
+        } else {
+          if (alertBox) {
+            alertBox.className = 'p-3 rounded-xl text-xs bg-rose-50 text-rose-900 border border-rose-200 block';
+            alertBox.innerText = data.message || 'حدث خطأ أثناء التقديم';
+          }
+        }
+      } catch (err) {
+        if (alertBox) {
+          alertBox.className = 'p-3 rounded-xl text-xs bg-rose-50 text-rose-900 border border-rose-200 block';
+          alertBox.innerText = 'تعذر الاتصال بالخادم';
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'إرسال الطلب للمراجعة';
+      }
+    }
+
+    async function loadPartnerDashboard() {
+      try {
+        const res = await fetch('/api/partner/v1/dashboard/');
+        const data = await res.json();
+
+        if (data.status !== 'success') {
+          switchTab('voice');
+          openPartnerApplyModal(null);
+          return;
+        }
+
+        const partner = data.partner;
+        const wallet = data.wallet;
+        const kpis = data.kpis;
+        const clients = data.clients || [];
+        const calls = data.recent_calls || [];
+        const mcpServers = data.mcp_servers || [];
+
+        // 1. KPIs
+        const bEl = document.getElementById('partner-kpi-balance');
+        const rEl = document.getElementById('partner-kpi-rate');
+        const cEl = document.getElementById('partner-kpi-clients');
+        const mEl = document.getElementById('partner-kpi-minutes');
+        if (bEl) bEl.innerText = `$${(wallet.balance || 0).toFixed(2)}`;
+        if (rEl) rEl.innerText = `$${(kpis.custom_rate || 0).toFixed(4)} / د`;
+        if (cEl) cEl.innerText = kpis.total_clients || 0;
+        if (mEl) mEl.innerText = `${kpis.total_minutes || 0} د`;
+
+        // 2. Credentials
+        const codeInp = document.getElementById('partner-code-input');
+        const keyInp = document.getElementById('partner-api-key-input');
+        const whInp = document.getElementById('partner-webhook-url-input');
+        if (codeInp) codeInp.value = partner.partner_code || '';
+        if (keyInp) keyInp.value = partner.api_key || '';
+        if (whInp) whInp.value = partner.webhook_url || '';
+
+        // 3. Shared MCP Servers dropdown
+        const mcpSelect = document.getElementById('partner-shared-mcp-select');
+        if (mcpSelect) {
+          mcpSelect.innerHTML = '<option value="">-- بدون خادم موروث --</option>' +
+            mcpServers.map(s => `<option value="${s.id}" ${partner.shared_mcp_server_id == s.id ? 'selected' : ''}>${s.name} (${s.server_url})</option>`).join('');
+        }
+
+        // 4. Clients Table
+        const cTbody = document.getElementById('partner-clients-tbody');
+        if (cTbody) {
+          if (clients.length === 0) {
+            cTbody.innerHTML = `<tr><td colspan="9" class="py-8 text-center text-[#8C827A]">لم يسجل أي عميل عبر الـ API الخلفي حتى الآن.</td></tr>`;
+          } else {
+            cTbody.innerHTML = clients.map(c => `
+              <tr class="hover:bg-[#FAF7F2]/60 transition">
+                <td class="py-3 px-4 font-mono font-bold text-[#680E23]">${c.client_id}</td>
+                <td class="py-3 px-4 font-semibold text-[#1C1917]">${c.name} <span class="text-[10px] text-[#8C827A] block">${c.email || ''}</span></td>
+                <td class="py-3 px-4 font-mono text-[#443D39]">${c.external_reference || '-'}</td>
+                <td class="py-3 px-4 text-[#8C827A]">${c.created_at}</td>
+                <td class="py-3 px-4 font-mono font-bold text-[#1C1917]">${c.total_minutes} د</td>
+                <td class="py-3 px-4 font-mono font-bold text-emerald-700">$${c.total_spent.toFixed(2)}</td>
+                <td class="py-3 px-4 text-[#443D39]">
+                  ${c.spending_cap ? '$' + c.spending_cap : 'بلا سقف'} 
+                  ${c.minute_cap ? '(' + c.minute_cap + 'د)' : ''}
+                </td>
+                <td class="py-3 px-4">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${c.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
+                    ${c.is_active ? 'مفعل' : 'موقوف'}
+                  </span>
+                </td>
+                <td class="py-3 px-4">
+                  <button type="button" onclick="openClientCapModal(${c.client_id}, ${c.spending_cap || 'null'}, ${c.minute_cap || 'null'}, ${c.is_active})" class="px-2.5 py-1 rounded-lg bg-[#FAF7F2] hover:bg-[#F5EFE6] text-[#680E23] border border-[#DDD5C7] text-xs font-semibold">
+                    ⚙️ تعديل السقف
+                  </button>
+                </td>
+              </tr>
+            `).join('');
+          }
+        }
+
+        // 5. CDR Table
+        const callsTbody = document.getElementById('partner-calls-tbody');
+        if (callsTbody) {
+          if (calls.length === 0) {
+            callsTbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-[#8C827A]">لا توجد مكالمات مسجلة لعملاء الشريك حتى الآن.</td></tr>`;
+          } else {
+            callsTbody.innerHTML = calls.map(cl => `
+              <tr class="hover:bg-[#FAF7F2]/60 transition">
+                <td class="py-3 px-4 text-[#8C827A]">${cl.started_at}</td>
+                <td class="py-3 px-4 font-bold text-[#1C1917]">${cl.client_name} <span class="text-[10px] text-[#680E23] block font-mono">ID: ${cl.client_id}</span></td>
+                <td class="py-3 px-4 font-mono text-[#443D39]">${cl.caller_phone || '-'}</td>
+                <td class="py-3 px-4 font-mono text-[#443D39]">${cl.duration_seconds} ث</td>
+                <td class="py-3 px-4 font-mono font-bold text-[#1C1917]">${cl.billed_minutes} د</td>
+                <td class="py-3 px-4 font-mono font-bold text-emerald-700">$${cl.cost.toFixed(2)}</td>
+                <td class="py-3 px-4 text-xs text-[#443D39] max-w-xs truncate" title="${cl.summary}">${cl.summary || 'لا يوجد ملخص'}</td>
+              </tr>
+            `).join('');
+          }
+        }
+
+      } catch (e) {
+        console.error('Error loading partner dashboard:', e);
+      }
+    }
+
+    function togglePartnerKeyVisibility() {
+      const inp = document.getElementById('partner-api-key-input');
+      const btn = document.getElementById('btn-toggle-partner-key');
+      if (!inp || !btn) return;
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        btn.innerText = 'إخفاء';
+      } else {
+        inp.type = 'password';
+        btn.innerText = 'إظهار';
+      }
+    }
+
+    function copyPartnerText(inputId) {
+      const inp = document.getElementById(inputId);
+      if (inp) {
+        navigator.clipboard.writeText(inp.value);
+        showToast('تم نسخ القيمة إلى الحافظة بنجاح!');
+      }
+    }
+
+    async function regeneratePartnerApiKey() {
+      if (!confirm('هل أنت متأكد من رغبتك في إعادة توليد مفتاح الـ API الرئيسي؟ سيتوقف المفتاح القديم عن العمل فوراً.')) return;
+      try {
+        const res = await fetch('/api/partner/v1/settings/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ regenerate_api_key: true })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast('تمت إعادة توليد المفتاح بنجاح.');
+          const keyInp = document.getElementById('partner-api-key-input');
+          if (keyInp) keyInp.value = data.partner.api_key;
+        }
+      } catch (e) {
+        alert('حدث خطأ أثناء إعادة التوليد');
+      }
+    }
+
+    async function savePartnerSettings() {
+      const whUrl = document.getElementById('partner-webhook-url-input').value.trim();
+      const mcpSelect = document.getElementById('partner-shared-mcp-select');
+      const mcpId = mcpSelect ? mcpSelect.value : null;
+
+      try {
+        const res = await fetch('/api/partner/v1/settings/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ webhook_url: whUrl, shared_mcp_server_id: mcpId || null })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast('تم حفظ إعدادات الشريك والـ Webhook بنجاح.');
+        } else {
+          alert(data.message || 'حدث خطأ أثناء الحفظ.');
+        }
+      } catch (e) {
+        alert('تعذر حفظ الإعدادات');
+      }
+    }
+
+    async function testPartnerWebhook() {
+      try {
+        const res = await fetch('/api/partner/v1/settings/test-webhook/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast('تم إرسال اختبار Webhook بنجاح إلى رابطك!');
+        } else {
+          alert(data.message || 'فشل إرسال اختبار الـ Webhook.');
+        }
+      } catch (e) {
+        alert('تعذر اختبار الـ Webhook.');
+      }
+    }
+
+    function openClientCapModal(clientId, spendingCap, minuteCap, isActive) {
+      document.getElementById('cap-modal-client-id').value = clientId;
+      document.getElementById('cap-modal-spending').value = spendingCap !== null && spendingCap !== undefined ? spendingCap : '';
+      document.getElementById('cap-modal-minutes').value = minuteCap !== null && minuteCap !== undefined ? minuteCap : '';
+      document.getElementById('cap-modal-active').checked = isActive !== false;
+      const alertBox = document.getElementById('cap-modal-alert');
+      if (alertBox) alertBox.classList.add('hidden');
+      document.getElementById('partner-cap-modal').classList.remove('hidden');
+    }
+
+    function closeClientCapModal() {
+      document.getElementById('partner-cap-modal').classList.add('hidden');
+    }
+
+    async function saveClientCap() {
+      const clientId = document.getElementById('cap-modal-client-id').value;
+      const spending = document.getElementById('cap-modal-spending').value;
+      const minutes = document.getElementById('cap-modal-minutes').value;
+      const isActive = document.getElementById('cap-modal-active').checked;
+      const alertBox = document.getElementById('cap-modal-alert');
+
+      try {
+        const res = await fetch('/api/partner/v1/clients/cap/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            client_id: clientId,
+            spending_cap: spending !== '' ? parseFloat(spending) : null,
+            minute_cap: minutes !== '' ? parseInt(minutes) : null,
+            is_active: isActive
+          })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          closeClientCapModal();
+          showToast('تم تحديث سقف استهلاك العميل بنجاح.');
+          loadPartnerDashboard();
+        } else {
+          if (alertBox) {
+            alertBox.className = 'p-2 rounded-xl text-xs bg-rose-100 text-rose-800 block';
+            alertBox.innerText = data.message || 'حدث خطأ أثناء الحفظ.';
+          }
+        }
+      } catch (e) {
+        if (alertBox) {
+          alertBox.className = 'p-2 rounded-xl text-xs bg-rose-100 text-rose-800 block';
+          alertBox.innerText = 'تعذر الاتصال بالخادم.';
+        }
+      }
+    }
+
     // Initialize lists on load
+    checkPartnerStatusOnLoad();
     loadDocuments();
     loadProfiles();
     loadMcpServer();

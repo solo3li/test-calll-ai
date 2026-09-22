@@ -443,6 +443,32 @@ def api_internal_agent_bootstrap(request):
         mcp_servers = UserMCPServer.objects.filter(user=user, is_active=True)
         mcp_list = [s.to_dict() for s in mcp_servers]
 
+        # 2.1 Inherit Partner Shared MCP Server if user is a sub-client
+        partner_info = None
+        try:
+            from partners.models import PartnerClientRelationship
+            partner_rel = PartnerClientRelationship.objects.select_related('partner').filter(
+                client=user,
+                partner__status='approved'
+            ).first()
+            if partner_rel and partner_rel.partner:
+                partner = partner_rel.partner
+                partner_info = {
+                    "partner_id": partner.id,
+                    "partner_code": partner.partner_code,
+                    "custom_rate": float(partner.custom_rate_per_minute),
+                    "client_id": user.id,
+                    "external_reference": partner_rel.external_reference,
+                }
+                if partner.shared_mcp_server and partner.shared_mcp_server.is_active:
+                    shared_dict = partner.shared_mcp_server.to_dict()
+                    shared_dict['is_partner_inherited'] = True
+                    shared_dict['client_id'] = user.id
+                    if not any(s['id'] == shared_dict['id'] for s in mcp_list):
+                        mcp_list.append(shared_dict)
+        except Exception:
+            pass
+
         # 3. Customer Memory (Lazy import to avoid circular dependency)
         from crm.models import CustomerMemory
         caller_phone = str(data.get('caller_phone') or 'web_dashboard').strip()
@@ -462,7 +488,8 @@ def api_internal_agent_bootstrap(request):
             "user_id": user.id,
             "profile": profile_data,
             "mcp_servers": mcp_list,
-            "customer_memory": memory_data
+            "customer_memory": memory_data,
+            "partner_info": partner_info
         })
 
     except Exception as e:

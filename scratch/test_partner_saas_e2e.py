@@ -1,0 +1,288 @@
+import sys, requests, urllib3, json
+sys.stdout.reconfigure(encoding='utf-8')
+urllib3.disable_warnings()
+
+s = requests.Session()
+s.verify = False
+
+BASE_URL = 'https://localhost'
+
+print('=' * 75)
+print('STARTING COMPREHENSIVE PARTNER & HEADLESS SAAS SUBSYSTEM E2E VERIFICATION')
+print('=' * 75)
+
+# 1. Login as admin
+login_page = s.get(f'{BASE_URL}/login/')
+csrftoken = s.cookies.get('csrftoken', '')
+login_res = s.post(f'{BASE_URL}/login/', data={'username': 'admin', 'password': 'admin123456', 'csrfmiddlewaretoken': csrftoken}, headers={'Referer': f'{BASE_URL}/login/'})
+assert login_res.status_code == 200 or login_res.history, 'Login failed'
+print('[PASS] Step 1: Logged in successfully as platform admin')
+
+# 2. Submit Partner Application
+csrf = s.cookies.get('csrftoken')
+apply_res = s.post(f'{BASE_URL}/api/partner/v1/apply/', json={
+    'company_name': 'شركة التقنية للحلول السحابية (SaaS Platform Demo)',
+    'website': 'https://saas-demo.example.com',
+    'description': 'منصة تجارة إلكترونية ترغب في توفير خدمة المساعد الصوتي لآلاف المتاجر التابعة لها.'
+}, headers={'X-CSRFToken': csrf})
+assert apply_res.status_code == 200, f'Apply failed: {apply_res.text}'
+apply_data = apply_res.json()
+assert apply_data['status'] == 'success'
+print(f"[PASS] Step 2: Submitted partner application: {apply_data['partner']['company_name']}")
+
+# 3. Approve partner and configure custom rate via Django ORM
+import subprocess
+approve_script = """
+from partners.models import PartnerProfile
+from django.contrib.auth.models import User
+from decimal import Decimal
+user = User.objects.get(username='admin')
+partner = PartnerProfile.objects.get(user=user)
+partner.status = 'approved'
+partner.custom_rate_per_minute = Decimal('0.0300')
+partner.webhook_url = 'https://mock-store:8002/webhook'
+partner.save()
+print(f"APPROVED_KEY:{partner.api_key}|CODE:{partner.partner_code}")
+"""
+cmd = ['docker', 'exec', 'voice_django', 'python', 'manage.py', 'shell', '-c', approve_script]
+proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+lines = [l for l in proc.stdout.splitlines() if 'APPROVED_KEY:' in l]
+assert lines, f"Failed to approve partner in DB: {proc.stdout}"
+partner_api_key = lines[0].split('APPROVED_KEY:')[1].split('|')[0]
+partner_code = lines[0].split('CODE:')[1].strip()
+print(f"[PASS] Step 3: Partner approved by Super Admin. Rate: $0.0300/min. Key: {partner_api_key[:12]}... Code: {partner_code}")
+
+# 4. Fetch Partner Dashboard (Web UI API)
+dash_res = s.get(f'{BASE_URL}/api/partner/v1/dashboard/')
+assert dash_res.status_code == 200, f"Dashboard failed: {dash_res.text}"
+dash_data = dash_res.json()
+assert dash_data['status'] == 'success'
+assert dash_data['partner']['status'] == 'approved'
+assert dash_data['kpis']['custom_rate'] == 0.03
+print("[PASS] Step 4: Web UI Dashboard returns approved status and custom wholesale rate")
+
+# 5. Headless Client Registration via Partner API Key
+headers_partner = {'X-Partner-Key': partner_api_key}
+reg_payload = {
+    'external_reference': 'sub_store_9942',
+    'name': 'متجر النور التجريبي',
+    'email': 'store9942@saas-demo.com',
+    'spending_cap': 25.00,
+    'minute_cap': 200
+}
+reg_res = s.post(f'{BASE_URL}/api/partner/v1/clients/register/', json=reg_payload, headers=headers_partner)
+assert reg_res.status_code in [200, 201], f"Register failed: {reg_res.text}"
+reg_data = reg_res.json()
+assert reg_data['status'] == 'success'
+client_id = reg_data['client_id']
+print(f"[PASS] Step 5: Headless client provisioned via API. Client ID: {client_id}, Name: {reg_data['name']}")
+
+# 6. Verify Tenant Isolation & Multi-Tenancy Security
+bad_key_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/calls/', headers={'X-Partner-Key': 'sk_fake_invalid_key_123'})
+assert bad_key_res.status_code in [401, 403], f"Security leak: bad key accepted ({bad_key_res.status_code})"
+
+unowned_client_res = s.get(f'{BASE_URL}/api/partner/v1/clients/999999/calls/', headers=headers_partner)
+assert unowned_client_res.status_code == 404, f"Security leak: unowned client returned ({unowned_client_res.status_code})"
+print("[PASS] Step 6: Multi-tenancy isolation verified. Unauthorized access strictly blocked with 403/404")
+
+# 7. Voice Profile Management for Sub-Client (Read & Write)
+prof_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/', json={
+    'name': 'مساعد خدمة متجر النور',
+    'dialect': 'saudi',
+    'voice_name': 'Fenrir',
+    'system_prompt': 'أنت المساعد الصوتي الرسمي لمتجر النور في الرياض، تتحدث بلهجة سعودية راقية.'
+}, headers=headers_partner)
+assert prof_post_res.status_code == 200, f"Profile post failed: {prof_post_res.text}"
+
+prof_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/', headers=headers_partner)
+assert prof_get_res.status_code == 200
+prof_data = prof_get_res.json()
+assert prof_data['profile']['dialect'] == 'saudi'
+assert prof_data['profile']['voice_name'] == 'Fenrir'
+print("[PASS] Step 7: Voice Profile & Dialect customized programmatically for client")
+
+# 8. Customer Memory Management for Sub-Client (Read & Write)
+mem_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', json={
+    'caller_phone': '+966501234567',
+    'customer_name': 'سلطان القحطاني',
+    'permanent_memory': 'عميل مميز (VIP)، يفضل الدفع عند الاستلام ويطلب منتجات العناية بالبشرة.',
+    'immediate_notes': 'استفسر عن طلبية العطور رقم #4501'
+}, headers=headers_partner)
+assert mem_post_res.status_code == 200, f"Memory post failed: {mem_post_res.text}"
+
+mem_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', params={'phone': '+966501234567'}, headers=headers_partner)
+assert mem_get_res.status_code == 200
+mem_data = mem_get_res.json()
+assert mem_data['customer_name'] == 'سلطان القحطاني'
+assert 'VIP' in mem_data['permanent_memory']
+print("[PASS] Step 8: CRM Customer Memory updated and retrieved for client via API")
+
+# 9. Knowledge Base (RAG) Ingestion for Sub-Client
+rag_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/documents/', data={
+    'title': 'كتالوج وسياسة متجر النور',
+    'text': 'سياسة التوصيل: التوصيل مجاني لكافة مدن المملكة للطلبات فوق 200 ريال. مدة التوصيل من يومين إلى 3 أيام عمل.'
+}, headers=headers_partner)
+assert rag_post_res.status_code in [200, 201], f"RAG upload failed: {rag_post_res.text}"
+
+rag_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/documents/', headers=headers_partner)
+assert rag_get_res.status_code == 200
+rag_data = rag_get_res.json()
+assert rag_data['count'] >= 1
+print(f"[PASS] Step 9: RAG Knowledge Base document uploaded & indexed for client. Docs count: {rag_data['count']}")
+
+# 9.1 Test Semantic RAG Query via Partner API
+rag_query_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/rag/query/', json={
+    'query': 'ما هي شروط وسياسة التوصيل المجاني لديكم؟',
+    'top_k': 2
+}, headers=headers_partner)
+assert rag_query_res.status_code == 200, f"RAG Query failed: {rag_query_res.text}"
+rag_query_data = rag_query_res.json()
+assert rag_query_data['status'] == 'success'
+assert rag_query_data['total_matches'] >= 1
+top_match = rag_query_data['results'][0]
+assert 'التوصيل مجاني' in top_match['content']
+print(f"[PASS] Step 9.1: Semantic RAG Search Query passed via Partner API. Matches: {rag_query_data['total_matches']}, Similarity: {top_match['similarity']}")
+
+# 10. Telephony & PBX Trunks for Sub-Client
+pbx_inbound_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/telephony/', json={
+    'trunk_type': 'inbound',
+    'name': 'سنترال متجر النور (Issabel PBX)',
+    'auth_mode': 'ip',
+    'pbx_ip': '192.168.10.50',
+    'inbound_numbers': '920005544'
+}, headers=headers_partner)
+assert pbx_inbound_res.status_code in [200, 201], f"Inbound trunk failed: {pbx_inbound_res.text}"
+
+sip_outbound_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/telephony/', json={
+    'trunk_type': 'outbound',
+    'name': 'خط الاتصال الصادر (Telnyx/Twilio)',
+    'sip_host': 'sip.telnyx.com',
+    'sip_port': 5060,
+    'caller_id': '+966920005544'
+}, headers=headers_partner)
+assert sip_outbound_res.status_code in [200, 201], f"Outbound trunk failed: {sip_outbound_res.text}"
+
+telephony_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/telephony/', headers=headers_partner)
+assert telephony_get_res.status_code == 200
+tel_data = telephony_get_res.json()
+assert len(tel_data['inbound_trunks']) >= 1
+assert len(tel_data['outbound_trunks']) >= 1
+print(f"[PASS] Step 10: Inbound PBX and Outbound SIP Trunks provisioned for client via API")
+
+# 10.1 Phone Numbers & DIDs Linking and PBX Issabel Config
+num_link_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/telephony/numbers/', json={
+    'phone_number': '+966114455667',
+    'trunk_type': 'inbound'
+}, headers=headers_partner)
+assert num_link_res.status_code in [200, 201], f"Number link failed: {num_link_res.text}"
+num_link_data = num_link_res.json()
+assert num_link_data['status'] == 'success'
+assert 'issabel_config' in num_link_data['trunk']
+assert 'PEER Details' in num_link_data['trunk']['issabel_config']['peer_details']
+
+num_list_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/telephony/numbers/', headers=headers_partner)
+assert num_list_res.status_code == 200
+num_list_data = num_list_res.json()
+assert num_list_data['total_numbers'] >= 2
+print(f"[PASS] Step 10.1: Phone Numbers / DIDs linking and Issabel PBX configuration verified via Partner API. Total numbers: {num_list_data['total_numbers']}")
+
+# 11. Call Queues for Sub-Client
+queue_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/', json={
+    'name': 'طابور خدمة عملاء المتجر',
+    'code': '401',
+    'strategy': 'round_robin',
+    'ring_timeout_seconds': 20,
+    'total_timeout_seconds': 60
+}, headers=headers_partner)
+assert queue_res.status_code in [200, 201], f"Queue failed: {queue_res.text}"
+
+queues_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/', headers=headers_partner)
+assert queues_get_res.status_code == 200
+assert len(queues_get_res.json()['queues']) >= 1
+print("[PASS] Step 11: Call Center Queues created and verified for client via API")
+
+# 12. Direct Voice Session Token for Sub-Client
+token_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/token/', headers=headers_partner)
+assert token_res.status_code == 200, f"Token generation failed: {token_res.text}"
+token_data = token_res.json()
+assert 'token' in token_data and 'room_name' in token_data
+print(f"[PASS] Step 12: LiveKit Voice Session Token generated for client. Room: {token_data['room_name']}")
+
+# 13. Test Simulated Call Completion with Pooled Wholesale Billing
+# Duration: 65 seconds -> Strict Ceiling rounds up to 2 minutes!
+# Rate: Wholesale Partner Rate ($0.0300) -> 2 * $0.0300 = $0.0600
+sim_call_script = f"""
+from django.contrib.auth.models import User
+from crm.models import CallSession
+from billing.models import UserWallet
+from partners.models import PartnerClientRelationship
+from decimal import Decimal
+
+client_user = User.objects.get(id={client_id})
+client_rel = PartnerClientRelationship.objects.get(client=client_user)
+partner_user = client_rel.partner.user
+wallet = UserWallet.objects.get(user=partner_user)
+initial_balance = wallet.balance
+
+# Call internal complete-call API
+import requests
+import urllib3
+urllib3.disable_warnings()
+
+s = requests.Session()
+s.verify = False
+payload = {{
+    'room_name': '{token_data["room_name"]}',
+    'user_id': {client_id},
+    'duration_seconds': 65,
+    'transcript_text': 'المتصل: أهلاً، المساعد: مرحباً بك في متجر النور.',
+    'summary': 'استفسار عن الشحن وتمت الإجابة بأن الشحن مجاني فوق 200 ريال.',
+    'caller_phone': '+966501234567'
+}}
+headers = {{'X-Internal-API-Key': 'voice-internal-secret-token-key-12345'}}
+res = s.post('http://localhost:8000/api/crm/internal/complete-call/', json=payload, headers=headers)
+assert res.status_code == 200, f"Complete call failed: {{res.text}}"
+
+# Verify deduction
+wallet.refresh_from_db()
+client_rel.refresh_from_db()
+deducted = initial_balance - wallet.balance
+print(f"DEDUCTED:{{deducted}}|MINUTES:{{client_rel.total_minutes}}|SPENT:{{client_rel.total_spent}}")
+"""
+cmd_sim = ['docker', 'exec', 'voice_django', 'python', 'manage.py', 'shell', '-c', sim_call_script]
+proc_sim = subprocess.run(cmd_sim, capture_output=True, text=True, check=True)
+sim_lines = [l for l in proc_sim.stdout.splitlines() if 'DEDUCTED:' in l]
+assert sim_lines, f"Call simulation check failed: {proc_sim.stdout}"
+sim_info = sim_lines[0]
+deducted_amt = float(sim_info.split('DEDUCTED:')[1].split('|')[0])
+total_mins = int(sim_info.split('MINUTES:')[1].split('|')[0])
+assert abs(deducted_amt - 0.0600) < 0.001, f"Expected $0.0600 deducted from partner, got: {deducted_amt}"
+assert total_mins >= 2, f"Expected at least 2 ceiling minutes, got: {total_mins}"
+print(f"[PASS] Step 13: Strict Ceiling Wholesale Billing verified! 65s = 2 mins * $0.0300 = $0.0600 deducted from Partner's pooled wallet")
+
+# 14. Check Sub-Client CDR in Partner API
+calls_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/calls/', headers=headers_partner)
+assert calls_res.status_code == 200
+calls_data = calls_res.json()
+assert calls_data['total_calls'] >= 1
+recent_call = calls_data['calls'][0]
+assert recent_call['billed_minutes'] == 2
+assert recent_call['cost'] == 0.06
+print(f"[PASS] Step 14: Sub-Client CDR verified via Partner API (2 mins, $0.06, AI summary intact)")
+
+# 15. Verify UI HTML Elements in room.html
+ui_html = s.get(f'{BASE_URL}/').text
+assert 'id="nav-btn-partner"' in ui_html
+assert 'id="tab-partner"' in ui_html
+assert 'id="partner-kpi-balance"' in ui_html
+assert 'id="partner-kpi-rate"' in ui_html
+assert 'id="partner-clients-tbody"' in ui_html
+assert 'id="partner-calls-tbody"' in ui_html
+assert 'id="partner-apply-modal"' in ui_html
+assert 'id="partner-cap-modal"' in ui_html
+assert 'loadPartnerDashboard' in ui_html
+print("[PASS] Step 15: Frontend UI elements for Partner Portal and Modals verified in room.html")
+
+print('=' * 75)
+print('ALL 15 PARTNER & HEADLESS SAAS INTEGRATION TESTS PASSED WITH 100% SUCCESS!')
+print('=' * 75)

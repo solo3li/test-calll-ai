@@ -1,0 +1,1029 @@
+import os
+import json
+import secrets
+import logging
+from decimal import Decimal
+from django.conf import settings
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from livekit import api
+
+from .models import PartnerProfile, PartnerClientRelationship
+from .decorators import partner_required, partner_client_access_required
+from .services.webhook import dispatch_partner_webhook
+from agents.models import AgentProfile, UserMCPServer
+from crm.models import CallSession, CustomerMemory
+from knowledge.models import Document, DocumentChunk
+from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
+from telephony.models import InboundPBXTrunk, OutboundSIPTrunk
+from call_center.models import CallQueue
+from google import genai
+from google.genai import types
+from pgvector.django import CosineDistance
+
+logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# Web UI Endpoints (Authenticated Platform Users in room.html)
+# =========================================================================
+
+@login_required(login_url='/login/')
+def apply_partner(request):
+    """Regular user submits application to become a partner/reseller."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.body else request.POST
+    except Exception:
+        data = {}
+
+    company_name = data.get('company_name', '').strip()
+    website = data.get('website', '').strip()
+    description = data.get('description', '').strip()
+
+    if not company_name:
+        return JsonResponse({"status": "error", "message": "اسم الشركة أو الخدمة مطلوب."}, status=400)
+
+    profile, created = PartnerProfile.objects.get_or_create(
+        user=request.user,
+        defaults={
+            'company_name': company_name,
+            'website': website,
+            'description': description,
+            'status': 'pending',
+        }
+    )
+    if not created:
+        profile.company_name = company_name
+        profile.website = website
+        profile.description = description
+        if profile.status == 'rejected':
+            profile.status = 'pending'
+        profile.save()
+
+    return JsonResponse({
+        "status": "success",
+        "message": "تم تقديم طلبك بنجاح وهو قيد المراجعة من الإدارة.",
+        "partner": profile.to_dict()
+    })
+
+
+@login_required(login_url='/login/')
+def get_partner_dashboard(request):
+    """Fetch partner profile status, KPIs, clients list, and recent sub-client calls."""
+    partner = PartnerProfile.objects.filter(user=request.user).first()
+    if not partner:
+        return JsonResponse({"status": "unregistered", "message": "المستخدم ليس شريكاً مسجلاً."})
+
+    # Available MCP servers owned by this partner (to pick one as shared)
+    mcp_servers = list(UserMCPServer.objects.filter(user=request.user).values('id', 'name', 'is_active', 'server_url'))
+
+    clients_qs = PartnerClientRelationship.objects.filter(partner=partner).select_related('client').order_by('-created_at')
+    clients_data = [c.to_dict() for c in clients_qs]
+
+    # Partner's wallet balance
+    from billing.models import UserWallet
+    wallet, _ = UserWallet.objects.get_or_create(user=request.user)
+
+    # Sub-clients calls
+    client_users = [c.client for c in clients_qs]
+    calls_qs = CallSession.objects.filter(user__in=client_users).order_by('-started_at')[:50]
+    calls_data = []
+    for call in calls_qs:
+        calls_data.append({
+            "call_id": call.room_name,
+            "client_name": call.user.first_name or call.user.username,
+            "client_id": call.user_id,
+            "direction": call.get_direction_display(),
+            "caller_phone": call.caller_phone or "",
+            "started_at": call.started_at.strftime("%Y-%m-%d %H:%M"),
+            "duration_seconds": call.duration_seconds,
+            "billed_minutes": call.billed_minutes,
+            "cost": float(call.cost),
+            "summary": call.summary or "",
+        })
+
+    total_sub_minutes = sum(c['total_minutes'] for c in clients_data)
+    total_sub_spent = sum(c['total_spent'] for c in clients_data)
+
+    return JsonResponse({
+        "status": "success",
+        "partner": partner.to_dict(),
+        "wallet": {
+            "balance": float(wallet.balance),
+            "currency": wallet.currency,
+        },
+        "kpis": {
+            "total_clients": len(clients_data),
+            "total_minutes": total_sub_minutes,
+            "total_sub_spent": round(total_sub_spent, 4),
+            "custom_rate": float(partner.custom_rate_per_minute),
+        },
+        "mcp_servers": mcp_servers,
+        "clients": clients_data,
+        "recent_calls": calls_data,
+    })
+
+
+@login_required(login_url='/login/')
+def update_partner_settings(request):
+    """Partner updates webhook URL, shared MCP server, or regenerates API key."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    partner = PartnerProfile.objects.filter(user=request.user, status='approved').first()
+    if not partner:
+        return JsonResponse({"status": "error", "message": "الحساب غير معتمد كشريك نشط."}, status=403)
+
+    try:
+        data = json.loads(request.body) if request.body else request.POST
+    except Exception:
+        data = {}
+
+    if 'webhook_url' in data:
+        partner.webhook_url = data.get('webhook_url', '').strip()
+    
+    if 'shared_mcp_server_id' in data:
+        mcp_id = data.get('shared_mcp_server_id')
+        if mcp_id:
+            mcp = UserMCPServer.objects.filter(id=mcp_id, user=request.user).first()
+            partner.shared_mcp_server = mcp
+        else:
+            partner.shared_mcp_server = None
+
+    if data.get('regenerate_api_key'):
+        partner.api_key = f"sk_live_prt_{secrets.token_urlsafe(32)}"
+
+    partner.save()
+    return JsonResponse({"status": "success", "message": "تم حفظ إعدادات الشريك بنجاح.", "partner": partner.to_dict()})
+
+
+@login_required(login_url='/login/')
+def test_partner_webhook(request):
+    """Test ping partner webhook URL."""
+    partner = PartnerProfile.objects.filter(user=request.user, status='approved').first()
+    if not partner:
+        return JsonResponse({"status": "error", "message": "الحساب غير معتمد كشريك."}, status=403)
+
+    if not partner.webhook_url:
+        return JsonResponse({"status": "error", "message": "لم يتم إدخال رابط Webhook بعد."}, status=400)
+
+    dispatch_partner_webhook(partner, "test.ping", {
+        "message": "اختبار فحص الاتصال بالـ Webhook من منصة الذكاء الاصطناعي بنجاح.",
+        "partner_code": partner.partner_code,
+    })
+    return JsonResponse({"status": "success", "message": "تم إرسال إشعار فحص الـ Webhook التجريبي بنجاح."})
+
+
+@login_required(login_url='/login/')
+def update_client_cap(request):
+    """Partner updates spending cap, minute cap, or toggle is_active for a client."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    partner = PartnerProfile.objects.filter(user=request.user, status='approved').first()
+    if not partner:
+        return JsonResponse({"status": "error", "message": "الحساب غير معتمد كشريك."}, status=403)
+
+    try:
+        data = json.loads(request.body) if request.body else request.POST
+    except Exception:
+        data = {}
+
+    client_id = data.get('client_id')
+    client_rel = PartnerClientRelationship.objects.filter(partner=partner, client_id=client_id).first()
+    if not client_rel:
+        return JsonResponse({"status": "error", "message": "العميل غير موجود أو لا يتبع حسابك."}, status=404)
+
+    if 'spending_cap' in data:
+        val = data.get('spending_cap')
+        client_rel.spending_cap = Decimal(str(val)) if (val is not None and str(val).strip() != '') else None
+
+    if 'minute_cap' in data:
+        val = data.get('minute_cap')
+        client_rel.minute_cap = int(val) if (val is not None and str(val).strip() != '') else None
+
+    if 'is_active' in data:
+        client_rel.is_active = bool(data.get('is_active'))
+
+    client_rel.save()
+    return JsonResponse({"status": "success", "message": "تم تحديث سقف العميل بنجاح.", "client": client_rel.to_dict()})
+
+
+# =========================================================================
+# Headless Partner REST API (/api/partner/v1/...)
+# Secured strictly with X-Partner-Key Header and Tenant Isolation
+# =========================================================================
+
+@csrf_exempt
+@partner_required
+def api_partner_register_client(request):
+    """
+    POST /api/partner/v1/clients/register/
+    Headless client onboarding via Partner SaaS backend.
+    Accepts: { external_reference, name, email, phone, spending_cap, minute_cap }
+    Returns: { status: 'success', client_id: int, name: str, partner_code: str }
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+    external_ref = str(data.get('external_reference', '')).strip()
+    name = str(data.get('name', '')).strip() or f"عميل {external_ref or 'جديد'}"
+    email = str(data.get('email', '')).strip()
+    spending_cap = data.get('spending_cap')
+    minute_cap = data.get('minute_cap')
+
+    # Check if already registered under this partner with external_ref
+    if external_ref:
+        existing_rel = PartnerClientRelationship.objects.select_related('client').filter(
+            partner=request.partner,
+            external_reference=external_ref
+        ).first()
+        if existing_rel:
+            return JsonResponse({
+                "status": "success",
+                "message": "Client already registered",
+                "client_id": existing_rel.client_id,
+                "name": existing_rel.client.first_name or existing_rel.client.username,
+                "partner_code": request.partner.partner_code,
+                "client": existing_rel.to_dict(),
+            })
+
+    # Create distinct sub-client user
+    username_seed = f"prt_{request.partner.id}_{external_ref or secrets.token_hex(4)}"
+    # ensure unique username
+    base_username = username_seed[:140]
+    username = base_username
+    counter = 1
+    while User.objects.filter(username=username).exists():
+        username = f"{base_username}_{counter}"
+        counter += 1
+
+    client_user = User.objects.create(
+        username=username,
+        first_name=name[:30],
+        email=email or f"{username}@partner.internal"
+    )
+    client_user.set_unusable_password()
+    client_user.save()
+
+    # Create relationship record
+    client_rel = PartnerClientRelationship.objects.create(
+        partner=request.partner,
+        client=client_user,
+        external_reference=external_ref,
+        spending_cap=Decimal(str(spending_cap)) if spending_cap is not None else None,
+        minute_cap=int(minute_cap) if minute_cap is not None else None,
+        is_active=True
+    )
+
+    # Initialize default agent profile for client
+    AgentProfile.objects.create(
+        user=client_user,
+        name=f"مساعد {name}",
+        is_active=True,
+        dialect='egyptian',
+        voice_name='Aoede',
+        custom_instructions=f"أنت المساعد الصوتي الذكي الخاص بـ '{name}'، تتحدث بلباقة ووضوح لخدمة العملاء."
+    )
+
+    # Dispatch confirmation Webhook
+    dispatch_partner_webhook(request.partner, "client.registered", {
+        "client_id": client_user.id,
+        "external_reference": external_ref,
+        "name": name,
+        "username": username,
+        "spending_cap": float(client_rel.spending_cap) if client_rel.spending_cap else None,
+    })
+
+    return JsonResponse({
+        "status": "success",
+        "client_id": client_user.id,
+        "external_reference": external_ref,
+        "name": name,
+        "partner_code": request.partner.partner_code,
+        "client": client_rel.to_dict()
+    }, status=201)
+
+
+@csrf_exempt
+@partner_required
+def api_partner_list_clients(request):
+    """
+    GET /api/partner/v1/clients/
+    Lists all sub-clients registered under this partner.
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    clients = PartnerClientRelationship.objects.filter(partner=request.partner).select_related('client')
+    return JsonResponse({
+        "status": "success",
+        "partner_code": request.partner.partner_code,
+        "count": clients.count(),
+        "clients": [c.to_dict() for c in clients]
+    })
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_calls(request, client_id):
+    """
+    GET /api/partner/v1/clients/<int:client_id>/calls/
+    Returns full CDR, transcript, and AI summary list for the target sub-client.
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    calls = CallSession.objects.filter(user=request.client_user).order_by('-started_at')[:100]
+    calls_list = []
+    for call in calls:
+        calls_list.append({
+            "call_id": call.room_name,
+            "direction": call.direction,
+            "direction_display": call.get_direction_display(),
+            "caller_phone": call.caller_phone or "",
+            "destination_phone": call.destination_phone or "",
+            "call_goal": call.call_goal or "",
+            "started_at": call.started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "ended_at": call.ended_at.strftime("%Y-%m-%d %H:%M:%S") if call.ended_at else None,
+            "duration_seconds": call.duration_seconds,
+            "billed_minutes": call.billed_minutes,
+            "cost": float(call.cost),
+            "summary": call.summary or "",
+            "transcript_text": call.transcript_text or "",
+        })
+
+    return JsonResponse({
+        "status": "success",
+        "client_id": client_id,
+        "total_calls": len(calls_list),
+        "total_billed_minutes": sum(c['billed_minutes'] for c in calls_list),
+        "calls": calls_list,
+    })
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_profile(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/profiles/
+    GET: retrieve active agent profile.
+    POST: create or update active agent profile (voice_name, dialect, system_prompt/custom_instructions).
+    """
+    if request.method == 'GET':
+        profile = AgentProfile.objects.filter(user=request.client_user, is_active=True).first()
+        if not profile:
+            profile = AgentProfile.objects.filter(user=request.client_user).first()
+        if not profile:
+            return JsonResponse({"status": "error", "message": "No profile found for client"}, status=404)
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "profile": {
+                "id": profile.id,
+                "name": profile.name,
+                "dialect": profile.dialect,
+                "voice_name": profile.voice_name,
+                "system_prompt": profile.custom_instructions,
+                "custom_instructions": profile.custom_instructions,
+                "is_active": profile.is_active,
+            }
+        })
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        profile = AgentProfile.objects.filter(user=request.client_user, is_active=True).first()
+        if not profile:
+            profile = AgentProfile.objects.create(
+                user=request.client_user,
+                name=data.get('name') or f"مساعد {request.client_user.first_name or request.client_user.username}",
+                is_active=True
+            )
+
+        if 'name' in data:
+            profile.name = data['name']
+        if 'dialect' in data:
+            profile.dialect = data['dialect']
+        if 'voice_name' in data:
+            profile.voice_name = data['voice_name']
+        if 'system_prompt' in data or 'custom_instructions' in data:
+            profile.custom_instructions = data.get('custom_instructions') or data.get('system_prompt', '')
+
+        profile.save()
+        return JsonResponse({
+            "status": "success",
+            "message": "Profile updated successfully",
+            "client_id": client_id,
+            "profile": {
+                "id": profile.id,
+                "name": profile.name,
+                "dialect": profile.dialect,
+                "voice_name": profile.voice_name,
+                "system_prompt": profile.custom_instructions,
+            }
+        })
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_memory(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/memory/
+    GET: retrieve customer memory context.
+    POST: set or update permanent memory / immediate notes for client.
+    """
+    if request.method == 'GET':
+        raw_phone = request.GET.get('phone') or request.GET.get('phone_number') or 'web_dashboard'
+        phone = str(raw_phone).strip()
+        if not phone.startswith('+') and phone.isdigit() and len(phone) >= 9:
+            phone = '+' + phone
+
+        mem = CustomerMemory.objects.filter(user=request.client_user, phone_number=phone).first()
+        if not mem and phone != 'web_dashboard' and len(phone) >= 7:
+            mem = CustomerMemory.objects.filter(user=request.client_user, phone_number__endswith=phone[-8:]).first()
+
+        perm_text = ""
+        c_name = ""
+        if mem:
+            c_name = mem.customer_name
+            if isinstance(mem.permanent_profile, dict):
+                perm_text = mem.permanent_profile.get('notes') or mem.permanent_profile.get('permanent_memory') or str(mem.permanent_profile)
+                if not c_name:
+                    c_name = mem.permanent_profile.get('customer_name', '')
+
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "phone_number": phone,
+            "customer_name": c_name,
+            "permanent_memory": perm_text,
+            "immediate_notes": mem.last_interaction_summary if mem else "",
+            "total_calls": mem.total_calls_count if mem else 0,
+        })
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        raw_phone = data.get('caller_phone') or data.get('phone_number') or 'web_dashboard'
+        phone = str(raw_phone).strip()
+        if not phone.startswith('+') and phone.isdigit() and len(phone) >= 9:
+            phone = '+' + phone
+
+        mem = CustomerMemory.objects.filter(user=request.client_user, phone_number=phone).first()
+        if not mem and phone != 'web_dashboard' and len(phone) >= 7:
+            mem = CustomerMemory.objects.filter(user=request.client_user, phone_number__endswith=phone[-8:]).first()
+
+        if not mem:
+            mem = CustomerMemory.objects.create(
+                user=request.client_user,
+                phone_number=phone,
+                customer_name=data.get('customer_name', '')
+            )
+
+        if 'customer_name' in data:
+            mem.customer_name = data['customer_name']
+        if 'permanent_memory' in data:
+            prof = mem.permanent_profile if isinstance(mem.permanent_profile, dict) else {}
+            prof['notes'] = data['permanent_memory']
+            prof['customer_name'] = mem.customer_name
+            mem.permanent_profile = prof
+        if 'immediate_notes' in data:
+            mem.last_interaction_summary = data['immediate_notes']
+        mem.save()
+
+        perm_text = mem.permanent_profile.get('notes', '') if isinstance(mem.permanent_profile, dict) else str(mem.permanent_profile)
+        return JsonResponse({
+            "status": "success",
+            "message": "Customer memory updated successfully",
+            "client_id": client_id,
+            "phone_number": phone,
+            "customer_name": mem.customer_name,
+            "permanent_memory": perm_text,
+            "immediate_notes": mem.last_interaction_summary,
+        })
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Headless RAG Knowledge Base API for Sub-Clients
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_documents(request, client_id):
+    """
+    GET, POST, DELETE /api/partner/v1/clients/<int:client_id>/documents/
+    GET: list all documents for client
+    POST: upload document and generate pgvector embeddings for client
+    DELETE: delete document
+    """
+    if request.method == 'GET':
+        docs = Document.objects.filter(user=request.client_user).order_by('-created_at')
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "count": docs.count(),
+            "documents": [
+                {
+                    "id": d.id,
+                    "title": d.title,
+                    "file_type": d.file_type,
+                    "file_size": d.file_size,
+                    "chunks_count": d.chunks.count(),
+                    "created_at": d.created_at.strftime("%Y-%m-%d %H:%M"),
+                }
+                for d in docs
+            ]
+        })
+    elif request.method == 'POST':
+        file_obj = request.FILES.get('file')
+        raw_text = request.POST.get('text')
+        title = request.POST.get('title') or (file_obj.name if file_obj else "Direct Content")
+
+        if not file_obj and not raw_text:
+            return JsonResponse({"status": "error", "message": "Either 'file' or 'text' must be provided"}, status=400)
+
+        try:
+            if file_obj:
+                filename = file_obj.name
+                ext = os.path.splitext(filename)[1].lower().lstrip('.')
+                text = extract_text_from_file(file_obj, filename)
+                file_size = file_obj.size
+            else:
+                text = raw_text.strip()
+                ext = 'txt'
+                file_size = len(text.encode('utf-8'))
+
+            if not text:
+                return JsonResponse({"status": "error", "message": "Extracted text is empty."}, status=400)
+
+            chunks = chunk_text(text, chunk_size=500, overlap=50)
+            if not chunks:
+                return JsonResponse({"status": "error", "message": "No text chunks generated."}, status=400)
+
+            doc = Document.objects.create(
+                user=request.client_user,
+                title=title,
+                file=file_obj if file_obj else None,
+                file_type=ext,
+                file_size=file_size
+            )
+
+            # Generate embeddings via Gemini
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            embeddings = get_embeddings_batch(client, chunks, batch_size=50)
+
+            chunk_objs = [
+                DocumentChunk(
+                    document=doc,
+                    user=request.client_user,
+                    chunk_index=i,
+                    content=c,
+                    embedding=emb
+                )
+                for i, (c, emb) in enumerate(zip(chunks, embeddings))
+            ]
+            DocumentChunk.objects.bulk_create(chunk_objs)
+
+            return JsonResponse({
+                "status": "success",
+                "message": f"Document '{title}' uploaded and embedded successfully.",
+                "client_id": client_id,
+                "document": {
+                    "id": doc.id,
+                    "title": doc.title,
+                    "chunks_count": len(chunks),
+                }
+            }, status=201)
+        except Exception as e:
+            logger.error(f"Error in partner document upload for client {client_id}: {e}", exc_info=True)
+            return JsonResponse({"status": "error", "message": f"Failed to ingest document: {str(e)}"}, status=500)
+
+    elif request.method == 'DELETE':
+        doc_id = request.GET.get('document_id')
+        if not doc_id:
+            return JsonResponse({"status": "error", "message": "document_id is required"}, status=400)
+        doc = Document.objects.filter(id=doc_id, user=request.client_user).first()
+        if not doc:
+            return JsonResponse({"status": "error", "message": "Document not found"}, status=404)
+        doc.delete()
+        return JsonResponse({"status": "success", "message": f"Document {doc_id} deleted."})
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Headless Telephony & PBX Trunks API for Sub-Clients
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_telephony(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/telephony/
+    GET: list inbound PBX trunks & outbound SIP trunks for client
+    POST: configure inbound PBX or outbound trunk
+    """
+    if request.method == 'GET':
+        inbound_trunks = [t.to_dict() for t in InboundPBXTrunk.objects.filter(user=request.client_user)]
+        outbound_trunks = [t.to_dict() for t in OutboundSIPTrunk.objects.filter(user=request.client_user)]
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "inbound_trunks": inbound_trunks,
+            "outbound_trunks": outbound_trunks,
+        })
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        trunk_type = data.get('trunk_type', 'inbound')
+        name = data.get('name') or "سنترال الشريك (Partner PBX)"
+
+        if trunk_type == 'inbound':
+            auth_mode = data.get('auth_mode', 'ip')
+            pbx_ip = data.get('pbx_ip', '')
+            inbound_numbers = data.get('inbound_numbers', '')
+            trunk = InboundPBXTrunk.objects.create(
+                user=request.client_user,
+                name=name,
+                auth_mode=auth_mode,
+                pbx_ip=pbx_ip,
+                inbound_numbers=inbound_numbers,
+                auth_username=data.get('auth_username', ''),
+                auth_password=data.get('auth_password', ''),
+                is_active=True
+            )
+            return JsonResponse({
+                "status": "success",
+                "message": "Inbound PBX trunk created successfully",
+                "trunk": trunk.to_dict(),
+            }, status=201)
+        else:
+            sip_host = data.get('sip_host', '')
+            if not sip_host:
+                return JsonResponse({"status": "error", "message": "sip_host is required for outbound trunk"}, status=400)
+            trunk = OutboundSIPTrunk.objects.create(
+                user=request.client_user,
+                name=name,
+                sip_host=sip_host,
+                sip_port=int(data.get('sip_port', 5060)),
+                transport=data.get('transport', 'UDP'),
+                auth_username=data.get('auth_username', ''),
+                auth_password=data.get('auth_password', ''),
+                caller_id=data.get('caller_id', ''),
+                is_active=True
+            )
+            return JsonResponse({
+                "status": "success",
+                "message": "Outbound SIP trunk created successfully",
+                "trunk": trunk.to_dict(),
+            }, status=201)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Headless Call Center Queues API for Sub-Clients
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_queues(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/queues/
+    GET: list call queues for client
+    POST: create or update call queue
+    """
+    if request.method == 'GET':
+        queues = CallQueue.objects.filter(user=request.client_user)
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "queues": [q.to_dict() for q in queues]
+        })
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        name = data.get('name', 'طابور خدمة العملاء')
+        code = data.get('code', '200')
+        queue, created = CallQueue.objects.update_or_create(
+            user=request.client_user,
+            code=code,
+            defaults={
+                'name': name,
+                'strategy': data.get('strategy', 'round_robin'),
+                'ring_timeout_seconds': int(data.get('ring_timeout_seconds', 15)),
+                'total_timeout_seconds': int(data.get('total_timeout_seconds', 60)),
+                'fallback_action': data.get('fallback_action', 'ai_assistant')
+            }
+        )
+        return JsonResponse({
+            "status": "success",
+            "message": "Call queue created successfully" if created else "Call queue updated successfully",
+            "queue": queue.to_dict()
+        }, status=201 if created else 200)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Live Voice Session Token for Sub-Clients (Direct WebRTC Call Launch)
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_token(request, client_id):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/token/
+    Generates LiveKit token for the sub-client to start a live voice session.
+    Verifies partner wallet balance & client caps beforehand.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    # 1. Guard client caps
+    from billing.models import UserWallet
+    partner_wallet, _ = UserWallet.objects.get_or_create(user=request.partner.user)
+    next_cost = request.partner.custom_rate_per_minute
+
+    if request.client_rel.is_cap_exceeded(next_cost):
+        return JsonResponse({
+            "status": "error",
+            "code": "CAP_EXCEEDED",
+            "message": "Client has reached their assigned spending or minute quota."
+        }, status=403)
+
+    if partner_wallet.balance < next_cost:
+        return JsonResponse({
+            "status": "error",
+            "code": "PARTNER_BALANCE_LOW",
+            "message": "Partner balance is insufficient to start a new voice session."
+        }, status=402)
+
+    # Generate token
+    room_name = f"partner_{request.partner.id}_{client_id}_{secrets.token_hex(4)}"
+    identity = f"client_{client_id}_{secrets.token_hex(2)}"
+
+    token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
+        .with_identity(identity) \
+        .with_name(request.client_user.first_name or request.client_user.username) \
+        .with_grants(api.VideoGrants(
+            room_join=True,
+            room=room_name,
+            can_publish=True,
+            can_subscribe=True,
+        ))
+
+    jwt_token = token.to_jwt()
+
+    return JsonResponse({
+        "status": "success",
+        "client_id": client_id,
+        "room_name": room_name,
+        "livekit_url": settings.LIVEKIT_URL,
+        "token": jwt_token,
+    })
+
+
+# =========================================================================
+# Headless RAG Semantic Query API for Sub-Clients
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_rag_query(request, client_id):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/rag/query/
+    Partner API to query the sub-client's RAG knowledge base semantically.
+    Accepts: {"query": str, "top_k": int}
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        query = str(data.get('query', '')).strip()
+        top_k = int(data.get('top_k', 3))
+
+        if not query:
+            return JsonResponse({"status": "error", "message": "query is required"}, status=400)
+
+        # Generate query embedding via Gemini
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        embed_res = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=query,
+            config=types.EmbedContentConfig(output_dimensionality=768)
+        )
+        if not embed_res or not embed_res.embeddings:
+            return JsonResponse({"status": "error", "message": "Failed to generate query embedding"}, status=500)
+
+        query_vec = embed_res.embeddings[0].values
+
+        # Cosine distance search in pgvector
+        chunks = DocumentChunk.objects.filter(user=request.client_user) \
+            .annotate(distance=CosineDistance('embedding', query_vec)) \
+            .filter(distance__lte=0.55) \
+            .order_by('distance')[:top_k]
+
+        results = []
+        for c in chunks:
+            similarity = round(1.0 - float(c.distance), 4) if hasattr(c, 'distance') and c.distance is not None else 1.0
+            results.append({
+                "chunk_id": c.id,
+                "document_id": c.document_id,
+                "document_title": c.document.title if c.document else "",
+                "content": c.content,
+                "similarity": similarity
+            })
+
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "query": query,
+            "total_matches": len(results),
+            "results": results
+        })
+    except Exception as e:
+        logger.error(f"Error in partner RAG query for client {client_id}: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": f"Query failed: {str(e)}"}, status=500)
+
+
+# =========================================================================
+# Headless Phone Numbers & DID Linking API for Sub-Clients
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_numbers(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/telephony/numbers/
+    GET: List all active phone numbers (DIDs / Caller IDs) linked to this client.
+    POST: Link/assign a phone number to client's inbound PBX trunk or outbound trunk.
+    """
+    if request.method == 'GET':
+        inbound_trunks = InboundPBXTrunk.objects.filter(user=request.client_user)
+        outbound_trunks = OutboundSIPTrunk.objects.filter(user=request.client_user)
+
+        numbers = []
+        for ib in inbound_trunks:
+            if ib.inbound_numbers:
+                for num in ib.inbound_numbers.split(','):
+                    cleaned = num.strip()
+                    if cleaned:
+                        numbers.append({
+                            "phone_number": cleaned,
+                            "type": "inbound_did",
+                            "trunk_type": "inbound_pbx",
+                            "trunk_id": ib.id,
+                            "trunk_name": ib.name,
+                            "destination_type": ib.destination_type,
+                            "is_active": ib.is_active,
+                        })
+
+        for ob in outbound_trunks:
+            if ob.caller_id:
+                numbers.append({
+                    "phone_number": ob.caller_id,
+                    "type": "outbound_caller_id",
+                    "trunk_type": "outbound_sip",
+                    "trunk_id": ob.id,
+                    "trunk_name": ob.name,
+                    "is_active": ob.is_active,
+                })
+
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "total_numbers": len(numbers),
+            "numbers": numbers
+        })
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        phone_number = str(data.get('phone_number', '')).strip()
+        trunk_type = data.get('trunk_type', 'inbound')
+        trunk_id = data.get('trunk_id')
+
+        if not phone_number:
+            return JsonResponse({"status": "error", "message": "phone_number is required"}, status=400)
+
+        if trunk_type == 'inbound':
+            trunk = None
+            if trunk_id:
+                trunk = InboundPBXTrunk.objects.filter(id=trunk_id, user=request.client_user).first()
+            if not trunk:
+                trunk = InboundPBXTrunk.objects.filter(user=request.client_user).first()
+            if not trunk:
+                # Create an inbound PBX trunk for this client
+                trunk = InboundPBXTrunk.objects.create(
+                    user=request.client_user,
+                    name=f"سنترال العميل ({phone_number})",
+                    auth_mode='ip',
+                    inbound_numbers=phone_number,
+                    is_active=True
+                )
+            else:
+                existing_nums = [n.strip() for n in trunk.inbound_numbers.split(',') if n.strip()]
+                if phone_number not in existing_nums:
+                    existing_nums.append(phone_number)
+                    trunk.inbound_numbers = ",".join(existing_nums)
+                    trunk.save(update_fields=['inbound_numbers'])
+
+            return JsonResponse({
+                "status": "success",
+                "message": f"Phone number {phone_number} linked to inbound trunk {trunk.name}",
+                "client_id": client_id,
+                "trunk": trunk.to_dict()
+            }, status=201)
+
+        else:
+            trunk = None
+            if trunk_id:
+                trunk = OutboundSIPTrunk.objects.filter(id=trunk_id, user=request.client_user).first()
+            if not trunk:
+                trunk = OutboundSIPTrunk.objects.filter(user=request.client_user).first()
+            if not trunk:
+                trunk = OutboundSIPTrunk.objects.create(
+                    user=request.client_user,
+                    name=f"خط صادر ({phone_number})",
+                    sip_host="sip.provider.com",
+                    caller_id=phone_number,
+                    is_active=True
+                )
+            else:
+                trunk.caller_id = phone_number
+                trunk.save(update_fields=['caller_id'])
+
+            return JsonResponse({
+                "status": "success",
+                "message": f"Caller ID {phone_number} linked to outbound trunk {trunk.name}",
+                "client_id": client_id,
+                "trunk": trunk.to_dict()
+            }, status=201)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Headless Trunk Detail & Deletion API
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_telephony_detail(request, client_id, trunk_type, trunk_id):
+    """
+    GET & DELETE /api/partner/v1/clients/<int:client_id>/telephony/<str:trunk_type>/<int:trunk_id>/
+    GET: Get trunk details and Issabel PBX config.
+    DELETE: Remove trunk for client.
+    """
+    model = InboundPBXTrunk if trunk_type == 'inbound' else OutboundSIPTrunk
+    trunk = model.objects.filter(id=trunk_id, user=request.client_user).first()
+
+    if not trunk:
+        return JsonResponse({"status": "error", "message": f"{trunk_type.capitalize()} trunk not found"}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "trunk_type": trunk_type,
+            "trunk": trunk.to_dict()
+        })
+    elif request.method == 'DELETE':
+        trunk_name = trunk.name
+        trunk.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": f"{trunk_type.capitalize()} trunk '{trunk_name}' deleted successfully.",
+            "client_id": client_id
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)

@@ -215,7 +215,7 @@ def api_internal_save_call_session_and_memory(request):
                 summary=summary
             )
 
-        # 1.1 Calculate billing with strict ceiling rounding and deduct from user wallet
+        # 1.1 Calculate billing with strict ceiling rounding and deduct from wallet (Partner or User)
         billed_minutes = 0
         call_cost = 0.0
         try:
@@ -226,31 +226,99 @@ def api_internal_save_call_session_and_memory(request):
             billed_minutes = b_mins
             call_cost = float(cost_dec)
 
-            wallet, _ = UserWallet.objects.get_or_create(
-                user=user,
-                defaults={
-                    'balance': config.initial_welcome_credit,
-                    'currency': config.currency,
-                    'total_deposited': config.initial_welcome_credit,
-                    'total_spent': Decimal('0.0000'),
-                }
-            )
-            wallet.balance -= cost_dec
-            wallet.total_spent += cost_dec
-            wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
+            # Check if user is a sub-client under an approved partner
+            partner_rel = None
+            try:
+                from partners.models import PartnerClientRelationship
+                partner_rel = PartnerClientRelationship.objects.select_related('partner', 'partner__user').filter(
+                    client=user,
+                    partner__status='approved'
+                ).first()
+            except Exception:
+                pass
 
-            BillingTransaction.objects.create(
-                wallet=wallet,
-                call_session=session,
-                transaction_type='call_deduction',
-                amount=-cost_dec,
-                balance_after=wallet.balance,
-                currency=wallet.currency,
-                actual_seconds=duration_seconds,
-                billed_minutes=billed_minutes,
-                rate_applied=config.cost_per_minute,
-                description=f"مكالمة {session.get_direction_display()} ({billed_minutes} دقيقة تقريب لأعلى - {duration_seconds} ثانية)"
-            )
+            if partner_rel and partner_rel.partner:
+                partner = partner_rel.partner
+                rate = partner.custom_rate_per_minute
+                cost_dec = round(Decimal(str(billed_minutes)) * rate, 4)
+                call_cost = float(cost_dec)
+
+                # Deduct from Partner's pooled wallet
+                target_user = partner.user
+                wallet, _ = UserWallet.objects.get_or_create(
+                    user=target_user,
+                    defaults={
+                        'balance': config.initial_welcome_credit,
+                        'currency': partner.currency,
+                        'total_deposited': config.initial_welcome_credit,
+                        'total_spent': Decimal('0.0000'),
+                    }
+                )
+                wallet.balance -= cost_dec
+                wallet.total_spent += cost_dec
+                wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
+
+                # Track sub-client stats
+                partner_rel.total_spent += cost_dec
+                partner_rel.total_minutes += billed_minutes
+                partner_rel.save(update_fields=['total_spent', 'total_minutes', 'updated_at'])
+
+                BillingTransaction.objects.create(
+                    wallet=wallet,
+                    call_session=session,
+                    transaction_type='call_deduction',
+                    amount=-cost_dec,
+                    balance_after=wallet.balance,
+                    currency=wallet.currency,
+                    actual_seconds=duration_seconds,
+                    billed_minutes=billed_minutes,
+                    rate_applied=rate,
+                    description=f"مكالمة عميل الساس '{user.first_name or user.username}' ({billed_minutes} دقيقة - بسعر الشريك المخصص {rate}$)"
+                )
+
+                # Dispatch Webhook to partner's SaaS backend
+                try:
+                    from partners.services.webhook import dispatch_partner_webhook
+                    dispatch_partner_webhook(partner, "call.completed", {
+                        "client_id": user.id,
+                        "client_name": user.first_name or user.username,
+                        "external_reference": partner_rel.external_reference,
+                        "call_id": room_name,
+                        "caller_phone": caller_phone,
+                        "duration_seconds": duration_seconds,
+                        "billed_minutes": billed_minutes,
+                        "cost": float(cost_dec),
+                        "summary": summary,
+                        "partner_remaining_balance": float(wallet.balance),
+                    })
+                except Exception as wh_e:
+                    logger.warning(f"Error triggering partner webhook: {wh_e}")
+            else:
+                wallet, _ = UserWallet.objects.get_or_create(
+                    user=user,
+                    defaults={
+                        'balance': config.initial_welcome_credit,
+                        'currency': config.currency,
+                        'total_deposited': config.initial_welcome_credit,
+                        'total_spent': Decimal('0.0000'),
+                    }
+                )
+                wallet.balance -= cost_dec
+                wallet.total_spent += cost_dec
+                wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
+
+                BillingTransaction.objects.create(
+                    wallet=wallet,
+                    call_session=session,
+                    transaction_type='call_deduction',
+                    amount=-cost_dec,
+                    balance_after=wallet.balance,
+                    currency=wallet.currency,
+                    actual_seconds=duration_seconds,
+                    billed_minutes=billed_minutes,
+                    rate_applied=config.cost_per_minute,
+                    description=f"مكالمة {session.get_direction_display()} ({billed_minutes} دقيقة تقريب لأعلى - {duration_seconds} ثانية)"
+                )
 
             session.billed_minutes = billed_minutes
             session.cost = cost_dec

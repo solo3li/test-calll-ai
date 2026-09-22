@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'telephony.apps.TelephonyConfig',
     'crm.apps.CrmConfig',
     'billing.apps.BillingConfig',
+    'partners.apps.PartnersConfig',
     'voice_assistant.apps.VoiceAssistantConfig',
 ]
 

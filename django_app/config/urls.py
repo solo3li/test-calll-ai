@@ -11,6 +11,7 @@ urlpatterns = [
     path('api/telephony/', include('telephony.urls')),
     path('api/crm/', include('crm.urls')),
     path('api/billing/', include('billing.urls')),
+    path('api/partner/v1/', include('partners.urls')),
     path('', include('voice_assistant.urls')),
 ]
 
