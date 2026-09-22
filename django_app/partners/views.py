@@ -5,7 +5,7 @@ import logging
 from decimal import Decimal
 from django.conf import settings
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -19,7 +19,7 @@ from crm.models import CallSession, CustomerMemory
 from knowledge.models import Document, DocumentChunk
 from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 from telephony.models import InboundPBXTrunk, OutboundSIPTrunk
-from call_center.models import CallQueue
+from call_center.models import CallQueue, EmployeeProfile, QueueMembership
 from google import genai
 from google.genai import types
 from pgvector.django import CosineDistance
@@ -703,7 +703,165 @@ def api_partner_client_telephony(request, client_id):
 
 
 # =========================================================================
-# Headless Call Center Queues API for Sub-Clients
+# Headless Call Center Employees CRUD API for Sub-Clients
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_employees(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/employees/
+    GET: List all employees belonging to this sub-client.
+    POST: Create a new employee with extension, credentials, and department.
+    """
+    if request.method == 'GET':
+        employees = EmployeeProfile.objects.filter(
+            employer=request.client_user,
+            is_active=True
+        ).order_by('extension')
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "total_employees": employees.count(),
+            "employees": [e.to_dict() for e in employees]
+        })
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        display_name = str(data.get('display_name') or '').strip()
+        extension = str(data.get('extension') or '').strip()
+        department = str(data.get('department') or 'المبيعات').strip()
+        status_val = str(data.get('status') or 'ready').strip()
+        password = str(data.get('password') or f"emp_{secrets.token_hex(4)}").strip()
+        username = str(data.get('username') or f"c{client_id}_e{extension}_{secrets.token_hex(2)}").strip()
+
+        if not display_name or not extension:
+            return JsonResponse({"status": "error", "message": "display_name and extension are required"}, status=400)
+
+        # Check unique extension for this client
+        if EmployeeProfile.objects.filter(employer=request.client_user, extension=extension, is_active=True).exists():
+            return JsonResponse({
+                "status": "error",
+                "message": f"Extension '{extension}' is already registered for this client."
+            }, status=409)
+
+        # Create auth user for this employee
+        if User.objects.filter(username=username).exists():
+            username = f"{username}_{secrets.token_hex(3)}"
+
+        emp_user = User.objects.create_user(
+            username=username,
+            password=password,
+            first_name=display_name
+        )
+
+        employee = EmployeeProfile.objects.create(
+            user=emp_user,
+            employer=request.client_user,
+            extension=extension,
+            display_name=display_name,
+            department=department,
+            status=status_val,
+            avatar_url=f"https://api.dicebear.com/7.x/bottts/png?seed={extension}",
+            is_active=True
+        )
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"Employee '{display_name}' created successfully (ext: {extension}).",
+            "client_id": client_id,
+            "employee": {
+                **employee.to_dict(),
+                "temporary_password": password
+            }
+        }, status=201)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_employee_detail(request, client_id, employee_id):
+    """
+    GET, POST/PUT/PATCH, & DELETE /api/partner/v1/clients/<int:client_id>/employees/<int:employee_id>/
+    GET: Retrieve employee details and queue memberships.
+    POST/PUT/PATCH: Update employee fields (display_name, department, status, extension, password).
+    DELETE: Delete employee and associated account.
+    """
+    employee = EmployeeProfile.objects.filter(id=employee_id, employer=request.client_user).first()
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Employee not found for this client"}, status=404)
+
+    if request.method == 'GET':
+        memberships = employee.queue_memberships.filter(is_active=True).select_related('queue')
+        queues_list = [{"id": m.queue.id, "name": m.queue.name, "code": m.queue.code, "order": m.order} for m in memberships]
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "employee": employee.to_dict(),
+            "queues": queues_list
+        })
+
+    elif request.method in ['POST', 'PUT', 'PATCH']:
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        if 'display_name' in data:
+            employee.display_name = str(data['display_name']).strip()
+            employee.user.first_name = employee.display_name
+            employee.user.save(update_fields=['first_name'])
+
+        if 'department' in data:
+            employee.department = str(data['department']).strip()
+
+        if 'status' in data:
+            employee.status = str(data['status']).strip()
+
+        if 'extension' in data:
+            new_ext = str(data['extension']).strip()
+            if new_ext != employee.extension:
+                if EmployeeProfile.objects.filter(employer=request.client_user, extension=new_ext, is_active=True).exclude(id=employee.id).exists():
+                    return JsonResponse({"status": "error", "message": f"Extension '{new_ext}' is already taken"}, status=409)
+                employee.extension = new_ext
+
+        if 'password' in data and data['password']:
+            employee.user.set_password(str(data['password']).strip())
+            employee.user.save(update_fields=['password'])
+
+        employee.save()
+
+        return JsonResponse({
+            "status": "success",
+            "message": "Employee updated successfully",
+            "client_id": client_id,
+            "employee": employee.to_dict()
+        })
+
+    elif request.method == 'DELETE':
+        name = employee.display_name
+        ext = employee.extension
+        user_to_del = employee.user
+        employee.delete()
+        if user_to_del:
+            user_to_del.delete()
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"Employee '{name}' (ext: {ext}) deleted successfully.",
+            "client_id": client_id
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Headless Call Center Queues Full CRUD API for Sub-Clients
 # =========================================================================
 
 @csrf_exempt
@@ -711,14 +869,15 @@ def api_partner_client_telephony(request, client_id):
 def api_partner_client_queues(request, client_id):
     """
     GET & POST /api/partner/v1/clients/<int:client_id>/queues/
-    GET: list call queues for client
-    POST: create or update call queue
+    GET: list call queues for client with member count.
+    POST: create or update call queue with optional initial members list.
     """
     if request.method == 'GET':
-        queues = CallQueue.objects.filter(user=request.client_user)
+        queues = CallQueue.objects.filter(user=request.client_user).prefetch_related('memberships__employee')
         return JsonResponse({
             "status": "success",
             "client_id": client_id,
+            "total_queues": queues.count(),
             "queues": [q.to_dict() for q in queues]
         })
     elif request.method == 'POST':
@@ -728,7 +887,7 @@ def api_partner_client_queues(request, client_id):
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
         name = data.get('name', 'طابور خدمة العملاء')
-        code = data.get('code', '200')
+        code = str(data.get('code', '200')).strip()
         queue, created = CallQueue.objects.update_or_create(
             user=request.client_user,
             code=code,
@@ -740,11 +899,175 @@ def api_partner_client_queues(request, client_id):
                 'fallback_action': data.get('fallback_action', 'ai_assistant')
             }
         )
+
+        # Handle optional initial members assignment
+        if 'members' in data and isinstance(data['members'], list):
+            # Sync memberships
+            QueueMembership.objects.filter(queue=queue).delete()
+            for idx, emp_id in enumerate(data['members']):
+                emp = EmployeeProfile.objects.filter(id=emp_id, employer=request.client_user).first()
+                if emp:
+                    QueueMembership.objects.create(queue=queue, employee=emp, order=idx + 1)
+
         return JsonResponse({
             "status": "success",
             "message": "Call queue created successfully" if created else "Call queue updated successfully",
             "queue": queue.to_dict()
         }, status=201 if created else 200)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_queue_detail(request, client_id, queue_id):
+    """
+    GET, POST/PUT/PATCH, & DELETE /api/partner/v1/clients/<int:client_id>/queues/<int:queue_id>/
+    GET: Get queue details and member list.
+    POST/PUT: Update queue settings and optional members.
+    DELETE: Remove queue and associated memberships.
+    """
+    queue = CallQueue.objects.filter(id=queue_id, user=request.client_user).first()
+    if not queue:
+        return JsonResponse({"status": "error", "message": "Call queue not found for this client"}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "queue": queue.to_dict()
+        })
+
+    elif request.method in ['POST', 'PUT', 'PATCH']:
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        if 'name' in data:
+            queue.name = str(data['name']).strip()
+        if 'code' in data:
+            new_code = str(data['code']).strip()
+            if new_code != queue.code:
+                if CallQueue.objects.filter(user=request.client_user, code=new_code).exclude(id=queue.id).exists():
+                    return JsonResponse({"status": "error", "message": f"Queue code '{new_code}' already exists"}, status=409)
+                queue.code = new_code
+        if 'strategy' in data:
+            queue.strategy = data['strategy']
+        if 'ring_timeout_seconds' in data:
+            queue.ring_timeout_seconds = int(data['ring_timeout_seconds'])
+        if 'total_timeout_seconds' in data:
+            queue.total_timeout_seconds = int(data['total_timeout_seconds'])
+        if 'fallback_action' in data:
+            queue.fallback_action = data['fallback_action']
+
+        queue.save()
+
+        # Update members if provided
+        if 'members' in data and isinstance(data['members'], list):
+            QueueMembership.objects.filter(queue=queue).delete()
+            for idx, emp_id in enumerate(data['members']):
+                emp = EmployeeProfile.objects.filter(id=emp_id, employer=request.client_user).first()
+                if emp:
+                    QueueMembership.objects.create(queue=queue, employee=emp, order=idx + 1)
+
+        return JsonResponse({
+            "status": "success",
+            "message": "Call queue updated successfully",
+            "client_id": client_id,
+            "queue": queue.to_dict()
+        })
+
+    elif request.method == 'DELETE':
+        name = queue.name
+        code = queue.code
+        queue.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": f"Call queue '{name}' (code: {code}) deleted successfully.",
+            "client_id": client_id
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_queue_members(request, client_id, queue_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/queues/<int:queue_id>/members/
+    GET: List active employee members in queue.
+    POST: Manage members (action: 'add', 'remove', 'set').
+    """
+    queue = CallQueue.objects.filter(id=queue_id, user=request.client_user).first()
+    if not queue:
+        return JsonResponse({"status": "error", "message": "Call queue not found for this client"}, status=404)
+
+    if request.method == 'GET':
+        memberships = queue.memberships.filter(is_active=True).select_related('employee')
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "queue_id": queue.id,
+            "queue_name": queue.name,
+            "total_members": memberships.count(),
+            "members": [m.to_dict() for m in memberships]
+        })
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        action = data.get('action', 'add')
+
+        if action == 'add':
+            emp_id = data.get('employee_id')
+            emp = EmployeeProfile.objects.filter(id=emp_id, employer=request.client_user).first()
+            if not emp:
+                return JsonResponse({"status": "error", "message": "Employee not found for this client"}, status=404)
+
+            membership, created = QueueMembership.objects.get_or_create(
+                queue=queue,
+                employee=emp,
+                defaults={'order': int(data.get('order', queue.memberships.count() + 1)), 'is_active': True}
+            )
+            if not created and not membership.is_active:
+                membership.is_active = True
+                membership.save(update_fields=['is_active'])
+
+            return JsonResponse({
+                "status": "success",
+                "message": f"Employee '{emp.display_name}' added to queue '{queue.name}'",
+                "membership": membership.to_dict()
+            }, status=201 if created else 200)
+
+        elif action == 'remove':
+            emp_id = data.get('employee_id')
+            QueueMembership.objects.filter(queue=queue, employee_id=emp_id).delete()
+            return JsonResponse({
+                "status": "success",
+                "message": f"Employee #{emp_id} removed from queue '{queue.name}'"
+            })
+
+        elif action == 'set':
+            member_ids = data.get('member_ids', [])
+            QueueMembership.objects.filter(queue=queue).delete()
+            created_members = []
+            for idx, emp_id in enumerate(member_ids):
+                emp = EmployeeProfile.objects.filter(id=emp_id, employer=request.client_user).first()
+                if emp:
+                    m = QueueMembership.objects.create(queue=queue, employee=emp, order=idx + 1)
+                    created_members.append(m.to_dict())
+
+            return JsonResponse({
+                "status": "success",
+                "message": f"Queue '{queue.name}' members synchronized ({len(created_members)} members)",
+                "members": created_members
+            })
+
+        return JsonResponse({"status": "error", "message": f"Unknown action: {action}"}, status=400)
 
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
@@ -1027,3 +1350,22 @@ def api_partner_client_telephony_detail(request, client_id, trunk_type, trunk_id
         })
 
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Partner API Documentation Portal View
+# =========================================================================
+
+def api_partner_docs(request):
+    """
+    GET /api/partner/v1/docs/
+    Interactive Developer Documentation Portal for Partners & SaaS Resellers.
+    """
+    partner = None
+    if request.user.is_authenticated:
+        partner = PartnerProfile.objects.filter(user=request.user, status='approved').first()
+
+    return render(request, 'partners/api_docs.html', {
+        'partner': partner,
+        'base_url': request.build_absolute_uri('/')[:-1]
+    })

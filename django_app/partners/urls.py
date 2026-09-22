@@ -9,6 +9,8 @@ urlpatterns = [
     path('settings/test-webhook/', views.test_partner_webhook, name='partner_test_webhook'),
     path('clients/cap/', views.update_client_cap, name='partner_client_cap'),
 
+    path('docs/', views.api_partner_docs, name='partner_docs'),
+
     # Headless REST API v1 for Partner SaaS Server-to-Server Integrations
     path('clients/register/', views.api_partner_register_client, name='api_partner_register_client'),
     path('clients/', views.api_partner_list_clients, name='api_partner_list_clients'),
@@ -20,6 +22,10 @@ urlpatterns = [
     path('clients/<int:client_id>/telephony/', views.api_partner_client_telephony, name='api_partner_client_telephony'),
     path('clients/<int:client_id>/telephony/numbers/', views.api_partner_client_numbers, name='api_partner_client_numbers'),
     path('clients/<int:client_id>/telephony/<str:trunk_type>/<int:trunk_id>/', views.api_partner_client_telephony_detail, name='api_partner_client_telephony_detail'),
+    path('clients/<int:client_id>/employees/', views.api_partner_client_employees, name='api_partner_client_employees'),
+    path('clients/<int:client_id>/employees/<int:employee_id>/', views.api_partner_client_employee_detail, name='api_partner_client_employee_detail'),
     path('clients/<int:client_id>/queues/', views.api_partner_client_queues, name='api_partner_client_queues'),
+    path('clients/<int:client_id>/queues/<int:queue_id>/', views.api_partner_client_queue_detail, name='api_partner_client_queue_detail'),
+    path('clients/<int:client_id>/queues/<int:queue_id>/members/', views.api_partner_client_queue_members, name='api_partner_client_queue_members'),
     path('clients/<int:client_id>/token/', views.api_partner_client_token, name='api_partner_client_token'),
 ]

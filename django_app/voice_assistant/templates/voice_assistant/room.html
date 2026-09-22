@@ -1886,6 +1886,13 @@
             </p>
           </div>
           <div class="flex items-center gap-2">
+            <a href="/api/partner/v1/docs/" target="_blank" class="px-3.5 py-2 rounded-xl bg-[#680E23] hover:bg-[#520B1C] text-white border border-[#680E23] text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+              <span>📖</span> <span>وثائق الـ API للمطورين</span>
+              <svg class="w-3.5 h-3.5 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+            </a>
+            <button type="button" onclick="openPartnerDocsModal()" class="px-3.5 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] text-[#680E23] border border-[#DDD5C7] text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
+              <span>📋</span> <span>الدليل السريع</span>
+            </button>
             <button type="button" onclick="loadPartnerDashboard()" class="px-3.5 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F5EFE6] text-[#680E23] border border-[#DDD5C7] text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
               <span>🔄</span> <span>تحديث البيانات</span>
             </button>
@@ -2132,6 +2139,76 @@
           <div class="flex justify-end gap-2 pt-3 border-t border-[#EAE3D9]">
             <button type="button" onclick="closeClientCapModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] transition">إلغاء</button>
             <button type="button" onclick="saveClientCap()" id="btn-save-client-cap" class="px-5 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-bold transition">حفظ السقف</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Quick API Docs Modal ==================== -->
+      <div id="partner-docs-modal" class="fixed inset-0 z-50 bg-[#1C1917]/50 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white border border-[#EAE3D9] rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4 text-xs max-h-[85vh] overflow-y-auto custom-scrollbar">
+          <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9]">
+            <div class="flex items-center gap-2">
+              <span class="text-base">📖</span>
+              <h3 class="text-base font-bold text-[#680E23]">دليل مطوري الـ API وخدمات الـ SaaS (Quick Reference)</h3>
+            </div>
+            <button type="button" onclick="closePartnerDocsModal()" class="text-[#6E645D] hover:text-[#1C1917] text-lg font-bold">✕</button>
+          </div>
+
+          <div class="p-3 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl flex items-center justify-between">
+            <div>
+              <span class="font-bold text-[#1C1917] block">بوابة التوثيق التفاعلية الكاملة للمطورين:</span>
+              <span class="text-[11px] text-[#6E645D]">تحتوي على أمثلة كود بـ cURL, Python, Node.js ووحدة اختبار حية لجميع الواجهات.</span>
+            </div>
+            <a href="/api/partner/v1/docs/" target="_blank" class="px-4 py-2 bg-[#680E23] hover:bg-[#520B1C] text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow-sm shrink-0">
+              <span>فتح البوابة</span>
+              <svg class="w-3.5 h-3.5 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+            </a>
+          </div>
+
+          <div class="space-y-3 font-mono">
+            <div class="border border-[#EAE3D9] rounded-xl p-3 bg-white space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="bg-brand-primary text-white text-[10px] font-bold px-2 py-0.5 rounded">POST</span>
+                <span class="font-bold text-[#1C1917]">/api/partner/v1/clients/register/</span>
+              </div>
+              <p class="font-sans text-[11px] text-[#6E645D]">تسجيل عميل ساس جديد خلفياً وإرجاع client_id فوراً.</p>
+            </div>
+
+            <div class="border border-[#EAE3D9] rounded-xl p-3 bg-white space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="bg-amber-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">GET / POST</span>
+                <span class="font-bold text-[#1C1917]">/api/partner/v1/clients/{id}/employees/</span>
+              </div>
+              <p class="font-sans text-[11px] text-[#6E645D]">إدارة الموظفين والتحويلات الداخلية للعميل (Full CRUD).</p>
+            </div>
+
+            <div class="border border-[#EAE3D9] rounded-xl p-3 bg-white space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="bg-amber-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">GET / POST</span>
+                <span class="font-bold text-[#1C1917]">/api/partner/v1/clients/{id}/queues/</span>
+              </div>
+              <p class="font-sans text-[11px] text-[#6E645D]">إنشاء طوابير الانتظار وتعيين الموظفين داخل الطابور برمجياً.</p>
+            </div>
+
+            <div class="border border-[#EAE3D9] rounded-xl p-3 bg-white space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="bg-brand-primary text-white text-[10px] font-bold px-2 py-0.5 rounded">POST</span>
+                <span class="font-bold text-[#1C1917]">/api/partner/v1/clients/{id}/rag/query/</span>
+              </div>
+              <p class="font-sans text-[11px] text-[#6E645D]">استعلام دلالي ذكي بالذكاء الاصطناعي في مستندات المتجر.</p>
+            </div>
+
+            <div class="border border-[#EAE3D9] rounded-xl p-3 bg-white space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="bg-brand-primary text-white text-[10px] font-bold px-2 py-0.5 rounded">POST</span>
+                <span class="font-bold text-[#1C1917]">/api/partner/v1/clients/{id}/token/</span>
+              </div>
+              <p class="font-sans text-[11px] text-[#6E645D]">إصدار توكن اتصال WebRTC للعميل لبدء مكالمة صوتية فورية.</p>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-2 border-t border-[#EAE3D9]">
+            <button type="button" onclick="closePartnerDocsModal()" class="px-5 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] font-bold transition">إغلاق</button>
           </div>
         </div>
       </div>
@@ -5658,6 +5735,14 @@
 
     function closeClientCapModal() {
       document.getElementById('partner-cap-modal').classList.add('hidden');
+    }
+
+    function openPartnerDocsModal() {
+      document.getElementById('partner-docs-modal').classList.remove('hidden');
+    }
+
+    function closePartnerDocsModal() {
+      document.getElementById('partner-docs-modal').classList.add('hidden');
     }
 
     async function saveClientCap() {

@@ -10,7 +10,8 @@ class EmployeeProfile(models.Model):
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
-    extension = models.CharField(max_length=32, unique=True, db_index=True, help_text='رقم التحويلة الداخلية مثل 101 أو 102')
+    employer = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='managed_employees')
+    extension = models.CharField(max_length=32, db_index=True, help_text='رقم التحويلة الداخلية مثل 101 أو 102')
     display_name = models.CharField(max_length=100, default='موظف')
     department = models.CharField(max_length=100, default='المبيعات')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ready')
@@ -22,6 +23,7 @@ class EmployeeProfile(models.Model):
     class Meta:
         db_table = 'voice_assistant_employeeprofile'
         ordering = ['extension']
+        unique_together = ('employer', 'extension')
 
     def __str__(self):
         return f"{self.display_name} (تحويلة: {self.extension}) - {self.get_status_display()}"
@@ -30,6 +32,7 @@ class EmployeeProfile(models.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "employer_id": self.employer_id,
             "username": self.user.username,
             "extension": self.extension,
             "display_name": self.display_name,

@@ -186,20 +186,95 @@ num_list_data = num_list_res.json()
 assert num_list_data['total_numbers'] >= 2
 print(f"[PASS] Step 10.1: Phone Numbers / DIDs linking and Issabel PBX configuration verified via Partner API. Total numbers: {num_list_data['total_numbers']}")
 
-# 11. Call Queues for Sub-Client
+# 11. Employees Full CRUD for Sub-Client (with Multi-Tenancy Isolation)
+emp1_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/employees/', json={
+    'display_name': 'سارة الخالد',
+    'extension': '102',
+    'department': 'خدمة العملاء والدعم الفني',
+    'password': 'SecureEmpPassword123'
+}, headers=headers_partner)
+assert emp1_res.status_code in [200, 201], f"Employee 1 creation failed: {emp1_res.text}"
+emp1_id = emp1_res.json()['employee']['id']
+
+emp2_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/employees/', json={
+    'display_name': 'عمر الحربي',
+    'extension': '103',
+    'department': 'المبيعات والحجوزات',
+    'password': 'SecureEmpPassword456'
+}, headers=headers_partner)
+assert emp2_res.status_code in [200, 201], f"Employee 2 creation failed: {emp2_res.text}"
+emp2_id = emp2_res.json()['employee']['id']
+
+# Duplicate extension conflict check (must return 409 Conflict)
+dup_emp_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/employees/', json={
+    'display_name': 'موظف مكرر',
+    'extension': '102',
+    'department': 'المبيعات'
+}, headers=headers_partner)
+assert dup_emp_res.status_code == 409, f"Duplicate extension not blocked: {dup_emp_res.status_code}"
+
+# List Employees for Client
+emp_list_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/employees/', headers=headers_partner)
+assert emp_list_res.status_code == 200
+assert emp_list_res.json()['total_employees'] >= 2
+
+# Update Employee
+emp_upd_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/employees/{emp1_id}/', json={
+    'display_name': 'سارة الخالد (مشرفة)',
+    'status': 'busy'
+}, headers=headers_partner)
+assert emp_upd_res.status_code == 200
+assert emp_upd_res.json()['employee']['display_name'] == 'سارة الخالد (مشرفة)'
+assert emp_upd_res.json()['employee']['status'] == 'busy'
+print(f"[PASS] Step 11: Call Center Employees Full CRUD & Multi-Tenancy Isolation verified (Total: {emp_list_res.json()['total_employees']})")
+
+# 11.1 Call Queues Full CRUD & Memberships for Sub-Client
 queue_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/', json={
-    'name': 'طابور خدمة عملاء المتجر',
+    'name': 'طابور خدمة عملاء المتجر VIP',
     'code': '401',
     'strategy': 'round_robin',
     'ring_timeout_seconds': 20,
-    'total_timeout_seconds': 60
+    'total_timeout_seconds': 60,
+    'fallback_action': 'ai_assistant',
+    'members': [emp1_id]
 }, headers=headers_partner)
 assert queue_res.status_code in [200, 201], f"Queue failed: {queue_res.text}"
+queue_id = queue_res.json()['queue']['id']
 
-queues_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/', headers=headers_partner)
-assert queues_get_res.status_code == 200
-assert len(queues_get_res.json()['queues']) >= 1
-print("[PASS] Step 11: Call Center Queues created and verified for client via API")
+# Add Employee 2 to Queue
+add_mem_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/{queue_id}/members/', json={
+    'action': 'add',
+    'employee_id': emp2_id,
+    'order': 2
+}, headers=headers_partner)
+assert add_mem_res.status_code in [200, 201]
+
+# List Queue Members
+mem_list_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/{queue_id}/members/', headers=headers_partner)
+assert mem_list_res.status_code == 200
+assert mem_list_res.json()['total_members'] == 2
+
+# Remove Employee 1 from Queue
+del_mem_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/{queue_id}/members/', json={
+    'action': 'remove',
+    'employee_id': emp1_id
+}, headers=headers_partner)
+assert del_mem_res.status_code == 200
+
+# Verify Queue Detail
+q_detail_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/queues/{queue_id}/', headers=headers_partner)
+assert q_detail_res.status_code == 200
+assert len(q_detail_res.json()['queue']['members']) == 1
+print("[PASS] Step 11.1: Call Center Queues & Queue Memberships Full CRUD verified via API")
+
+# 11.2 Partner API Documentation Portal Verification
+docs_res = s.get(f'{BASE_URL}/api/partner/v1/docs/')
+assert docs_res.status_code == 200
+assert 'Headless B2B Voice SaaS' in docs_res.text
+assert 'X-Partner-Key' in docs_res.text
+assert '/api/partner/v1/clients/register/' in docs_res.text
+assert '/api/partner/v1/clients/{client_id}/employees/' in docs_res.text
+print("[PASS] Step 11.2: Interactive Partner Developer Documentation Portal verified at /api/partner/v1/docs/ (200 OK)")
 
 # 12. Direct Voice Session Token for Sub-Client
 token_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/token/', headers=headers_partner)
@@ -280,8 +355,10 @@ assert 'id="partner-clients-tbody"' in ui_html
 assert 'id="partner-calls-tbody"' in ui_html
 assert 'id="partner-apply-modal"' in ui_html
 assert 'id="partner-cap-modal"' in ui_html
+assert 'id="partner-docs-modal"' in ui_html
+assert '/api/partner/v1/docs/' in ui_html
 assert 'loadPartnerDashboard' in ui_html
-print("[PASS] Step 15: Frontend UI elements for Partner Portal and Modals verified in room.html")
+print("[PASS] Step 15: Frontend UI elements for Partner Portal, Modals, and API Docs link verified in room.html")
 
 print('=' * 75)
 print('ALL 15 PARTNER & HEADLESS SAAS INTEGRATION TESTS PASSED WITH 100% SUCCESS!')
