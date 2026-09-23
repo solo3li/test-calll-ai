@@ -15,6 +15,7 @@ from .models import OutboundSIPTrunk, InboundPBXTrunk
 from agents.models import AgentProfile
 from call_center.models import CallQueue
 from crm.models import CallSession
+from .services import initiate_outbound_call, normalize_phone_number, _async_dial_sip_participant
 
 logger = logging.getLogger(__name__)
 
@@ -283,141 +284,16 @@ def trigger_ai_outbound_call(request):
         gateway_type = (data.get('gateway_type') or 'auto').strip()
         gateway_id = data.get('gateway_id')
 
-        if not raw_phone:
-            return JsonResponse({"status": "error", "message": "رقم الهاتف أو رقم التحويلة مطلوب للاتصال"}, status=400)
-
-        # Check user wallet balance
-        try:
-            from billing.models import BillingConfig, UserWallet
-            billing_cfg = BillingConfig.get_config()
-            wallet, _ = UserWallet.objects.get_or_create(
-                user=request.user,
-                defaults={
-                    'balance': billing_cfg.initial_welcome_credit,
-                    'currency': billing_cfg.currency,
-                    'total_deposited': billing_cfg.initial_welcome_credit,
-                }
-            )
-            if wallet.balance < billing_cfg.cost_per_minute:
-                sym = billing_cfg.get_currency_symbol()
-                return JsonResponse({
-                    "status": "error",
-                    "code": "insufficient_balance",
-                    "message": f"رصيدك الحالي ({wallet.balance:.2f} {sym}) غير كافٍ لبدء مكالمة صادرة. الحد الأدنى المطلوب هو ({billing_cfg.cost_per_minute:.2f} {sym}). يرجى شحن الرصيد للمتابعة.",
-                    "balance": float(wallet.balance),
-                    "cost_per_minute": float(billing_cfg.cost_per_minute),
-                    "currency": wallet.currency,
-                    "currency_symbol": sym,
-                }, status=402)
-        except Exception as b_err:
-            logger.warning(f"Error checking wallet for outbound call: {b_err}")
-
-        # Support internal extension dialing (e.g. 101, 200, 1001) as well as external mobile/landline numbers
-        if len(raw_phone) <= 5 and raw_phone.isdigit():
-            normalized_phone = raw_phone
-        else:
-            normalized_phone = normalize_phone_number(raw_phone)
-            if not normalized_phone or len(normalized_phone) < 8:
-                return JsonResponse({"status": "error", "message": f"رقم الهاتف غير صالح ({raw_phone}). يرجى التأكد من كتابة الرقم بصيغة صحيحة."}, status=400)
-
-        # Resolve outbound gateway (Cloud vs PBX)
-        livekit_outbound_trunk_id = None
-        trunk_name = ""
-        caller_id_val = ""
-
-        if gateway_type == 'pbx' and gateway_id:
-            pbx_t = InboundPBXTrunk.objects.filter(id=gateway_id, user=request.user, is_active=True, enable_outbound=True).first()
-            if not pbx_t or not pbx_t.livekit_outbound_trunk_id:
-                return JsonResponse({"status": "error", "message": "سنترال PBX المختار غير مفعل للصادر أو غير متصل بـ LiveKit"}, status=400)
-            livekit_outbound_trunk_id = pbx_t.livekit_outbound_trunk_id
-            trunk_name = f"سنترال {pbx_t.name}"
-            caller_id_val = pbx_t.inbound_numbers.split(',')[0].strip() if pbx_t.inbound_numbers else ""
-        elif gateway_type == 'cloud':
-            trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True).first()
-            if not trunk or not trunk.livekit_outbound_trunk_id:
-                return JsonResponse({"status": "error", "message": "الجذع السحابي العام غير مهيأ. يرجى ضبط بيانات المزود في إعدادات الجذع الخارجي."}, status=400)
-            livekit_outbound_trunk_id = trunk.livekit_outbound_trunk_id
-            trunk_name = trunk.name
-            caller_id_val = trunk.caller_id
-        else:
-            # Auto: check default PBX trunk first, then default cloud trunk
-            default_pbx = InboundPBXTrunk.objects.filter(user=request.user, is_active=True, enable_outbound=True, is_default_outbound=True).first()
-            if default_pbx and default_pbx.livekit_outbound_trunk_id:
-                livekit_outbound_trunk_id = default_pbx.livekit_outbound_trunk_id
-                trunk_name = f"سنترال {default_pbx.name} (افتراضي)"
-                caller_id_val = default_pbx.inbound_numbers.split(',')[0].strip() if default_pbx.inbound_numbers else ""
-            else:
-                trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True, is_default=True).first()
-                if not trunk:
-                    trunk = OutboundSIPTrunk.objects.filter(user=request.user, is_active=True).first()
-                if trunk and trunk.livekit_outbound_trunk_id:
-                    livekit_outbound_trunk_id = trunk.livekit_outbound_trunk_id
-                    trunk_name = trunk.name
-                    caller_id_val = trunk.caller_id
-                else:
-                    any_pbx = InboundPBXTrunk.objects.filter(user=request.user, is_active=True, enable_outbound=True).exclude(livekit_outbound_trunk_id='').first()
-                    if any_pbx:
-                        livekit_outbound_trunk_id = any_pbx.livekit_outbound_trunk_id
-                        trunk_name = f"سنترال {any_pbx.name}"
-                        caller_id_val = any_pbx.inbound_numbers.split(',')[0].strip() if any_pbx.inbound_numbers else ""
-
-        if not livekit_outbound_trunk_id:
-            return JsonResponse({
-                "status": "error",
-                "message": "لا يوجد مسار اتصال صادر مفعل (سحابي أو سنترال محلي). يرجى تفعيل الجذع السحابي أو تمكين المكالمات الصادرة في سنترال Issabel."
-            }, status=400)
-
-        # Resolve voice profile
-        profile = None
-        if profile_id:
-            profile = AgentProfile.objects.filter(id=profile_id, user=request.user).first()
-        if not profile:
-            profile = AgentProfile.objects.filter(user=request.user, is_active=True).first()
-
-        room_name = f"room_user_{request.user.id}_ai_out_{uuid.uuid4().hex[:8]}"
-
-        # Create CallSession record
-        session = CallSession.objects.create(
+        res = initiate_outbound_call(
             user=request.user,
-            room_name=room_name,
-            direction='outbound_ai',
-            destination_phone=normalized_phone,
-            call_goal=call_goal or "مكالمة ذكاء اصطناعي صادرة للعميل"
+            phone_number=raw_phone,
+            call_goal=call_goal,
+            profile_id=profile_id,
+            gateway_type=gateway_type,
+            gateway_id=gateway_id,
         )
-
-        # Dial external customer / extension via LiveKit Outbound Trunk
-        participant_info = asyncio.run(_async_dial_sip_participant(
-            trunk_id=livekit_outbound_trunk_id,
-            destination_phone=normalized_phone,
-            room_name=room_name,
-            caller_id=caller_id_val
-        ))
-
-        # Push dispatch job to Redis for Voice Assistant agent
-        r = redis.Redis.from_url(settings.REDIS_URL)
-        job_payload = {
-            "room_name": room_name,
-            "user_id": request.user.id,
-            "is_outbound_ai": True,
-            "call_goal": call_goal,
-            "destination_phone": normalized_phone,
-            "profile": profile.to_dict() if profile else None,
-            "session_id": session.id
-        }
-        r.lpush("agent_jobs", json.dumps(job_payload, ensure_ascii=False))
-
-        logger.info(f"Triggered AI Outbound Call to {normalized_phone} via {trunk_name} in room {room_name} (Session {session.id})")
-
-        return JsonResponse({
-            "status": "success",
-            "message": f"تم بدء الاتصال الصادر بالرقم {normalized_phone} بنجاح عبر {trunk_name}",
-            "room_name": room_name,
-            "session_id": session.id,
-            "destination_phone": normalized_phone,
-            "trunk_name": trunk_name,
-            "gateway_used": trunk_name,
-            "caller_id": caller_id_val or "غير محدد"
-        })
+        http_status = res.pop('http_status', 200)
+        return JsonResponse(res, status=http_status)
 
     except Exception as e:
         logger.error(f"Error triggering AI outbound call: {e}", exc_info=True)

@@ -38,5 +38,6 @@ urlpatterns = [
 
     path('token/', views.api_user_token, name='developer_token'),
     path('calls/', views.api_user_calls, name='developer_calls'),
+    path('calls/dial/', views.api_user_call_dial, name='developer_calls_dial'),
     path('webhooks/', views.api_user_webhooks, name='developer_webhooks'),
 ]

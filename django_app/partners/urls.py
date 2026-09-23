@@ -17,6 +17,7 @@ urlpatterns = [
     path('clients/register/', views.api_partner_register_client, name='api_partner_register_client'),
     path('clients/', views.api_partner_list_clients, name='api_partner_list_clients'),
     path('clients/<int:client_id>/calls/', views.api_partner_client_calls, name='api_partner_client_calls'),
+    path('clients/<int:client_id>/calls/dial/', views.api_partner_client_call_dial, name='api_partner_client_calls_dial'),
     path('clients/<int:client_id>/profiles/', views.api_partner_client_profile, name='api_partner_client_profile'),
     path('clients/<int:client_id>/profiles/<int:profile_id>/', views.api_partner_client_profile_detail, name='api_partner_client_profile_detail'),
     path('clients/<int:client_id>/profiles/<int:profile_id>/activate/', views.api_partner_client_profile_activate, name='api_partner_client_profile_activate'),

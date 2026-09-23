@@ -23,6 +23,7 @@ from crm.models import CallSession, CustomerMemory
 from knowledge.models import Document, DocumentChunk
 from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 from telephony.models import InboundPBXTrunk, OutboundSIPTrunk
+from telephony.services import initiate_outbound_call
 from call_center.models import CallQueue, EmployeeProfile, QueueMembership
 from google import genai
 from google.genai import types
@@ -375,6 +376,59 @@ def api_partner_client_calls(request, client_id):
         "total_billed_minutes": sum(c['billed_minutes'] for c in calls_list),
         "calls": calls_list,
     })
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_call_dial(request, client_id):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/calls/dial/
+    Trigger an autonomous AI outbound call for this specific sub-client.
+    Verifies partner wallet balance & client caps beforehand.
+    Dispatches 'call.outbound_initiated' partner webhook upon success.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use POST."}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON body format"}, status=400)
+
+    phone_number = str(data.get('phone_number') or '').strip()
+    if not phone_number:
+        return JsonResponse({"status": "error", "message": "phone_number is required"}, status=400)
+
+    call_goal = str(data.get('call_goal') or '').strip()
+    profile_id = data.get('profile_id')
+    gateway_type = str(data.get('gateway_type') or 'auto').strip()
+    gateway_id = data.get('gateway_id')
+
+    try:
+        res = initiate_outbound_call(
+            user=request.client_user,
+            phone_number=phone_number,
+            call_goal=call_goal,
+            profile_id=profile_id,
+            gateway_type=gateway_type,
+            gateway_id=gateway_id,
+            partner=request.partner,
+            client_rel=request.client_rel,
+        )
+        http_status = res.pop('http_status', 201)
+        if res.get('status') == 'success':
+            dispatch_partner_webhook(request.partner, "call.outbound_initiated", {
+                "client_id": client_id,
+                "call_id": res.get('call_id'),
+                "destination_phone": res.get('destination_phone'),
+                "call_goal": res.get('call_goal', ''),
+                "rate_per_minute": float(request.partner.custom_rate_per_minute),
+            })
+            res['client_id'] = client_id
+        return JsonResponse(res, status=http_status)
+    except Exception as e:
+        logger.exception(f"Error in api_partner_client_call_dial for client {client_id}: {e}")
+        return JsonResponse({"status": "error", "message": f"Client outbound call initiation failed: {str(e)}"}, status=500)
 
 
 @csrf_exempt

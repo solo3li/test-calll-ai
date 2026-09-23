@@ -499,6 +499,80 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 "responses": {"200": {"description": "سجلات المكالمات" if is_ar else "Call records list"}}
             }
         },
+        "/calls/dial/": {
+            "post": {
+                "tags": [tag_map["tag_cdr"]],
+                "summary": "بدء مكالمة هاتفية صادرة بالذكاء الاصطناعي (Autonomous Outbound Dialing)" if is_ar else "Initiate Autonomous Outbound AI Phone Call",
+                "description": (
+                    "توجيه روبوت الصوت الذكي للاتصال تلقائياً برقم هاتف خارجي أو تحويلة سنترال PBX داخلية، والتحدث مع العميل فور فتح الخط لتحقيق هدف محدد (مثل تأكيد الطلبات، التذكير بالمواعيد، أو خدمة العملاء)."
+                    if is_ar else
+                    "Trigger an autonomous outbound AI phone call to an external customer phone number or internal PBX extension. The AI assistant immediately initiates dialogue to achieve the specified goal once answered."
+                ),
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["phone_number"],
+                                "properties": {
+                                    "phone_number": {
+                                        "type": "string",
+                                        "example": "+201012345678",
+                                        "description": "رقم هاتف العميل بالصيغة الدولية أو رقم تحويلة PBX (مثال: 101)" if is_ar else "Destination E.164 phone number or PBX extension (e.g. 101)"
+                                    },
+                                    "call_goal": {
+                                        "type": "string",
+                                        "example": "تأكيد تفاصيل الطلب رقم 1042 ومعالجة استفسارات التوصيل" if is_ar else "Confirm details of order #1042 and delivery schedule",
+                                        "description": "الهدف أو التعليمات الفورية للمكالمة الصادرة" if is_ar else "Goal or instructions given to the AI voice agent for this outbound call"
+                                    },
+                                    "profile_id": {
+                                        "type": "integer",
+                                        "example": 1,
+                                        "description": "معرف البروفايل الصوتي (اختياري - يستخدم الافتراضي إن تُرك فارغاً)" if is_ar else "Voice persona profile ID (optional - defaults to active profile)"
+                                    },
+                                    "gateway_type": {
+                                        "type": "string",
+                                        "enum": ["auto", "pbx", "cloud"],
+                                        "default": "auto",
+                                        "description": "مسار الاتصال: auto (تلقائي)، pbx (سنترال محلي)، cloud (جذع سحابي)" if is_ar else "Dialing gateway: auto, pbx, or cloud"
+                                    },
+                                    "gateway_id": {
+                                        "type": "integer",
+                                        "example": 2,
+                                        "description": "معرف السنترال أو الجذع المحدد عند اختيار pbx" if is_ar else "Specific PBX trunk ID when gateway_type is pbx"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "تم بدء الاتصال بنجاح" if is_ar else "Outbound call initiated successfully",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "message": "تم بدء الاتصال الصادر بالرقم +201012345678 بنجاح عبر سنترال Issabel (افتراضي)" if is_ar else "AI outbound call initiated successfully",
+                                    "call_id": "room_user_1_ai_out_ab12cd34",
+                                    "room_name": "room_user_1_ai_out_ab12cd34",
+                                    "session_id": 482,
+                                    "destination_phone": "+201012345678",
+                                    "call_goal": "تأكيد تفاصيل الطلب رقم 1042 ومعالجة استفسارات التوصيل",
+                                    "trunk_name": "سنترال Issabel (افتراضي)",
+                                    "gateway_used": "سنترال Issabel (افتراضي)",
+                                    "caller_id": "+201234567890"
+                                }
+                            }
+                        }
+                    },
+                    "400": {"description": "بيانات الاتصال غير صالحة أو رقم الهاتف مفقود" if is_ar else "Missing or invalid phone number"},
+                    "402": {"description": "رصيد المحفظة غير كافٍ لبدء المكالمة الصادرة" if is_ar else "Insufficient balance for outbound call"},
+                    "422": {"description": "لا يوجد مسار اتصال صادر مفعل (سحابي أو سنترال)" if is_ar else "No active outbound route configured"}
+                }
+            }
+        },
         "/webhooks/": {
             "get": {
                 "tags": [tag_map["tag_webhooks"]],

@@ -799,6 +799,85 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                 }
             }
         },
+        "/clients/{client_id}/calls/dial/": {
+            "post": {
+                "tags": [tag_map["tag_cdr"]],
+                "summary": "إجراء مكالمة صادرة بالذكاء الاصطناعي لعميل فرعي (Autonomous Outbound Dialing for Sub-Client)" if is_ar else "Initiate Autonomous Outbound AI Phone Call for Sub-Client",
+                "description": (
+                    "توجيه روبوت الصوت الذكي لإجراء اتصال هاتفي صادر لصالح هذا العميل الفرعي مع مراقبة سقف الاستهلاك (Spending/Minute Cap) وخصم الدقائق بسعر الجملة من محفظة الشريك المركزية. يدعم السنترالات السحابية والمحلية والتحويلات الداخلية."
+                    if is_ar else
+                    "Trigger an autonomous outbound phone call on behalf of a sub-client with strict spending/minute cap enforcement and wholesale rate deduction from the partner's central wallet. Supports external E.164 numbers and PBX extensions."
+                ),
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["phone_number"],
+                                "properties": {
+                                    "phone_number": {
+                                        "type": "string",
+                                        "example": "+966551122334",
+                                        "description": "رقم هاتف العميل بالصيغة الدولية أو تحويلة PBX (مثال: 101)" if is_ar else "Destination E.164 phone number or PBX extension (e.g. 101)"
+                                    },
+                                    "call_goal": {
+                                        "type": "string",
+                                        "example": "الاتصال بالعميل لتأكيد تفاصيل الشحنة واستلام الطلب #5502" if is_ar else "Call customer to verify shipment details for order #5502",
+                                        "description": "الهدف أو التعليمات الفورية الموجهة للمساعد الصوتي للمكالمة الصادرة" if is_ar else "Goal or directive given to the AI voice agent for this outbound call"
+                                    },
+                                    "profile_id": {
+                                        "type": "integer",
+                                        "example": 3,
+                                        "description": "معرف البروفايل الصوتي للعميل (اختياري - يستخدم الافتراضي)" if is_ar else "Client voice profile ID (optional - defaults to active profile)"
+                                    },
+                                    "gateway_type": {
+                                        "type": "string",
+                                        "enum": ["auto", "pbx", "cloud"],
+                                        "default": "auto",
+                                        "description": "مسار الاتصال: auto (تلقائي)، pbx (سنترال محلي)، cloud (جذع سحابي)" if is_ar else "Dialing gateway: auto, pbx, or cloud"
+                                    },
+                                    "gateway_id": {
+                                        "type": "integer",
+                                        "example": 1,
+                                        "description": "معرف السنترال المحدد عند اختيار pbx" if is_ar else "Specific PBX trunk ID when gateway_type is pbx"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "تم بدء المكالمة الصادرة بنجاح" if is_ar else "Outbound call initiated successfully",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "message": "تم بدء الاتصال الصادر بالرقم +966551122334 بنجاح عبر سنترال الشريك (افتراضي)" if is_ar else "Sub-client AI outbound call initiated successfully",
+                                    "client_id": 19,
+                                    "call_id": "partner_1_19_ai_out_fa7b2c",
+                                    "room_name": "partner_1_19_ai_out_fa7b2c",
+                                    "session_id": 490,
+                                    "destination_phone": "+966551122334",
+                                    "call_goal": "الاتصال بالعميل لتأكيد تفاصيل الشحنة واستلام الطلب #5502",
+                                    "trunk_name": "جذع الشريك Telnyx Primary",
+                                    "gateway_used": "جذع الشريك Telnyx Primary",
+                                    "caller_id": "+966112233445"
+                                }
+                            }
+                        }
+                    },
+                    "400": {"description": "بيانات الاتصال غير صالحة أو رقم الهاتف مفقود" if is_ar else "Missing or invalid phone number"},
+                    "402": {"description": "رصيد محفظة الشريك غير كافٍ" if is_ar else "Partner balance insufficient"},
+                    "403": {"description": "تم تجاوز سقف الاستهلاك المحدد للعميل الفرعي" if is_ar else "Client spending or minute cap exceeded"},
+                    "422": {"description": "لا يوجد مسار اتصال صادر مفعل" if is_ar else "No active outbound route configured"}
+                }
+            }
+        },
         "/settings/test-webhook/": {
             "post": {
                 "tags": [tag_map["tag_webhooks"]],

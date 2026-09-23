@@ -24,6 +24,7 @@ from call_center.models import EmployeeProfile, CallQueue
 from crm.models import CustomerMemory, CallSession
 from knowledge.models import Document, DocumentChunk
 from telephony.models import OutboundSIPTrunk, InboundPBXTrunk
+from telephony.services import initiate_outbound_call
 
 logger = logging.getLogger(__name__)
 
@@ -1004,3 +1005,52 @@ def api_user_webhooks(request):
         })
 
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_call_dial(request):
+    """
+    POST /api/v1/calls/dial/
+    Trigger an autonomous AI outbound phone call to an external customer or internal PBX extension.
+    Accepts:
+    {
+        "phone_number": "+201012345678",  // or PBX extension "101"
+        "call_goal": "تأكيد الطلب رقم 1005",
+        "profile_id": 1,                   // optional agent profile ID
+        "gateway_type": "auto",            // "auto" | "pbx" | "cloud"
+        "gateway_id": 2                    // optional PBX trunk ID
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use POST."}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON body format"}, status=400)
+
+    phone_number = str(data.get('phone_number') or '').strip()
+    if not phone_number:
+        return JsonResponse({"status": "error", "message": "phone_number is required"}, status=400)
+
+    call_goal = str(data.get('call_goal') or '').strip()
+    profile_id = data.get('profile_id')
+    gateway_type = str(data.get('gateway_type') or 'auto').strip()
+    gateway_id = data.get('gateway_id')
+
+    try:
+        res = initiate_outbound_call(
+            user=request.user,
+            phone_number=phone_number,
+            call_goal=call_goal,
+            profile_id=profile_id,
+            gateway_type=gateway_type,
+            gateway_id=gateway_id,
+        )
+        http_status = res.pop('http_status', 201)
+        return JsonResponse(res, status=http_status)
+    except Exception as e:
+        logger.exception(f"Error in api_user_call_dial for user {request.user.id}: {e}")
+        return JsonResponse({"status": "error", "message": f"Outbound call initiation failed: {str(e)}"}, status=500)
+

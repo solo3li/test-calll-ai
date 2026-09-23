@@ -390,6 +390,16 @@
         </svg>
         إنهاء المكالمة
       </button>
+
+      <div class="h-6 w-px bg-[#EAE3D9] mx-1 hidden sm:block"></div>
+
+      <!-- Outbound AI Phone Call Trigger -->
+      <button type="button" onclick="openNewAICallModal()" class="px-5 py-2.5 rounded-xl font-semibold bg-[#FAF0F2] hover:bg-[#F3E2E6] border border-[#680E23]/30 text-[#680E23] flex items-center gap-2 transition shadow-sm text-sm" title="إجراء اتصال هاتفي صادر برقم عميل أو تحويلة داخلية عبر الذكاء الاصطناعي">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#680E23]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+        </svg>
+        <span data-i18n="btn_outbound_ai_call">📞 مكالمة هاتفية صادرة (AI Call)</span>
+      </button>
     </div>
 
     <!-- Live Transcripts Panel -->
@@ -2402,18 +2412,35 @@
             </div>
           </div>
 
-          <!-- Quick cURL Code Sample -->
-          <div class="mt-4 pt-4 border-t border-[#EAE3D9]">
-            <h5 class="font-bold text-xs text-[#1C1917] mb-2 flex items-center gap-1.5">
-              <span>💻</span> <span>مثال سريع لاستدعاء الحساب (cURL Example):</span>
-            </h5>
-            <div class="relative bg-[#181514] rounded-xl p-3.5 text-xs font-mono text-emerald-400 overflow-x-auto text-left" dir="ltr">
-              <pre id="dev-curl-sample">curl -X GET "https://localhost/api/v1/account/" \
+          <!-- Quick cURL Code Samples -->
+          <div class="mt-4 pt-4 border-t border-[#EAE3D9] grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h5 class="font-bold text-xs text-[#1C1917] mb-2 flex items-center gap-1.5">
+                <span>👤</span> <span>استعلام الحساب (Get Account):</span>
+              </h5>
+              <div class="relative bg-[#181514] rounded-xl p-3.5 text-xs font-mono text-emerald-400 overflow-x-auto text-left" dir="ltr">
+                <pre id="dev-curl-sample">curl -X GET "https://localhost/api/v1/account/" \
   -H "X-API-Key: <YOUR_API_KEY>" \
   -H "Accept: application/json"</pre>
-              <button type="button" onclick="copyDevCurlSample()" class="absolute top-2.5 right-2.5 px-2 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white font-sans transition">
-                نسخ المثال
-              </button>
+                <button type="button" onclick="copyDevCurlSample()" class="absolute top-2.5 right-2.5 px-2 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white font-sans transition">
+                  نسخ
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <h5 class="font-bold text-xs text-[#680E23] mb-2 flex items-center gap-1.5">
+                <span>📞</span> <span>إجراء مكالمة صادرة بالذكاء الاصطناعي (Dial Call):</span>
+              </h5>
+              <div class="relative bg-[#181514] rounded-xl p-3.5 text-xs font-mono text-amber-300 overflow-x-auto text-left" dir="ltr">
+                <pre id="dev-curl-dial-sample">curl -X POST "https://localhost/api/v1/calls/dial/" \
+  -H "X-API-Key: <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+201012345678", "call_goal": "تأكيد تفاصيل الطلب رقم 1005"}'</pre>
+                <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('dev-curl-dial-sample').innerText); showToast('تم نسخ كود المكالمة الصادرة بنجاح');" class="absolute top-2.5 right-2.5 px-2 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white font-sans transition">
+                  نسخ
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2500,6 +2527,16 @@
             </div>
             <p class="text-xs text-[#6E645D] leading-relaxed">استعراض تفاصيل المكالمات، التسجيلات، الملخصات الذكية، واستقبال إشعارات انتهاء المكالمات.</p>
           </div>
+
+          <!-- 10. Autonomous Outbound AI Calling -->
+          <div class="p-4 rounded-2xl bg-[#FAF0F2] border border-[#680E23]/25 shadow-sm space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs text-[#680E23] flex items-center gap-1.5"><span>📞</span> <span>10. مكالمات صادرة بالذكاء الاصطناعي</span></span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-white text-[#680E23] font-bold border border-[#680E23]/20">POST /calls/dial/</span>
+            </div>
+            <p class="text-xs text-[#6E645D] leading-relaxed">اتصال آلي برقم عميل خارجي أو تحويلة سنترال داخلية، مع توجيه الروبوت للتحدث وتحقيق هدف محدد فوراً.</p>
+          </div>
+        </div>
         </div>
       </div>
 
@@ -2598,6 +2635,7 @@
         field_custom_instructions: "تعليمات وتوجيهات خاصة إضافية للشخصية (Custom Prompt Instructions - اختياري):",
         btn_save_profile: "حفظ وتطبيق على المكالمات",
         btn_delete_profile: "حذف البروفايل",
+        btn_outbound_ai_call: "📞 مكالمة هاتفية صادرة (AI Call)",
         switch_to: "English"
       },
       en: {
@@ -2658,6 +2696,7 @@
         field_custom_instructions: "Custom Prompt Instructions (Optional):",
         btn_save_profile: "Save & Apply to Calls",
         btn_delete_profile: "Delete Persona",
+        btn_outbound_ai_call: "📞 Outbound Phone Call (AI Dial)",
         switch_to: "العربية"
       }
     };
