@@ -87,37 +87,143 @@ unowned_client_res = s.get(f'{BASE_URL}/api/partner/v1/clients/999999/calls/', h
 assert unowned_client_res.status_code == 404, f"Security leak: unowned client returned ({unowned_client_res.status_code})"
 print("[PASS] Step 6: Multi-tenancy isolation verified. Unauthorized access strictly blocked with 403/404")
 
-# 7. Voice Profile Management for Sub-Client (Read & Write)
-prof_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/', json={
-    'name': 'مساعد خدمة متجر النور',
+# 7. Voice Profile Management for Sub-Client (Full RESTful CRUD)
+# 7.1 Create Profile 1 (Saudi Dialect)
+prof1_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/', json={
+    'name': 'مساعد خدمة متجر النور (سعودي)',
     'dialect': 'saudi',
     'voice_name': 'Fenrir',
-    'system_prompt': 'أنت المساعد الصوتي الرسمي لمتجر النور في الرياض، تتحدث بلهجة سعودية راقية.'
+    'persona_role': 'sales_advisor',
+    'speaking_style': 'friendly',
+    'system_prompt': 'أنت المساعد الصوتي الرسمي لمتجر النور في الرياض، تتحدث بلهجة سعودية راقية.',
+    'is_active': True
 }, headers=headers_partner)
-assert prof_post_res.status_code == 200, f"Profile post failed: {prof_post_res.text}"
+assert prof1_res.status_code in [200, 201], f"Profile 1 post failed: {prof1_res.text}"
+prof1_id = prof1_res.json()['profile']['id']
 
-prof_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/', headers=headers_partner)
-assert prof_get_res.status_code == 200
-prof_data = prof_get_res.json()
-assert prof_data['profile']['dialect'] == 'saudi'
-assert prof_data['profile']['voice_name'] == 'Fenrir'
-print("[PASS] Step 7: Voice Profile & Dialect customized programmatically for client")
+# 7.2 Create Profile 2 (Egyptian Dialect)
+prof2_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/', json={
+    'name': 'مساعد الدعم الفني (مصري)',
+    'dialect': 'egyptian',
+    'voice_name': 'Aoede',
+    'persona_role': 'customer_support',
+    'speaking_style': 'formal',
+    'system_prompt': 'أنت مستشار الدعم الفني في القاهرة، تتحدث باللهجة المصرية.',
+    'is_active': False
+}, headers=headers_partner)
+assert prof2_res.status_code in [200, 201], f"Profile 2 post failed: {prof2_res.text}"
+prof2_id = prof2_res.json()['profile']['id']
 
-# 8. Customer Memory Management for Sub-Client (Read & Write)
-mem_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', json={
+# 7.3 List Profiles & Filtering
+prof_list_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/', headers=headers_partner)
+assert prof_list_res.status_code == 200
+prof_list_data = prof_list_res.json()
+assert prof_list_data['total'] >= 2
+assert 'profiles' in prof_list_data
+assert 'profile' in prof_list_data  # Backward compatibility
+
+# Filter by active
+prof_act_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/?is_active=true', headers=headers_partner)
+assert prof_act_res.status_code == 200
+assert all(p['is_active'] is True for p in prof_act_res.json()['profiles'])
+
+# 7.4 Retrieve Profile by ID
+prof2_get = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/{prof2_id}/', headers=headers_partner)
+assert prof2_get.status_code == 200
+assert prof2_get.json()['profile']['dialect'] == 'egyptian'
+
+# 7.5 Update Profile by ID (PUT/PATCH)
+prof2_upd = s.patch(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/{prof2_id}/', json={
+    'name': 'مساعد الدعم الفني المطور (مصري)',
+    'speaking_style': 'concise'
+}, headers=headers_partner)
+assert prof2_upd.status_code == 200
+assert prof2_upd.json()['profile']['name'] == 'مساعد الدعم الفني المطور (مصري)'
+assert prof2_upd.json()['profile']['speaking_style'] == 'concise'
+
+# 7.6 Activate Profile (POST .../activate/)
+prof2_act = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/{prof2_id}/activate/', headers=headers_partner)
+assert prof2_act.status_code == 200
+assert prof2_act.json()['profile']['is_active'] is True
+
+# Verify profile 1 was automatically deactivated
+prof1_check = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/{prof1_id}/', headers=headers_partner)
+assert prof1_check.json()['profile']['is_active'] is False
+
+# 7.7 Delete Profile
+prof1_del = s.delete(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/{prof1_id}/', headers=headers_partner)
+assert prof1_del.status_code == 200
+assert prof1_del.json()['deleted_profile_id'] == prof1_id
+
+# Verify 404 after deletion
+prof1_gone = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/profiles/{prof1_id}/', headers=headers_partner)
+assert prof1_gone.status_code == 404
+print("[PASS] Step 7: Voice Profile & Personas Full CRUD (Create, List, Detail, Update, Activate, Delete) verified")
+
+# 8. Customer Memory Management for Sub-Client (Full RESTful CRUD)
+# 8.1 Create/Upsert Customer 1 Memory
+mem1_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', json={
     'caller_phone': '+966501234567',
     'customer_name': 'سلطان القحطاني',
     'permanent_memory': 'عميل مميز (VIP)، يفضل الدفع عند الاستلام ويطلب منتجات العناية بالبشرة.',
     'immediate_notes': 'استفسر عن طلبية العطور رقم #4501'
 }, headers=headers_partner)
-assert mem_post_res.status_code == 200, f"Memory post failed: {mem_post_res.text}"
+assert mem1_post_res.status_code in [200, 201], f"Memory 1 post failed: {mem1_post_res.text}"
+mem1_id = mem1_post_res.json()['memory']['id']
 
-mem_get_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', params={'phone': '+966501234567'}, headers=headers_partner)
-assert mem_get_res.status_code == 200
-mem_data = mem_get_res.json()
-assert mem_data['customer_name'] == 'سلطان القحطاني'
-assert 'VIP' in mem_data['permanent_memory']
-print("[PASS] Step 8: CRM Customer Memory updated and retrieved for client via API")
+# 8.2 Create Customer 2 Memory
+mem2_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', json={
+    'phone_number': '+966509876543',
+    'customer_name': 'ريم الدوسري',
+    'permanent_profile': {'notes': 'عميلة جديدة مهتمة بمنتجات الشاي العضوي', 'city': 'جدة'},
+    'immediate_notes': 'طلبت قائمة الأسعار عبر واتساب',
+    'total_calls_count': 1
+}, headers=headers_partner)
+assert mem2_post_res.status_code in [200, 201], f"Memory 2 post failed: {mem2_post_res.text}"
+mem2_id = mem2_post_res.json()['memory']['id']
+
+# 8.3 List Customer Memories with Pagination
+mem_list_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', params={'page': 1, 'limit': 10}, headers=headers_partner)
+assert mem_list_res.status_code == 200
+mem_list_data = mem_list_res.json()
+assert mem_list_data['total'] >= 2
+assert len(mem_list_data['memories']) >= 2
+
+# 8.4 Search Memories with Query (?q=)
+search_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', params={'q': 'سلطان'}, headers=headers_partner)
+assert search_res.status_code == 200
+assert search_res.json()['total'] >= 1
+assert any('سلطان' in m['customer_name'] for m in search_res.json()['memories'])
+
+# 8.5 Retrieve Memory by ID
+mem2_get = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/{mem2_id}/', headers=headers_partner)
+assert mem2_get.status_code == 200
+assert mem2_get.json()['memory']['customer_name'] == 'ريم الدوسري'
+
+# 8.6 Update Memory by ID (PUT/PATCH)
+mem2_upd = s.patch(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/{mem2_id}/', json={
+    'customer_name': 'ريم الدوسري (VIP)',
+    'immediate_notes': 'تم إرسال كود الخصم للعميلة بنجاح'
+}, headers=headers_partner)
+assert mem2_upd.status_code == 200
+assert mem2_upd.json()['memory']['customer_name'] == 'ريم الدوسري (VIP)'
+
+# 8.7 Backward Compatibility Check: Query single record by ?phone=
+mem_phone_res = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/', params={'phone': '+966501234567'}, headers=headers_partner)
+assert mem_phone_res.status_code == 200
+mem_phone_data = mem_phone_res.json()
+assert mem_phone_data['customer_name'] == 'سلطان القحطاني'
+assert 'VIP' in mem_phone_data['permanent_memory']
+
+# 8.8 Delete Memory by ID
+mem2_del = s.delete(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/{mem2_id}/', headers=headers_partner)
+assert mem2_del.status_code == 200
+assert mem2_del.json()['deleted_memory_id'] == mem2_id
+
+# Verify 404 after deletion
+mem2_gone = s.get(f'{BASE_URL}/api/partner/v1/clients/{client_id}/memory/{mem2_id}/', headers=headers_partner)
+assert mem2_gone.status_code == 404
+print("[PASS] Step 8: CRM Customer Memory Full CRUD (Create, List, Search, Detail, Update, Phone Lookup, Delete) verified")
 
 # 9. Knowledge Base (RAG) Ingestion for Sub-Client
 rag_post_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/documents/', data={
@@ -276,7 +382,12 @@ assert 'Headless B2B Voice SaaS' in docs_res.text
 assert 'X-Partner-Key' in docs_res.text
 assert '/api/partner/v1/clients/register/' in docs_res.text
 assert '/api/partner/v1/clients/{client_id}/employees/' in docs_res.text
-print("[PASS] Step 11.2: Interactive Partner Developer Documentation Portal verified at /api/partner/v1/docs/ (200 OK)")
+assert 'id="sec-personas"' in docs_res.text
+assert 'id="sec-memory"' in docs_res.text
+assert 'id="sec-calls"' in docs_res.text
+assert 'الصوت واللهجات والشخصيات' in docs_res.text
+assert 'ذاكرة وسياق العملاء CRM' in docs_res.text
+print("[PASS] Step 11.2: Interactive Partner Developer Documentation Portal verified with Personas & CRM sections at /api/partner/v1/docs/ (200 OK)")
 
 # 12. Direct Voice Session Token for Sub-Client
 token_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/token/', headers=headers_partner)

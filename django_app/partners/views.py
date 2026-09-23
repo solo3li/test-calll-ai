@@ -9,6 +9,8 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.db.models import Q
+from django.core.paginator import Paginator
 from livekit import api
 
 from .models import PartnerProfile, PartnerClientRelationship
@@ -378,65 +380,182 @@ def api_partner_client_calls(request, client_id):
 def api_partner_client_profile(request, client_id):
     """
     GET & POST /api/partner/v1/clients/<int:client_id>/profiles/
-    GET: retrieve active agent profile.
-    POST: create or update active agent profile (voice_name, dialect, system_prompt/custom_instructions).
+    GET: List all agent profiles for client (supports ?is_active=true/false).
+         Also returns 'active_profile' and 'profile' for backward compatibility.
+    POST: Create a new agent profile for client.
     """
     if request.method == 'GET':
-        profile = AgentProfile.objects.filter(user=request.client_user, is_active=True).first()
-        if not profile:
-            profile = AgentProfile.objects.filter(user=request.client_user).first()
-        if not profile:
-            return JsonResponse({"status": "error", "message": "No profile found for client"}, status=404)
+        qs = AgentProfile.objects.filter(user=request.client_user)
+        is_active_param = request.GET.get('is_active')
+        if is_active_param is not None:
+            val = is_active_param.strip().lower() in ('true', '1', 'yes')
+            qs = qs.filter(is_active=val)
+
+        profiles = list(qs)
+        active_profile = AgentProfile.objects.filter(user=request.client_user, is_active=True).first()
+        if not active_profile and profiles:
+            active_profile = profiles[0]
+
+        profile_data = active_profile.to_dict() if active_profile else None
+        if profile_data and 'system_prompt' not in profile_data:
+            profile_data['system_prompt'] = profile_data.get('custom_instructions', '')
+
+        profiles_list = []
+        for p in profiles:
+            d = p.to_dict()
+            d['system_prompt'] = p.custom_instructions
+            profiles_list.append(d)
+
         return JsonResponse({
             "status": "success",
             "client_id": client_id,
-            "profile": {
-                "id": profile.id,
-                "name": profile.name,
-                "dialect": profile.dialect,
-                "voice_name": profile.voice_name,
-                "system_prompt": profile.custom_instructions,
-                "custom_instructions": profile.custom_instructions,
-                "is_active": profile.is_active,
-            }
+            "total": len(profiles_list),
+            "profile": profile_data,  # backward compatibility
+            "active_profile": profile_data,
+            "profiles": profiles_list,
         })
+
     elif request.method == 'POST':
         try:
             data = json.loads(request.body.decode('utf-8')) if request.body else {}
         except Exception:
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
-        profile = AgentProfile.objects.filter(user=request.client_user, is_active=True).first()
-        if not profile:
-            profile = AgentProfile.objects.create(
-                user=request.client_user,
-                name=data.get('name') or f"مساعد {request.client_user.first_name or request.client_user.username}",
-                is_active=True
-            )
+        name = data.get('name') or f"مساعد {request.client_user.first_name or request.client_user.username}"
+        voice_name = data.get('voice_name', 'Aoede')
+        gender = data.get('gender', 'female')
+        dialect = data.get('dialect', 'egyptian')
+        persona_role = data.get('persona_role', 'customer_support')
+        speaking_style = data.get('speaking_style', 'friendly')
+        custom_instructions = data.get('custom_instructions') or data.get('system_prompt', '')
+        is_active = data.get('is_active', True)
+
+        profile = AgentProfile.objects.create(
+            user=request.client_user,
+            name=name,
+            voice_name=voice_name,
+            gender=gender,
+            dialect=dialect,
+            persona_role=persona_role,
+            speaking_style=speaking_style,
+            custom_instructions=custom_instructions,
+            is_active=is_active
+        )
+
+        p_dict = profile.to_dict()
+        p_dict['system_prompt'] = profile.custom_instructions
+
+        return JsonResponse({
+            "status": "success",
+            "message": "Agent profile created successfully",
+            "client_id": client_id,
+            "profile": p_dict,
+        }, status=201)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_profile_detail(request, client_id, profile_id):
+    """
+    GET, PUT, PATCH, DELETE /api/partner/v1/clients/<int:client_id>/profiles/<int:profile_id>/
+    GET: Retrieve specific profile.
+    PUT/PATCH: Update specific profile.
+    DELETE: Delete specific profile.
+    """
+    profile = AgentProfile.objects.filter(user=request.client_user, id=profile_id).first()
+    if not profile:
+        return JsonResponse({"status": "error", "message": "Agent profile not found"}, status=404)
+
+    if request.method == 'GET':
+        p_dict = profile.to_dict()
+        p_dict['system_prompt'] = profile.custom_instructions
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "profile": p_dict
+        })
+
+    elif request.method in ('PUT', 'PATCH'):
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
         if 'name' in data:
-            profile.name = data['name']
-        if 'dialect' in data:
-            profile.dialect = data['dialect']
+            profile.name = str(data['name']).strip()
         if 'voice_name' in data:
-            profile.voice_name = data['voice_name']
-        if 'system_prompt' in data or 'custom_instructions' in data:
+            profile.voice_name = str(data['voice_name']).strip()
+        if 'gender' in data:
+            profile.gender = str(data['gender']).strip()
+        if 'dialect' in data:
+            profile.dialect = str(data['dialect']).strip()
+        if 'persona_role' in data:
+            profile.persona_role = str(data['persona_role']).strip()
+        if 'speaking_style' in data:
+            profile.speaking_style = str(data['speaking_style']).strip()
+        if 'custom_instructions' in data or 'system_prompt' in data:
             profile.custom_instructions = data.get('custom_instructions') or data.get('system_prompt', '')
+        if 'is_active' in data:
+            profile.is_active = bool(data['is_active'])
 
         profile.save()
+
+        p_dict = profile.to_dict()
+        p_dict['system_prompt'] = profile.custom_instructions
         return JsonResponse({
             "status": "success",
             "message": "Profile updated successfully",
             "client_id": client_id,
-            "profile": {
-                "id": profile.id,
-                "name": profile.name,
-                "dialect": profile.dialect,
-                "voice_name": profile.voice_name,
-                "system_prompt": profile.custom_instructions,
-            }
+            "profile": p_dict
         })
+
+    elif request.method == 'DELETE':
+        was_active = profile.is_active
+        profile.delete()
+        if was_active:
+            next_profile = AgentProfile.objects.filter(user=request.client_user).order_by('-updated_at').first()
+            if next_profile:
+                next_profile.is_active = True
+                next_profile.save()
+
+        return JsonResponse({
+            "status": "success",
+            "message": "Agent profile deleted successfully",
+            "client_id": client_id,
+            "deleted_profile_id": profile_id
+        })
+
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_profile_activate(request, client_id, profile_id):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/profiles/<int:profile_id>/activate/
+    Activate a specific agent profile for this client.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    profile = AgentProfile.objects.filter(user=request.client_user, id=profile_id).first()
+    if not profile:
+        return JsonResponse({"status": "error", "message": "Agent profile not found"}, status=404)
+
+    profile.is_active = True
+    profile.save()
+
+    p_dict = profile.to_dict()
+    p_dict['system_prompt'] = profile.custom_instructions
+
+    return JsonResponse({
+        "status": "success",
+        "message": "Agent profile activated successfully",
+        "client_id": client_id,
+        "profile": p_dict
+    })
 
 
 @csrf_exempt
@@ -444,37 +563,74 @@ def api_partner_client_profile(request, client_id):
 def api_partner_client_memory(request, client_id):
     """
     GET & POST /api/partner/v1/clients/<int:client_id>/memory/
-    GET: retrieve customer memory context.
-    POST: set or update permanent memory / immediate notes for client.
+    GET:
+      - If 'phone' or 'phone_number' query param provided: retrieve specific customer memory context (backward compatible).
+      - Otherwise: list customer memories with pagination (?page=1&limit=20) and search (?q=...).
+    POST:
+      - Upsert customer memory record by phone_number.
     """
     if request.method == 'GET':
-        raw_phone = request.GET.get('phone') or request.GET.get('phone_number') or 'web_dashboard'
-        phone = str(raw_phone).strip()
-        if not phone.startswith('+') and phone.isdigit() and len(phone) >= 9:
-            phone = '+' + phone
+        raw_phone = request.GET.get('phone') or request.GET.get('phone_number')
+        if raw_phone:
+            phone = str(raw_phone).strip()
+            if not phone.startswith('+') and phone.isdigit() and len(phone) >= 9:
+                phone = '+' + phone
 
-        mem = CustomerMemory.objects.filter(user=request.client_user, phone_number=phone).first()
-        if not mem and phone != 'web_dashboard' and len(phone) >= 7:
-            mem = CustomerMemory.objects.filter(user=request.client_user, phone_number__endswith=phone[-8:]).first()
+            mem = CustomerMemory.objects.filter(user=request.client_user, phone_number=phone).first()
+            if not mem and phone != 'web_dashboard' and len(phone) >= 7:
+                mem = CustomerMemory.objects.filter(user=request.client_user, phone_number__endswith=phone[-8:]).first()
 
-        perm_text = ""
-        c_name = ""
-        if mem:
-            c_name = mem.customer_name
-            if isinstance(mem.permanent_profile, dict):
-                perm_text = mem.permanent_profile.get('notes') or mem.permanent_profile.get('permanent_memory') or str(mem.permanent_profile)
-                if not c_name:
-                    c_name = mem.permanent_profile.get('customer_name', '')
+            perm_text = ""
+            c_name = ""
+            if mem:
+                c_name = mem.customer_name
+                if isinstance(mem.permanent_profile, dict):
+                    perm_text = mem.permanent_profile.get('notes') or mem.permanent_profile.get('permanent_memory') or str(mem.permanent_profile)
+                    if not c_name:
+                        c_name = mem.permanent_profile.get('customer_name', '')
+
+            return JsonResponse({
+                "status": "success",
+                "client_id": client_id,
+                "phone_number": phone,
+                "customer_name": c_name,
+                "permanent_memory": perm_text,
+                "immediate_notes": mem.last_interaction_summary if mem else "",
+                "total_calls": mem.total_calls_count if mem else 0,
+                "memory": mem.to_dict() if mem else None,
+            })
+
+        # List all memories with query search & pagination
+        qs = CustomerMemory.objects.filter(user=request.client_user)
+        q = request.GET.get('q', '').strip()
+        if q:
+            qs = qs.filter(Q(customer_name__icontains=q) | Q(phone_number__icontains=q))
+
+        try:
+            page_num = max(1, int(request.GET.get('page', 1)))
+        except (ValueError, TypeError):
+            page_num = 1
+
+        try:
+            limit = min(100, max(1, int(request.GET.get('limit', 20))))
+        except (ValueError, TypeError):
+            limit = 20
+
+        paginator = Paginator(qs, limit)
+        page_obj = paginator.get_page(page_num)
+
+        memories_list = [m.to_dict() for m in page_obj.object_list]
 
         return JsonResponse({
             "status": "success",
             "client_id": client_id,
-            "phone_number": phone,
-            "customer_name": c_name,
-            "permanent_memory": perm_text,
-            "immediate_notes": mem.last_interaction_summary if mem else "",
-            "total_calls": mem.total_calls_count if mem else 0,
+            "total": paginator.count,
+            "page": page_num,
+            "limit": limit,
+            "total_pages": paginator.num_pages,
+            "memories": memories_list
         })
+
     elif request.method == 'POST':
         try:
             data = json.loads(request.body.decode('utf-8')) if request.body else {}
@@ -490,34 +646,131 @@ def api_partner_client_memory(request, client_id):
         if not mem and phone != 'web_dashboard' and len(phone) >= 7:
             mem = CustomerMemory.objects.filter(user=request.client_user, phone_number__endswith=phone[-8:]).first()
 
+        created = False
         if not mem:
             mem = CustomerMemory.objects.create(
                 user=request.client_user,
                 phone_number=phone,
                 customer_name=data.get('customer_name', '')
             )
+            created = True
 
         if 'customer_name' in data:
-            mem.customer_name = data['customer_name']
-        if 'permanent_memory' in data:
+            mem.customer_name = str(data['customer_name']).strip()
+
+        if 'permanent_profile' in data and isinstance(data['permanent_profile'], dict):
+            prof = data['permanent_profile']
+            if mem.customer_name and not prof.get('customer_name'):
+                prof['customer_name'] = mem.customer_name
+            mem.permanent_profile = prof
+        elif 'permanent_memory' in data:
             prof = mem.permanent_profile if isinstance(mem.permanent_profile, dict) else {}
             prof['notes'] = data['permanent_memory']
             prof['customer_name'] = mem.customer_name
             mem.permanent_profile = prof
+
         if 'immediate_notes' in data:
             mem.last_interaction_summary = data['immediate_notes']
+        elif 'last_interaction_summary' in data:
+            mem.last_interaction_summary = data['last_interaction_summary']
+
+        if 'total_calls_count' in data:
+            try:
+                mem.total_calls_count = int(data['total_calls_count'])
+            except (ValueError, TypeError):
+                pass
+
         mem.save()
 
         perm_text = mem.permanent_profile.get('notes', '') if isinstance(mem.permanent_profile, dict) else str(mem.permanent_profile)
         return JsonResponse({
             "status": "success",
-            "message": "Customer memory updated successfully",
+            "message": "Customer memory created successfully" if created else "Customer memory updated successfully",
             "client_id": client_id,
             "phone_number": phone,
             "customer_name": mem.customer_name,
             "permanent_memory": perm_text,
             "immediate_notes": mem.last_interaction_summary,
+            "memory": mem.to_dict()
+        }, status=201 if created else 200)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_memory_detail(request, client_id, memory_id):
+    """
+    GET, PUT, PATCH, DELETE /api/partner/v1/clients/<int:client_id>/memory/<int:memory_id>/
+    GET: Retrieve customer memory by ID.
+    PUT/PATCH: Update customer memory fields by ID.
+    DELETE: Delete customer memory record.
+    """
+    mem = CustomerMemory.objects.filter(user=request.client_user, id=memory_id).first()
+    if not mem:
+        return JsonResponse({"status": "error", "message": "Customer memory not found"}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "memory": mem.to_dict()
         })
+
+    elif request.method in ('PUT', 'PATCH'):
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        if 'customer_name' in data:
+            mem.customer_name = str(data['customer_name']).strip()
+        if 'phone_number' in data:
+            phone = str(data['phone_number']).strip()
+            if not phone.startswith('+') and phone.isdigit() and len(phone) >= 9:
+                phone = '+' + phone
+            mem.phone_number = phone
+
+        if 'permanent_profile' in data and isinstance(data['permanent_profile'], dict):
+            prof = data['permanent_profile']
+            if mem.customer_name and not prof.get('customer_name'):
+                prof['customer_name'] = mem.customer_name
+            mem.permanent_profile = prof
+        elif 'permanent_memory' in data:
+            prof = mem.permanent_profile if isinstance(mem.permanent_profile, dict) else {}
+            prof['notes'] = data['permanent_memory']
+            prof['customer_name'] = mem.customer_name
+            mem.permanent_profile = prof
+
+        if 'immediate_notes' in data:
+            mem.last_interaction_summary = data['immediate_notes']
+        elif 'last_interaction_summary' in data:
+            mem.last_interaction_summary = data['last_interaction_summary']
+
+        if 'total_calls_count' in data:
+            try:
+                mem.total_calls_count = int(data['total_calls_count'])
+            except (ValueError, TypeError):
+                pass
+
+        mem.save()
+
+        return JsonResponse({
+            "status": "success",
+            "message": "Customer memory updated successfully",
+            "client_id": client_id,
+            "memory": mem.to_dict()
+        })
+
+    elif request.method == 'DELETE':
+        mem.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": "Customer memory deleted successfully",
+            "client_id": client_id,
+            "deleted_memory_id": memory_id
+        })
+
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
 

@@ -220,6 +220,199 @@
         </div>
       </section>
 
+      <!-- Section: Agent Personas & Dialects (Full CRUD) -->
+      <section id="sec-personas" class="space-y-6">
+        <h2 class="text-xl font-bold text-brand-primary flex items-center gap-2">
+          <span>🗣️</span><span>الصوت واللهجات والشخصيات (Agent Personas & Dialects Full CRUD)</span>
+        </h2>
+
+        <!-- List & Create Profiles -->
+        <div class="bg-white rounded-2xl border border-brand-border p-6 shadow-sm space-y-4 endpoint-card">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-border pb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="bg-amber-600 text-white font-mono text-xs font-black px-2 py-0.5 rounded">GET</span>
+              <span class="bg-brand-primary text-white font-mono text-xs font-black px-2 py-0.5 rounded">POST</span>
+              <code class="font-mono text-sm font-bold text-brand-dark">/api/partner/v1/clients/{client_id}/profiles/</code>
+            </div>
+            <span class="text-xs text-brand-primary bg-brand-canvas border border-brand-border px-2.5 py-0.5 rounded-full font-bold">إدارة بروفايلات الصوت</span>
+          </div>
+
+          <p class="text-xs text-brand-muted">
+            <strong class="text-brand-dark">GET:</strong> استعراض جميع شخصيات الذكاء الاصطناعي مع إمكانية التصفية عبر <code class="font-mono text-brand-primary">?is_active=true</code>.<br>
+            <strong class="text-brand-dark">POST:</strong> إنشاء بروفايل صوتي وشخصية جديدة مخصصة لهذا العميل.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <div class="font-bold text-brand-primary mb-1.5">POST Body (إنشاء شخصية جديدة)</div>
+              <pre class="bg-brand-dark text-amber-200 p-3 rounded-xl overflow-x-auto">{
+  "name": "مساعد المبيعات السعودي",
+  "voice_name": "Aoede",
+  "gender": "female",
+  "dialect": "saudi",
+  "persona_role": "sales_advisor",
+  "speaking_style": "friendly",
+  "custom_instructions": "أنت مستشار مبيعات ودود تتحدث باللهجة السعودية البيضاء...",
+  "is_active": true
+}</pre>
+            </div>
+            <div>
+              <div class="font-bold text-emerald-700 mb-1.5">Response (201 Created)</div>
+              <pre class="bg-brand-dark text-emerald-300 p-3 rounded-xl overflow-x-auto">{
+  "status": "success",
+  "message": "Agent profile created successfully",
+  "client_id": 19,
+  "profile": {
+    "id": 5,
+    "name": "مساعد المبيعات السعودي",
+    "voice_name": "Aoede",
+    "gender": "female",
+    "gender_display": "أنثى",
+    "dialect": "saudi",
+    "dialect_display": "لهجة خليجية / سعودية",
+    "persona_role": "sales_advisor",
+    "persona_role_display": "مستشار تسويق ومبيعات شاطر",
+    "speaking_style": "friendly",
+    "speaking_style_display": "ودود ولطيف ومرح",
+    "custom_instructions": "أنت مستشار مبيعات ودود تتحدث باللهجة السعودية البيضاء...",
+    "is_active": true
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profile Detail, Update, Delete -->
+        <div class="bg-white rounded-2xl border border-brand-border p-6 shadow-sm space-y-4 endpoint-card">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-border pb-3">
+            <div class="flex items-center gap-2">
+              <span class="bg-amber-600 text-white font-mono text-xs font-black px-2 py-0.5 rounded">GET</span>
+              <span class="bg-brand-primary text-white font-mono text-xs font-black px-2 py-0.5 rounded">PUT/PATCH</span>
+              <span class="bg-red-700 text-white font-mono text-xs font-black px-2 py-0.5 rounded">DELETE</span>
+              <code class="font-mono text-sm font-bold text-brand-dark">/api/partner/v1/clients/{client_id}/profiles/{profile_id}/</code>
+            </div>
+            <span class="text-xs text-stone-700 bg-stone-100 border border-stone-200 px-2.5 py-0.5 rounded-full font-bold">تفاصيل وتعديل وحذف</span>
+          </div>
+
+          <p class="text-xs text-brand-muted">
+            جلب تفاصيل بروفايل صوتي محدد، تعديل الصوت أو اللهجة أو التعليمات، أو حذفه نهائياً.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <div class="font-bold text-brand-primary mb-1.5">PUT / PATCH Body</div>
+              <pre class="bg-brand-dark text-amber-200 p-3 rounded-xl overflow-x-auto">{
+  "name": "مستشار الدعم الفني المصري",
+  "dialect": "egyptian",
+  "voice_name": "Fenrir",
+  "speaking_style": "formal"
+}</pre>
+            </div>
+            <div>
+              <div class="font-bold text-emerald-700 mb-1.5">DELETE Response (200 OK)</div>
+              <pre class="bg-brand-dark text-emerald-300 p-3 rounded-xl overflow-x-auto">{
+  "status": "success",
+  "message": "Agent profile deleted successfully",
+  "client_id": 19,
+  "deleted_profile_id": 5
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profile Activate -->
+        <div class="bg-white rounded-2xl border border-brand-border p-6 shadow-sm space-y-4 endpoint-card">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-border pb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="bg-emerald-600 text-white font-mono text-xs font-black px-2.5 py-1 rounded-md">POST</span>
+              <code class="font-mono text-sm font-bold text-brand-dark">/api/partner/v1/clients/{client_id}/profiles/{profile_id}/activate/</code>
+            </div>
+            <span class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">تفعيل الشخصية الافتراضية</span>
+          </div>
+          <p class="text-xs text-brand-muted">تعيين هذه الشخصية كبروفايل نشط للمكالمات القادمة والصادرة وتعطيل باقي البروفايلات تلقائياً.</p>
+        </div>
+      </section>
+
+      <!-- Section: Customer Memory & CRM (Full CRUD) -->
+      <section id="sec-memory" class="space-y-6">
+        <h2 class="text-xl font-bold text-brand-primary flex items-center gap-2">
+          <span>🧠</span><span>ذاكرة وسياق العملاء CRM (Customer Memory Full CRUD)</span>
+        </h2>
+
+        <!-- List & Create/Upsert Memory -->
+        <div class="bg-white rounded-2xl border border-brand-border p-6 shadow-sm space-y-4 endpoint-card">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-border pb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="bg-amber-600 text-white font-mono text-xs font-black px-2 py-0.5 rounded">GET</span>
+              <span class="bg-brand-primary text-white font-mono text-xs font-black px-2 py-0.5 rounded">POST</span>
+              <code class="font-mono text-sm font-bold text-brand-dark">/api/partner/v1/clients/{client_id}/memory/</code>
+            </div>
+            <span class="text-xs text-brand-primary bg-brand-canvas border border-brand-border px-2.5 py-0.5 rounded-full font-bold">سجلات الذاكرة التراكمية</span>
+          </div>
+
+          <p class="text-xs text-brand-muted">
+            <strong class="text-brand-dark">GET:</strong> استعراض سجلات العملاء مع دعم البحث بالاسم أو الرقم <code class="font-mono text-brand-primary">?q=+966</code> والترقيم <code class="font-mono text-brand-primary">?page=1&limit=20</code>، أو الاستعلام عن عميل محدد عبر <code class="font-mono text-brand-primary">?phone=+966501234567</code>.<br>
+            <strong class="text-brand-dark">POST:</strong> إضافة أو تحديث ملف العميل التراكمي وملاحظاته الفورية وعدد اتصالاته.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <div class="font-bold text-brand-primary mb-1.5">POST Body (تحديث/إنشاء ذاكرة عميل)</div>
+              <pre class="bg-brand-dark text-amber-200 p-3 rounded-xl overflow-x-auto">{
+  "phone_number": "+966501234567",
+  "customer_name": "عبدالله الشمري",
+  "permanent_profile": {
+    "city": "الرياض",
+    "vip_tier": "Gold",
+    "notes": "يفضل الشحن السريع بالصباح ومهتم بمنتجات العطور"
+  },
+  "immediate_notes": "استفسر عن كود الخصم وتم إرساله له بنجاح",
+  "total_calls_count": 3
+}</pre>
+            </div>
+            <div>
+              <div class="font-bold text-emerald-700 mb-1.5">Response (200 / 201)</div>
+              <pre class="bg-brand-dark text-emerald-300 p-3 rounded-xl overflow-x-auto">{
+  "status": "success",
+  "message": "Customer memory updated successfully",
+  "client_id": 19,
+  "phone_number": "+966501234567",
+  "customer_name": "عبدالله الشمري",
+  "memory": {
+    "id": 12,
+    "phone_number": "+966501234567",
+    "customer_name": "عبدالله الشمري",
+    "permanent_profile": {
+      "city": "الرياض",
+      "vip_tier": "Gold",
+      "notes": "يفضل الشحن السريع بالصباح..."
+    },
+    "last_interaction_summary": "استفسر عن كود الخصم...",
+    "total_calls_count": 3
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Memory Detail, Update, Delete -->
+        <div class="bg-white rounded-2xl border border-brand-border p-6 shadow-sm space-y-4 endpoint-card">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-border pb-3">
+            <div class="flex items-center gap-2">
+              <span class="bg-amber-600 text-white font-mono text-xs font-black px-2 py-0.5 rounded">GET</span>
+              <span class="bg-brand-primary text-white font-mono text-xs font-black px-2 py-0.5 rounded">PUT/PATCH</span>
+              <span class="bg-red-700 text-white font-mono text-xs font-black px-2 py-0.5 rounded">DELETE</span>
+              <code class="font-mono text-sm font-bold text-brand-dark">/api/partner/v1/clients/{client_id}/memory/{memory_id}/</code>
+            </div>
+            <span class="text-xs text-stone-700 bg-stone-100 border border-stone-200 px-2.5 py-0.5 rounded-full font-bold">إدارة ملف العميل بالمعرف</span>
+          </div>
+
+          <p class="text-xs text-brand-muted">
+            جلب ملف العميل بالـ ID الخاص به، تعديل الحقول التراكمية، أو حذف ملف الذاكرة بالكامل وتصفيره.
+          </p>
+        </div>
+      </section>
+
       <!-- Section: Employees CRUD -->
       <section id="sec-employees" class="space-y-6">
         <h2 class="text-xl font-bold text-brand-primary flex items-center gap-2">
@@ -433,6 +626,52 @@
             <span class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">إصدار توكن الغرفة</span>
           </div>
           <p class="text-xs text-brand-muted">يتحقق تلقائياً من رصيد الشريك وسقف استهلاك العميل، ويصدر توكن اتصال صوتي مشفر لمحادثة الذكاء الاصطناعي في متصفح أو تطبيق العميل.</p>
+        </div>
+      </section>
+
+      <!-- Section: Call Logs & Billing -->
+      <section id="sec-calls" class="space-y-6">
+        <h2 class="text-xl font-bold text-brand-primary flex items-center gap-2">
+          <span>📊</span><span>سجلات المكالمات والفوترة (Call Logs & Usage Billing)</span>
+        </h2>
+
+        <div class="bg-white rounded-2xl border border-brand-border p-6 shadow-sm space-y-4 endpoint-card">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-border pb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="bg-amber-600 text-white font-mono text-xs font-black px-2.5 py-1 rounded-md">GET</span>
+              <code class="font-mono text-sm font-bold text-brand-dark">/api/partner/v1/clients/{client_id}/calls/</code>
+            </div>
+            <span class="text-xs text-stone-700 bg-stone-100 border border-stone-200 px-2.5 py-0.5 rounded-full font-bold">سجلات المكالمات</span>
+          </div>
+          <p class="text-xs text-brand-muted">استعراض كافة تفاصيل المكالمات الهاتفية ومكالمات الويب الخاصة بهذا العميل مع مدة المكالمة، الدقائق المفوترة، تكلفة المكالمة، وملخص الذكاء الاصطناعي والتسجيل الصوتي إن وجد.</p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <div class="font-bold text-brand-primary mb-1.5">Request cURL</div>
+              <pre class="bg-brand-dark text-amber-200 p-3 rounded-xl overflow-x-auto">curl -X GET "https://platform.domain/api/partner/v1/clients/19/calls/" \
+  -H "X-Partner-Key: pk_live_..."</pre>
+            </div>
+            <div>
+              <div class="font-bold text-emerald-700 mb-1.5">Response (200 OK)</div>
+              <pre class="bg-brand-dark text-emerald-300 p-3 rounded-xl overflow-x-auto">{
+  "status": "success",
+  "client_id": 19,
+  "total_calls": 1,
+  "total_billed_minutes": 2,
+  "calls": [
+    {
+      "room_name": "room_partner_1_19_call_101",
+      "caller_phone": "+966501234567",
+      "duration_seconds": 65,
+      "billed_minutes": 2,
+      "cost": 0.06,
+      "summary": "استفسار عن الشحن وتمت الإفادة بأن الشحن مجاني فوق 200 ريال.",
+      "created_at": "2026-09-23 11:30"
+    }
+  ]
+}</pre>
+            </div>
+          </div>
         </div>
       </section>
 
