@@ -1614,15 +1614,22 @@ def api_partner_docs(request):
     """
     GET /api/partner/v1/docs/
     Official Interactive Scalar API Reference for Partners & SaaS Integrations (Burgundy & Off-White Theme).
+    Supports bilingual Arabic & English switching (?lang=ar | ?lang=en).
     """
     partner = None
     if request.user.is_authenticated:
         partner = PartnerProfile.objects.filter(user=request.user, status='approved').first()
 
+    lang = request.GET.get('lang', 'ar').lower().strip()
+    if lang not in ('ar', 'en'):
+        lang = 'ar'
+
     return render(request, 'partners/scalar_docs.html', {
         'partner': partner,
         'partner_api_key': partner.api_key if partner else '',
-        'base_url': request.build_absolute_uri('/')[:-1]
+        'base_url': request.build_absolute_uri('/')[:-1],
+        'current_lang': lang,
+        'is_ar': (lang == 'ar'),
     })
 
 
@@ -1630,13 +1637,17 @@ def api_partner_openapi_spec(request):
     """
     GET /api/partner/v1/docs/openapi.json
     Dynamically serves OpenAPI 3.1 specification for the Partner API.
+    Supports bilingual content (?lang=ar | ?lang=en).
     Uses relative server URL so the interactive client seamlessly adopts
     the active browser origin, protocol (HTTP/HTTPS), and port.
     """
-    server_url = "/api/partner/v1"
-    spec = get_partner_openapi_spec(server_url=server_url)
-    return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+    lang = request.GET.get('lang', 'ar').lower().strip()
+    if lang not in ('ar', 'en'):
+        lang = 'ar'
 
+    server_url = "/api/partner/v1"
+    spec = get_partner_openapi_spec(server_url=server_url, lang=lang)
+    return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
 
 
 def api_partner_docs_scalar(request):
