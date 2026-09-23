@@ -62,11 +62,13 @@ assert dash_data['kpis']['custom_rate'] == 0.03
 print("[PASS] Step 4: Web UI Dashboard returns approved status and custom wholesale rate")
 
 # 5. Headless Client Registration via Partner API Key
+import uuid
+unique_suffix = uuid.uuid4().hex[:6]
 headers_partner = {'X-Partner-Key': partner_api_key}
 reg_payload = {
-    'external_reference': 'sub_store_9942',
-    'name': 'متجر النور التجريبي',
-    'email': 'store9942@saas-demo.com',
+    'external_reference': f'sub_store_{unique_suffix}',
+    'name': f'متجر النور التجريبي ({unique_suffix})',
+    'email': f'store_{unique_suffix}@saas-demo.com',
     'spending_cap': 25.00,
     'minute_cap': 200
 }

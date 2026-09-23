@@ -108,30 +108,111 @@ def query_knowledge_base_sync(query: str, user_id: int, genai_client=None, top_k
         logger.error(f"Failed to query knowledge API: {e}", exc_info=True)
         return f"حدث خطأ أثناء البحث في المستندات: {e}"
 
-def fetch_user_mcp_servers_sync(user_id: int) -> list:
+def parse_mcp_servers_from_bootstrap(bootstrap: dict) -> list:
+    """Extract and format active MCP servers from bootstrap dictionary."""
+    servers = bootstrap.get("mcp_servers", []) if bootstrap else []
+    clean_servers = []
+    for s in servers:
+        if not s or not s.get("is_active", True):
+            continue
+        tools = s.get("cached_tools", [])
+        if isinstance(tools, str):
+            try:
+                tools = json.loads(tools)
+            except Exception:
+                tools = []
+        clean_servers.append({
+            "server_url": s.get("server_url", ""),
+            "auth_token": s.get("auth_token", ""),
+            "tools": tools or [],
+            "name": s.get("name", "خادم MCP")
+        })
+    return clean_servers
+
+def parse_customer_memory_from_bootstrap(bootstrap: dict, caller_phone: str = "web_dashboard") -> dict:
+    """Extract and format customer memory from bootstrap dictionary."""
+    if not bootstrap:
+        return {"phone_number": caller_phone, "permanent_profile": {}, "last_interaction_summary": "", "card_text": "", "total_calls_count": 0}
+    mem = bootstrap.get("customer_memory", {})
+    prof = mem.get("permanent_profile") or {}
+    if isinstance(prof, str):
+        try:
+            prof = json.loads(prof)
+        except Exception:
+            prof = {}
+    summary = mem.get("last_interaction_summary", "")
+
+    parts = []
+    if prof:
+        items = []
+        if prof.get("customer_name"):
+            items.append(f"اسم العميل المفضل: {prof['customer_name']}")
+        phone_val = caller_phone if caller_phone != 'web_dashboard' else prof.get("phone")
+        if phone_val:
+            items.append(f"الهاتف: {phone_val}")
+        if prof.get("city") or prof.get("address"):
+            items.append(f"العنوان/المدينة: {prof.get('city') or prof.get('address')}")
+        if prof.get("preferences"):
+            prefs = prof['preferences']
+            if isinstance(prefs, list):
+                prefs = "، ".join(str(p) for p in prefs)
+            items.append(f"تفضيلات واهتمامات العميل: {prefs}")
+        if prof.get("notes"):
+            items.append(f"ملاحظات هامة: {prof['notes']}")
+        if items:
+            parts.append("البيانات الدائمة للعميل:\n- " + "\n- ".join(items))
+
+    if summary:
+        parts.append(f"الذاكرة اللحظية من آخر تواصل:\n{summary}")
+
+    card_text = ""
+    if parts:
+        phone_label = f" ({caller_phone})" if caller_phone and caller_phone != 'web_dashboard' else ""
+        card_text = f"ذاكرة وسياق العميل{phone_label} من المكالمات السابقة (استخدمها بذكاء وعفوية للتذكر والترحيب بالمتابعة):\n" + "\n\n".join(parts)
+
+    return {
+        "phone_number": caller_phone,
+        "permanent_profile": prof,
+        "last_interaction_summary": summary,
+        "card_text": card_text,
+        "total_calls_count": mem.get("total_calls_count", 0)
+    }
+
+def parse_active_profile_from_bootstrap(bootstrap: dict) -> dict:
+    """Extract active profile from bootstrap dictionary with fallbacks."""
+    default_profile = {
+        "name": "نورهان - خدمة عملاء مصرية",
+        "voice_name": "Aoede",
+        "gender": "female",
+        "dialect": "egyptian",
+        "persona_role": "customer_support",
+        "speaking_style": "friendly",
+        "custom_instructions": ""
+    }
+    if not bootstrap:
+        return default_profile
+    prof = bootstrap.get("profile")
+    if prof and isinstance(prof, dict):
+        return {
+            "voice_name": prof.get("voice_name") or "Aoede",
+            "gender": prof.get("gender") or "female",
+            "dialect": prof.get("dialect") or "egyptian",
+            "persona_role": prof.get("persona_role") or "customer_support",
+            "speaking_style": prof.get("speaking_style") or "friendly",
+            "custom_instructions": prof.get("custom_instructions") or "",
+            "name": prof.get("name") or "المساعد"
+        }
+    return default_profile
+
+def fetch_user_mcp_servers_sync(user_id: int, bootstrap: dict = None) -> list:
     """Fetch all active external MCP servers and cached tools for user via Django API."""
+    if bootstrap is not None:
+        return parse_mcp_servers_from_bootstrap(bootstrap)
     if not user_id:
         return []
     try:
-        bootstrap = fetch_agent_bootstrap_sync(user_id)
-        servers = bootstrap.get("mcp_servers", [])
-        clean_servers = []
-        for s in servers:
-            if not s or not s.get("is_active", True):
-                continue
-            tools = s.get("cached_tools", [])
-            if isinstance(tools, str):
-                try:
-                    tools = json.loads(tools)
-                except Exception:
-                    tools = []
-            clean_servers.append({
-                "server_url": s.get("server_url", ""),
-                "auth_token": s.get("auth_token", ""),
-                "tools": tools or [],
-                "name": s.get("name", "خادم MCP")
-            })
-        return clean_servers
+        b = fetch_agent_bootstrap_sync(user_id)
+        return parse_mcp_servers_from_bootstrap(b)
     except Exception as e:
         logger.error(f"Error fetching MCP servers for user {user_id}: {e}")
         return []
@@ -171,90 +252,31 @@ async def execute_mcp_tool_call(server_url: str, auth_token: str, tool_name: str
         logger.error(f"Error calling MCP tool '{tool_name}' on {server_url}: {ex}", exc_info=True)
         return f"حدث خطأ أثناء الاتصال بنظام المتجر: {str(ex)}"
 
-def fetch_user_active_profile_sync(user_id: int) -> dict:
+def fetch_user_active_profile_sync(user_id: int, bootstrap: dict = None) -> dict:
     """Fetch active agent profile for user via Django API."""
-    default_profile = {
-        "name": "نورهان - خدمة عملاء مصرية",
-        "voice_name": "Aoede",
-        "gender": "female",
-        "dialect": "egyptian",
-        "persona_role": "customer_support",
-        "speaking_style": "friendly",
-        "custom_instructions": ""
-    }
+    if bootstrap is not None:
+        return parse_active_profile_from_bootstrap(bootstrap)
     if not user_id:
-        return default_profile
+        return parse_active_profile_from_bootstrap({})
     try:
-        bootstrap = fetch_agent_bootstrap_sync(user_id)
-        prof = bootstrap.get("profile")
-        if prof and isinstance(prof, dict):
-            return {
-                "voice_name": prof.get("voice_name") or "Aoede",
-                "gender": prof.get("gender") or "female",
-                "dialect": prof.get("dialect") or "egyptian",
-                "persona_role": prof.get("persona_role") or "customer_support",
-                "speaking_style": prof.get("speaking_style") or "friendly",
-                "custom_instructions": prof.get("custom_instructions") or "",
-                "name": prof.get("name") or "المساعد"
-            }
-        return default_profile
+        b = fetch_agent_bootstrap_sync(user_id)
+        return parse_active_profile_from_bootstrap(b)
     except Exception as e:
         logger.error(f"Error fetching active profile for user {user_id}: {e}")
-        return default_profile
+        return parse_active_profile_from_bootstrap({})
 
-def fetch_customer_memory_sync(user_id: int, caller_phone: str = "web_dashboard") -> dict:
+def fetch_customer_memory_sync(user_id: int, caller_phone: str = "web_dashboard", bootstrap: dict = None) -> dict:
     """Fetch customer memory (permanent profile + immediate summary) for a specific phone number via Django API."""
+    if bootstrap is not None:
+        return parse_customer_memory_from_bootstrap(bootstrap, caller_phone)
     if not user_id:
-        return {}
+        return parse_customer_memory_from_bootstrap({}, caller_phone)
     try:
-        bootstrap = fetch_agent_bootstrap_sync(user_id, caller_phone)
-        mem = bootstrap.get("customer_memory", {})
-        prof = mem.get("permanent_profile") or {}
-        if isinstance(prof, str):
-            try:
-                prof = json.loads(prof)
-            except Exception:
-                prof = {}
-        summary = mem.get("last_interaction_summary", "")
-
-        parts = []
-        if prof:
-            items = []
-            if prof.get("customer_name"):
-                items.append(f"اسم العميل المفضل: {prof['customer_name']}")
-            phone_val = caller_phone if caller_phone != 'web_dashboard' else prof.get("phone")
-            if phone_val:
-                items.append(f"الهاتف: {phone_val}")
-            if prof.get("city") or prof.get("address"):
-                items.append(f"العنوان/المدينة: {prof.get('city') or prof.get('address')}")
-            if prof.get("preferences"):
-                prefs = prof['preferences']
-                if isinstance(prefs, list):
-                    prefs = "، ".join(str(p) for p in prefs)
-                items.append(f"تفضيلات واهتمامات العميل: {prefs}")
-            if prof.get("notes"):
-                items.append(f"ملاحظات هامة: {prof['notes']}")
-            if items:
-                parts.append("البيانات الدائمة للعميل:\n- " + "\n- ".join(items))
-
-        if summary:
-            parts.append(f"الذاكرة اللحظية من آخر تواصل:\n{summary}")
-
-        card_text = ""
-        if parts:
-            phone_label = f" ({caller_phone})" if caller_phone and caller_phone != 'web_dashboard' else ""
-            card_text = f"ذاكرة وسياق العميل{phone_label} من المكالمات السابقة (استخدمها بذكاء وعفوية للتذكر والترحيب بالمتابعة):\n" + "\n\n".join(parts)
-
-        return {
-            "phone_number": caller_phone,
-            "permanent_profile": prof,
-            "last_interaction_summary": summary,
-            "card_text": card_text,
-            "total_calls_count": mem.get("total_calls_count", 0)
-        }
+        b = fetch_agent_bootstrap_sync(user_id, caller_phone)
+        return parse_customer_memory_from_bootstrap(b, caller_phone)
     except Exception as e:
         logger.error(f"Error fetching customer memory for user {user_id} ({caller_phone}): {e}")
-        return {"phone_number": caller_phone, "permanent_profile": {}, "last_interaction_summary": "", "card_text": ""}
+        return {"phone_number": caller_phone, "permanent_profile": {}, "last_interaction_summary": "", "card_text": "", "total_calls_count": 0}
 
 def save_call_session_and_update_memory_sync(user_id: int, room_name: str, started_at: float, transcript_text: str, summary: str, updated_profile: dict, caller_phone: str = "web_dashboard", outbound_context: dict = None):
     """Persist completed CallSession and update CustomerMemory for (user, caller_phone) via Django CRM API."""
@@ -537,53 +559,45 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # Fetch External MCP Tools dynamically from ALL active servers
-    mcp_servers_list = []
+    # 4. Fetch unified Bootstrap bundle ONCE (profile, mcp_servers, customer_memory)
+    bootstrap = {}
+    if user_id:
+        bootstrap = await asyncio.to_thread(fetch_agent_bootstrap_sync, user_id, caller_phone)
+
+    # 4.1 Parse MCP Tools dynamically from unified bootstrap
+    mcp_servers_list = parse_mcp_servers_from_bootstrap(bootstrap) if user_id else []
     mcp_tools = {}
-    if user_id:
-        mcp_servers_list = await asyncio.to_thread(fetch_user_mcp_servers_sync, user_id)
-        for s in mcp_servers_list:
-            s_url = s.get("server_url")
-            s_token = s.get("auth_token", "")
-            s_name = s.get("name", "FastMCP")
-            for t in s.get("tools", []):
-                t_name = t.get("name")
-                if not t_name:
-                    continue
-                mcp_tools[t_name] = {
-                    "server_url": s_url,
-                    "auth_token": s_token,
-                    "server_name": s_name,
-                    "description": t.get("description", ""),
-                    "parameters": t.get("parameters")
-                }
+    for s in mcp_servers_list:
+        s_url = s.get("server_url")
+        s_token = s.get("auth_token", "")
+        s_name = s.get("name", "FastMCP")
+        for t in s.get("tools", []):
+            t_name = t.get("name")
+            if not t_name:
+                continue
+            mcp_tools[t_name] = {
+                "server_url": s_url,
+                "auth_token": s_token,
+                "server_name": s_name,
+                "description": t.get("description", ""),
+                "parameters": t.get("parameters")
+            }
 
-    # Fetch Customer Memory dynamically (Permanent profile + Working memory)
-    memory_data = {}
-    memory_card_text = ""
-    if user_id:
-        memory_data = await asyncio.to_thread(fetch_customer_memory_sync, user_id, caller_phone)
-        memory_card_text = memory_data.get("card_text", "")
-        if memory_card_text:
-            logger.info(f"Loaded customer memory for user {user_id} [phone={caller_phone}] ({len(memory_card_text)} chars)")
+    # 4.2 Parse Customer Memory dynamically from unified bootstrap
+    memory_data = parse_customer_memory_from_bootstrap(bootstrap, caller_phone) if user_id else {}
+    memory_card_text = memory_data.get("card_text", "")
+    if memory_card_text:
+        logger.info(f"Loaded customer memory for user {user_id} [phone={caller_phone}] ({len(memory_card_text)} chars)")
 
-    # Fetch User Active Profile dynamically
+    # 4.3 Resolve Active Profile dynamically from unified bootstrap
     active_profile = None
     if profile_data and isinstance(profile_data, dict):
         active_profile = profile_data
     elif user_id:
-        active_profile = await asyncio.to_thread(fetch_user_active_profile_sync, user_id)
+        active_profile = parse_active_profile_from_bootstrap(bootstrap)
 
     if not active_profile:
-        active_profile = {
-            "name": "نورهان - خدمة عملاء مصرية",
-            "voice_name": "Aoede",
-            "gender": "female",
-            "dialect": "egyptian",
-            "persona_role": "customer_support",
-            "speaking_style": "friendly",
-            "custom_instructions": ""
-        }
+        active_profile = parse_active_profile_from_bootstrap({})
 
     chosen_voice = active_profile.get("voice_name") or "Aoede"
     logger.info(f"Using Google voice '{chosen_voice}', dialect '{active_profile.get('dialect')}', gender '{active_profile.get('gender')}' for user {user_id}")

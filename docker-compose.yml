@@ -17,7 +17,9 @@ services:
       dockerfile: Dockerfile
     container_name: voice_livekit
     restart: unless-stopped
-    command: --config /etc/livekit.yaml
+    command: --config /etc/livekit.yaml --node-ip ${EXTERNAL_IP:-127.0.0.1}
+    environment:
+      - LIVEKIT_RTC_NODE_IP=${EXTERNAL_IP:-127.0.0.1}
     ports:
       - "50000-50020:50000-50020/udp"
       - "7881:7881"
@@ -125,7 +127,7 @@ services:
           address: redis:6379
         sip_port: 5060
         rtp_port: 10000-10030
-        nat_1_to_1_ip: 127.0.0.1
+        nat_1_to_1_ip: ${EXTERNAL_IP:-127.0.0.1}
         use_external_ip: false
         logging:
           level: info

@@ -89,7 +89,7 @@ def run_tests():
     # 6. Callee Joining (103 Mohamed gets token)
     print("\n[6] Testing Callee Answering (/api/call-center/calls/token/)...")
     mohamed_res = session.post(f"{BASE_URL}/api/call-center/auth/login/", json={
-        "identifier": "103",
+        "identifier": "mohamed",
         "password": "password123"
     })
     mohamed_token = mohamed_res.json()["token"]
