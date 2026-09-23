@@ -16,6 +16,7 @@ from livekit import api
 from .models import PartnerProfile, PartnerClientRelationship
 from .decorators import partner_required, partner_client_access_required
 from .services.webhook import dispatch_partner_webhook
+from .openapi_spec import get_partner_openapi_spec
 from agents.models import AgentProfile, UserMCPServer
 from crm.models import CallSession, CustomerMemory
 from knowledge.models import Document, DocumentChunk
@@ -1612,13 +1613,34 @@ def api_partner_client_telephony_detail(request, client_id, trunk_type, trunk_id
 def api_partner_docs(request):
     """
     GET /api/partner/v1/docs/
-    Interactive Developer Documentation Portal for Partners & SaaS Resellers.
+    Official Interactive Scalar API Reference for Partners & SaaS Integrations (Burgundy & Off-White Theme).
     """
     partner = None
     if request.user.is_authenticated:
         partner = PartnerProfile.objects.filter(user=request.user, status='approved').first()
 
-    return render(request, 'partners/api_docs.html', {
+    return render(request, 'partners/scalar_docs.html', {
         'partner': partner,
+        'partner_api_key': partner.api_key if partner else '',
         'base_url': request.build_absolute_uri('/')[:-1]
     })
+
+
+def api_partner_openapi_spec(request):
+    """
+    GET /api/partner/v1/docs/openapi.json
+    Dynamically serves OpenAPI 3.1 specification for the Partner API.
+    """
+    scheme = 'https' if request.is_secure() else 'http'
+    host = request.get_host()
+    server_url = f"{scheme}://{host}/api/partner/v1"
+    spec = get_partner_openapi_spec(server_url=server_url)
+    return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+
+
+def api_partner_docs_scalar(request):
+    """
+    GET /api/partner/v1/docs/scalar/
+    Alias redirecting or rendering the primary documentation.
+    """
+    return api_partner_docs(request)

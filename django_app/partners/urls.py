@@ -10,6 +10,8 @@ urlpatterns = [
     path('clients/cap/', views.update_client_cap, name='partner_client_cap'),
 
     path('docs/', views.api_partner_docs, name='partner_docs'),
+    path('docs/openapi.json', views.api_partner_openapi_spec, name='partner_openapi_spec'),
+    path('docs/scalar/', views.api_partner_docs_scalar, name='partner_docs_scalar'),
 
     # Headless REST API v1 for Partner SaaS Server-to-Server Integrations
     path('clients/register/', views.api_partner_register_client, name='api_partner_register_client'),

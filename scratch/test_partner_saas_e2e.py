@@ -375,19 +375,25 @@ assert q_detail_res.status_code == 200
 assert len(q_detail_res.json()['queue']['members']) == 1
 print("[PASS] Step 11.1: Call Center Queues & Queue Memberships Full CRUD verified via API")
 
-# 11.2 Partner API Documentation Portal Verification
+# 11.2 Primary Partner API Documentation Portal Verification (Official Scalar)
 docs_res = s.get(f'{BASE_URL}/api/partner/v1/docs/')
 assert docs_res.status_code == 200
-assert 'Headless B2B Voice SaaS' in docs_res.text
-assert 'X-Partner-Key' in docs_res.text
-assert '/api/partner/v1/clients/register/' in docs_res.text
-assert '/api/partner/v1/clients/{client_id}/employees/' in docs_res.text
-assert 'id="sec-personas"' in docs_res.text
-assert 'id="sec-memory"' in docs_res.text
-assert 'id="sec-calls"' in docs_res.text
-assert 'الصوت واللهجات والشخصيات' in docs_res.text
-assert 'ذاكرة وسياق العملاء CRM' in docs_res.text
-print("[PASS] Step 11.2: Interactive Partner Developer Documentation Portal verified with Personas & CRM sections at /api/partner/v1/docs/ (200 OK)")
+assert '@scalar/api-reference' in docs_res.text, "Scalar CDN bundle missing from primary docs"
+assert '#680E23' in docs_res.text, "Burgundy brand color missing in Scalar theme"
+assert '#FAF7F2' in docs_res.text, "Off-white brand color missing in Scalar theme"
+assert 'Tajawal' in docs_res.text, "Tajawal typography missing in Scalar theme"
+assert '/api/partner/v1/docs/openapi.json' in docs_res.text, "OpenAPI spec link missing"
+print("[PASS] Step 11.2: Official Primary Partner Documentation Portal verified at /api/partner/v1/docs/ powered by Scalar with Burgundy & Off-white Theme (200 OK)")
+
+# 11.3 OpenAPI 3.1 Specification Verification
+openapi_res = s.get(f'{BASE_URL}/api/partner/v1/docs/openapi.json')
+assert openapi_res.status_code == 200, f"OpenAPI JSON failed: {openapi_res.status_code}"
+openapi_json = openapi_res.json()
+assert openapi_json.get('openapi') == '3.1.0'
+assert len(openapi_json.get('tags', [])) == 11, f"Expected 11 tags, got {len(openapi_json.get('tags', []))}"
+assert len(openapi_json.get('paths', {})) >= 18, f"Expected at least 18 paths, got {len(openapi_json.get('paths', {}))}"
+assert 'PartnerKey' in openapi_json['components']['securitySchemes']
+print(f"[PASS] Step 11.3: OpenAPI 3.1 Spec (11 Tags, {len(openapi_json.get('paths', {}))} Paths) verified (200 OK)")
 
 # 12. Direct Voice Session Token for Sub-Client
 token_res = s.post(f'{BASE_URL}/api/partner/v1/clients/{client_id}/token/', headers=headers_partner)

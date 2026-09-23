@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>المساعد الصوتي الذكي | التوثيق التفاعلي للشركاء (Scalar API Reference)</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              canvas: '#FAF7F2',
+              primary: '#680E23',
+              primaryHover: '#520B1C',
+              gold: '#D4AF37',
+              goldHover: '#B8972E',
+              dark: '#1C1917',
+              muted: '#78716C',
+              surface: '#FFFFFF',
+              border: '#E7E5E4'
+            }
+          },
+          fontFamily: {
+            tajawal: ['Tajawal', 'sans-serif'],
+            inter: ['Inter', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #FAF7F2;
+      color: #1C1917;
+      font-family: 'Tajawal', sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Scalar API Reference Custom Theme (Burgundy & Warm Off-White) */
+    :root, .scalar-api-reference, .light-mode {
+      --scalar-font: 'Tajawal', sans-serif !important;
+      --scalar-font-code: 'Inter', monospace !important;
+      
+      /* Brand Color Palette */
+      --scalar-color-1: #1C1917 !important;
+      --scalar-color-2: #78716C !important;
+      --scalar-color-3: #A8A29E !important;
+      --scalar-color-accent: #680E23 !important;
+      
+      /* Backgrounds */
+      --scalar-background-1: #FAF7F2 !important;
+      --scalar-background-2: #FFFFFF !important;
+      --scalar-background-3: #F5EFEB !important;
+      --scalar-background-accent: #680E23 !important;
+      
+      /* Borders & Dividers */
+      --scalar-border-color: #E7E5E4 !important;
+      
+      /* Buttons */
+      --scalar-button-1: #680E23 !important;
+      --scalar-button-1-hover: #520B1C !important;
+      --scalar-button-1-color: #FFFFFF !important;
+
+      /* Sidebar & Badges */
+      --scalar-sidebar-background-1: #FAF7F2 !important;
+      --scalar-sidebar-item-hover-background: #F5EFEB !important;
+      --scalar-sidebar-item-active-background: #FFFFFF !important;
+      --scalar-sidebar-color-1: #1C1917 !important;
+      --scalar-sidebar-color-2: #78716C !important;
+      --scalar-sidebar-border-color: #E7E5E4 !important;
+      
+      /* Code and Pre */
+      --scalar-code-background: #181514 !important;
+      --scalar-code-color: #FEE2E2 !important;
+    }
+
+    /* Clean Sidebar: Hide Models, Generate MCP, and Powered by Scalar */
+    .darklight-reference,
+    .scalar-mcp-layer,
+    .scalar-mcp-layer-link,
+    .mcp-nav,
+    .mcp-logo,
+    .references-footer,
+    a[href*="scalar.com"] {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      max-height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      pointer-events: none !important;
+    }
+
+    /* Navbar styling */
+    .top-nav {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid #E7E5E4;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-brand-canvas text-brand-dark">
+
+  <!-- Top Sticky Navigation Bar -->
+  <header class="top-nav sticky top-0 z-50 px-4 lg:px-8 py-3.5 shadow-sm">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Brand & Mode Title -->
+      <div class="flex items-center gap-3">
+        <a href="/" class="flex items-center gap-2 text-brand-primary font-bold text-lg hover:opacity-90 transition">
+          <span class="text-2xl">🎙️</span>
+          <span>المساعد الصوتي الذكي</span>
+        </a>
+        <span class="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-xs px-2.5 py-0.5 rounded-full font-bold">
+          SaaS Partner API v1
+        </span>
+        <span class="bg-amber-100 text-amber-900 border border-amber-300 text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+          <span>⚡</span><span>مشغّل Scalar التفاعلي</span>
+        </span>
+      </div>
+
+      <!-- Action Buttons & Key Info -->
+      <div class="flex items-center flex-wrap gap-2.5 text-xs font-bold">
+
+        <!-- Partner Key Badge (if authenticated) -->
+        {% if partner_api_key %}
+        <div class="flex items-center gap-1.5 bg-brand-canvas border border-brand-border px-3 py-1.5 rounded-lg text-brand-dark font-mono">
+          <span class="text-brand-muted font-sans">مفتاحك:</span>
+          <span>{{ partner_api_key|slice:":15" }}...</span>
+          <button onclick="copyPartnerKey('{{ partner_api_key }}')" class="hover:text-brand-primary px-1 font-sans text-brand-primary" title="نسخ المفتاح">نسخ</button>
+        </div>
+        {% endif %}
+
+        <!-- Return to Dashboard -->
+        <a href="/#tab-partner" class="flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-brand-primary text-white hover:bg-brand-primaryHover transition shadow-sm">
+          <span>العودة للوحة التحكم</span>
+          <span>&larr;</span>
+        </a>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Scalar API Reference Interactive Container -->
+  <main class="flex-1 w-full max-w-7xl mx-auto py-4 px-2 sm:px-4 min-h-[calc(100vh-140px)]">
+    <script
+      id="api-reference"
+      data-url="/api/partner/v1/docs/openapi.json"
+      data-configuration='{
+        "theme": "none",
+        "layout": "modern",
+        "forceDarkModeState": "light",
+        "hideDarkModeToggle": true,
+        "hideModels": true,
+        "showSidebar": true,
+        "searchHotKey": "k",
+        "mcp": {
+          "disabled": true
+        },
+        "customCss": ".darklight-reference, .references-footer, .scalar-mcp-layer, .scalar-mcp-layer-link, .mcp-nav, .mcp-logo, a[href*=\"scalar.com\"] { display: none !important; visibility: hidden !important; height: 0 !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; }",
+        "authentication": {
+          "preferredSecurityScheme": "PartnerKey",
+          "apiKey": {
+            "token": "{{ partner_api_key|default:"" }}"
+          }
+        }
+      }'></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </main>
+
+  <footer class="bg-white border-t border-brand-border py-4 text-center text-xs text-brand-muted">
+    منظومة المساعد الصوتي الذكي للشركاء وخدمات الـ SaaS &copy; 2026. واجهة التوثيق التفاعلية المدمجة عبر Scalar.
+  </footer>
+
+  <script>
+    function copyPartnerKey(key) {
+      navigator.clipboard.writeText(key).then(() => {
+        alert('تم نسخ مفتاح الشريك بنجاح لاستخدامه في عميل الاختبار.');
+      });
+    }
+
+    function safeHideSidebarFooters() {
+      const selectors = [
+        '.darklight-reference',
+        '.references-footer',
+        '.scalar-mcp-layer',
+        '.scalar-mcp-layer-link',
+        '.mcp-nav',
+        'a[href*="scalar.com"]'
+      ];
+      selectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          el.style.setProperty('display', 'none', 'important');
+        });
+      });
+    }
+
+    window.addEventListener('load', safeHideSidebarFooters);
+    setInterval(safeHideSidebarFooters, 1000);
+  </script>
+</body>
+</html>
