@@ -1630,12 +1630,13 @@ def api_partner_openapi_spec(request):
     """
     GET /api/partner/v1/docs/openapi.json
     Dynamically serves OpenAPI 3.1 specification for the Partner API.
+    Uses relative server URL so the interactive client seamlessly adopts
+    the active browser origin, protocol (HTTP/HTTPS), and port.
     """
-    scheme = 'https' if request.is_secure() else 'http'
-    host = request.get_host()
-    server_url = f"{scheme}://{host}/api/partner/v1"
+    server_url = "/api/partner/v1"
     spec = get_partner_openapi_spec(server_url=server_url)
     return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+
 
 
 def api_partner_docs_scalar(request):

@@ -24,7 +24,7 @@ apply_res = s.post(f'{BASE_URL}/api/partner/v1/apply/', json={
     'company_name': 'شركة التقنية للحلول السحابية (SaaS Platform Demo)',
     'website': 'https://saas-demo.example.com',
     'description': 'منصة تجارة إلكترونية ترغب في توفير خدمة المساعد الصوتي لآلاف المتاجر التابعة لها.'
-}, headers={'X-CSRFToken': csrf})
+}, headers={'X-CSRFToken': csrf, 'Referer': f'{BASE_URL}/'})
 assert apply_res.status_code == 200, f'Apply failed: {apply_res.text}'
 apply_data = apply_res.json()
 assert apply_data['status'] == 'success'
