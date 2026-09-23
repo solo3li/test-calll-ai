@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'crm.apps.CrmConfig',
     'billing.apps.BillingConfig',
     'partners.apps.PartnersConfig',
+    'developer.apps.DeveloperConfig',
     'voice_assistant.apps.VoiceAssistantConfig',
 ]
 

@@ -41,7 +41,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "8. طوابير الانتظار والأعضاء", "description": "طوابير الكول سنتر واستراتيجيات التوزيع (Round Robin) وإدارة الأعضاء."},
         {"name": "9. بدء مكالمة WebRTC", "description": "إصدار توكنات LiveKit المشفرة لبدء المكالمة الصوتية الفورية في المتصفح أو التطبيق."},
         {"name": "10. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
-        {"name": "11. الويبهوك والتوقيع المشفر", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من توقيع HMAC-SHA256."}
+        {"name": "11. الويبهوك والتوقيع المشفر", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من توقيع HMAC-SHA256."},
+        {"name": "12. إدارة خوادم FastMCP للعملاء", "description": "ربط خوادم FastMCP الخارجية لعميل محدد عبر بروتوكول SSE ومزامنة أدوات الذكاء الاصطناعي الحية."}
     ]
 
     tags_en = [
@@ -55,7 +56,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "8. Call Queues & Routing", "description": "Call center queues, routing strategies (Round Robin), and queue membership."},
         {"name": "9. WebRTC Voice Sessions", "description": "Issuing encrypted LiveKit access tokens for instant browser and mobile voice sessions."},
         {"name": "10. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
-        {"name": "11. Webhooks & HMAC Signatures", "description": "Real-time call completion webhook notifications and HMAC-SHA256 signature verification."}
+        {"name": "11. Webhooks & HMAC Signatures", "description": "Real-time call completion webhook notifications and HMAC-SHA256 signature verification."},
+        {"name": "12. Client FastMCP Management", "description": "Manage external FastMCP SSE tool servers per sub-client and synchronize live tool schemas."}
     ]
 
     tags = tags_ar if is_ar else tags_en
@@ -71,6 +73,7 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         "tag_token": tags[8]["name"],
         "tag_cdr": tags[9]["name"],
         "tag_webhooks": tags[10]["name"],
+        "tag_mcp": tags[11]["name"],
     }
 
     # 3. Path Operations
@@ -819,6 +822,158 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     }
                 }
             }
+        },
+        "/clients/{client_id}/mcp/": {
+            "get": {
+                "tags": [tag_map["tag_mcp"]],
+                "summary": "استعراض خوادم FastMCP للعميل الفرعي (List Client MCP Servers)" if is_ar else "List Client FastMCP Servers",
+                "description": (
+                    "يعيد قائمة خوادم FastMCP المخصصة لهذا العميل مع الأدوات المتزامنة، بالإضافة إلى خادم الشريك المشترك إن وُجد."
+                    if is_ar else
+                    "Returns all FastMCP servers attached to this sub-client plus the partner shared fallback server."
+                ),
+                "parameters": [{"$ref": "#/components/parameters/ClientId"}],
+                "responses": {
+                    "200": {
+                        "description": "قائمة خوادم MCP للعميل" if is_ar else "Client MCP servers list",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "client_id": 19,
+                                    "total_servers": 1,
+                                    "partner_shared_server": None,
+                                    "servers": [
+                                        {
+                                            "id": 1,
+                                            "name": "خادم المتجر والطلبات (FastMCP)",
+                                            "server_url": "http://mock-store:8002/sse",
+                                            "is_active": True,
+                                            "tools_count": 2,
+                                            "cached_tools": [
+                                                {"name": "check_order_status", "description": "تحقق من حالة الطلب"},
+                                                {"name": "check_product_inventory", "description": "التحقق من المخزون"}
+                                            ],
+                                            "last_synced_at": "2026-09-23 12:00:00"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [tag_map["tag_mcp"]],
+                "summary": "إضافة خادم FastMCP جديد للعميل الفرعي (Create Client MCP Server)" if is_ar else "Create Client FastMCP Server",
+                "description": (
+                    "يربط خادم أدوات FastMCP خارجي (عبر بروتوكول SSE) بهذا العميل ليستخدمه المساعد الصوتي أثناء المكالمات."
+                    if is_ar else
+                    "Connects an external FastMCP SSE tool server to this client for live AI function calling during calls."
+                ),
+                "parameters": [{"$ref": "#/components/parameters/ClientId"}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["server_url"],
+                                "properties": {
+                                    "name": {"type": "string", "example": "متجر سلة - أدوات المنتجات"},
+                                    "server_url": {"type": "string", "example": "http://mock-store:8002/sse"},
+                                    "auth_token": {"type": "string", "example": "Bearer salla_sec_xxx"},
+                                    "is_active": {"type": "boolean", "default": True},
+                                    "sync_now": {"type": "boolean", "default": True}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "تم إنشاء خادم MCP ومزامنة الأدوات" if is_ar else "MCP server created and tools synced"}}
+            }
+        },
+        "/clients/{client_id}/mcp/{mcp_id}/": {
+            "get": {
+                "tags": [tag_map["tag_mcp"]],
+                "summary": "جلب تفاصيل خادم FastMCP محدد (Get Client MCP Server)" if is_ar else "Get Client FastMCP Server",
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"},
+                    {"$ref": "#/components/parameters/McpId"}
+                ],
+                "responses": {"200": {"description": "تفاصيل خادم FastMCP والأدوات" if is_ar else "MCP server details"}}
+            },
+            "patch": {
+                "tags": [tag_map["tag_mcp"]],
+                "summary": "تعديل بيانات خادم FastMCP للعميل (Update Client MCP Server)" if is_ar else "Update Client FastMCP Server",
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"},
+                    {"$ref": "#/components/parameters/McpId"}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "server_url": {"type": "string"},
+                                    "auth_token": {"type": "string"},
+                                    "is_active": {"type": "boolean"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "تم التحديث بنجاح" if is_ar else "Updated successfully"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_mcp"]],
+                "summary": "حذف خادم FastMCP للعميل (Delete Client MCP Server)" if is_ar else "Delete Client FastMCP Server",
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"},
+                    {"$ref": "#/components/parameters/McpId"}
+                ],
+                "responses": {"200": {"description": "تم حذف الخادم بنجاح" if is_ar else "Deleted successfully"}}
+            }
+        },
+        "/clients/{client_id}/mcp/{mcp_id}/sync/": {
+            "post": {
+                "tags": [tag_map["tag_mcp"]],
+                "summary": "مزامنة الأدوات الحية فورياً عبر SSE (Sync Client MCP Tools)" if is_ar else "Sync Client FastMCP Tools via SSE",
+                "description": (
+                    "يتصل مباشرة برابط SSE لخادم FastMCP، ويستكشف الأدوات الحية وقوالب المدخلات، ويحدث قاعدة البيانات."
+                    if is_ar else
+                    "Performs an immediate SSE handshake to discover tools and schema signatures for this client's agent."
+                ),
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"},
+                    {"$ref": "#/components/parameters/McpId"}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "تمت المزامنة بنجاح" if is_ar else "Tools synchronized successfully",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "message": "Successfully synchronized 2 tools from FastMCP server via SSE.",
+                                    "client_id": 19,
+                                    "mcp_id": 1,
+                                    "server_name": "خادم المتجر والطلبات (FastMCP)",
+                                    "tools_count": 2,
+                                    "tools": [
+                                        {"name": "check_order_status", "description": "التحقق من حالة الطلب برقم الطلب"},
+                                        {"name": "check_product_inventory", "description": "التحقق من كميات المخزون"}
+                                    ],
+                                    "synced_at": "2026-09-23 12:00:00"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -843,6 +998,13 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                 "required": True,
                 "schema": {"type": "integer"},
                 "description": "المعرف الرقمي للعميل الفرعي (client_id)" if is_ar else "Numerical ID of the sub-client"
+            },
+            "McpId": {
+                "name": "mcp_id",
+                "in": "path",
+                "required": True,
+                "schema": {"type": "integer"},
+                "description": "المعرف الرقمي لخادم FastMCP" if is_ar else "Numerical ID of the FastMCP server"
             },
             "ProfileId": {
                 "name": "profile_id",

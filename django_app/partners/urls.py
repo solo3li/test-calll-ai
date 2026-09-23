@@ -32,5 +32,8 @@ urlpatterns = [
     path('clients/<int:client_id>/queues/', views.api_partner_client_queues, name='api_partner_client_queues'),
     path('clients/<int:client_id>/queues/<int:queue_id>/', views.api_partner_client_queue_detail, name='api_partner_client_queue_detail'),
     path('clients/<int:client_id>/queues/<int:queue_id>/members/', views.api_partner_client_queue_members, name='api_partner_client_queue_members'),
+    path('clients/<int:client_id>/mcp/', views.api_partner_client_mcp, name='api_partner_client_mcp'),
+    path('clients/<int:client_id>/mcp/<int:mcp_id>/', views.api_partner_client_mcp_detail, name='api_partner_client_mcp_detail'),
+    path('clients/<int:client_id>/mcp/<int:mcp_id>/sync/', views.api_partner_client_mcp_sync, name='api_partner_client_mcp_sync'),
     path('clients/<int:client_id>/token/', views.api_partner_client_token, name='api_partner_client_token'),
 ]

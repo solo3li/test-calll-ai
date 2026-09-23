@@ -5,7 +5,7 @@ class SimpleCorsMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        allowed_headers = "Content-Type, Authorization, X-Requested-With, X-Partner-Key, Accept, Origin, Cache-Control, Pragma"
+        allowed_headers = "Content-Type, Authorization, X-Requested-With, X-Partner-Key, X-API-Key, Accept, Origin, Cache-Control, Pragma"
         req_headers = request.headers.get("Access-Control-Request-Headers")
         if req_headers:
             allowed_headers = f"{allowed_headers}, {req_headers}"

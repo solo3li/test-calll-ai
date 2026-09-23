@@ -18,6 +18,7 @@ from .decorators import partner_required, partner_client_access_required
 from .services.webhook import dispatch_partner_webhook
 from .openapi_spec import get_partner_openapi_spec
 from agents.models import AgentProfile, UserMCPServer
+from agents.views import fetch_mcp_tools_sync
 from crm.models import CallSession, CustomerMemory
 from knowledge.models import Document, DocumentChunk
 from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
@@ -1604,6 +1605,176 @@ def api_partner_client_telephony_detail(request, client_id, trunk_type, trunk_id
         })
 
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Client FastMCP Server Management & Live Tool Synchronization
+# =========================================================================
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_mcp(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<int:client_id>/mcp/
+    Manage external FastMCP SSE tool servers for this specific sub-client.
+    """
+    if request.method == 'GET':
+        servers = list(UserMCPServer.objects.filter(user=request.client_user).order_by('-updated_at'))
+        
+        shared_server = None
+        if request.partner.shared_mcp_server:
+            shared_server = request.partner.shared_mcp_server.to_dict()
+
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "total_servers": len(servers),
+            "partner_shared_server": shared_server,
+            "servers": [s.to_dict() for s in servers]
+        })
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        name = data.get('name', 'خادم أدوات العميل (FastMCP)').strip()
+        server_url = data.get('server_url', '').strip()
+        auth_token = data.get('auth_token', '').strip()
+        is_active = bool(data.get('is_active', True))
+        sync_now = bool(data.get('sync_now', True))
+
+        if not server_url:
+            return JsonResponse({"status": "error", "message": "server_url is required"}, status=400)
+
+        server = UserMCPServer.objects.create(
+            user=request.client_user,
+            name=name,
+            server_url=server_url,
+            auth_token=auth_token,
+            is_active=is_active
+        )
+
+        tools_count = 0
+        sync_error = None
+        if sync_now and is_active:
+            try:
+                tools = fetch_mcp_tools_sync(server.server_url, server.auth_token, timeout=5.0)
+                from django.utils import timezone
+                server.cached_tools = tools
+                server.last_synced_at = timezone.now()
+                server.save(update_fields=['cached_tools', 'last_synced_at'])
+                tools_count = len(tools)
+            except Exception as e:
+                sync_error = str(e)
+                logger.warning(f"Initial sync failed for client {client_id} MCP {server.id}: {e}")
+
+        s_dict = server.to_dict()
+        s_dict['initial_sync_error'] = sync_error
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"Client FastMCP server created successfully. Synced {tools_count} live tools.",
+            "client_id": client_id,
+            "server": s_dict
+        }, status=201)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_mcp_detail(request, client_id, mcp_id):
+    """
+    GET, PATCH, DELETE /api/partner/v1/clients/<int:client_id>/mcp/<int:mcp_id>/
+    Retrieve, update, or remove a client's FastMCP server.
+    """
+    server = UserMCPServer.objects.filter(user=request.client_user, id=mcp_id).first()
+    if not server:
+        return JsonResponse({"status": "error", "message": "Client FastMCP server not found"}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "status": "success",
+            "client_id": client_id,
+            "server": server.to_dict()
+        })
+
+    if request.method in ('PATCH', 'PUT'):
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        if 'name' in data:
+            server.name = data['name'].strip() or server.name
+        if 'server_url' in data:
+            server.server_url = data['server_url'].strip() or server.server_url
+        if 'auth_token' in data:
+            server.auth_token = data['auth_token'].strip()
+        if 'is_active' in data:
+            server.is_active = bool(data['is_active'])
+
+        server.save()
+        return JsonResponse({
+            "status": "success",
+            "message": "Client FastMCP server updated successfully",
+            "client_id": client_id,
+            "server": server.to_dict()
+        })
+
+    if request.method == 'DELETE':
+        srv_name = server.name
+        server.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": f"Client FastMCP server '{srv_name}' deleted successfully",
+            "client_id": client_id
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_mcp_sync(request, client_id, mcp_id):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/mcp/<int:mcp_id>/sync/
+    Perform real-time SSE discovery handshake to fetch latest tool signatures for this client.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    server = UserMCPServer.objects.filter(user=request.client_user, id=mcp_id).first()
+    if not server:
+        return JsonResponse({"status": "error", "message": "Client FastMCP server not found"}, status=404)
+
+    try:
+        from django.utils import timezone
+        tools = fetch_mcp_tools_sync(server.server_url, server.auth_token, timeout=8.0)
+        server.cached_tools = tools
+        server.last_synced_at = timezone.now()
+        server.save(update_fields=['cached_tools', 'last_synced_at'])
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"Successfully synchronized {len(tools)} tools from FastMCP server via SSE.",
+            "client_id": client_id,
+            "mcp_id": server.id,
+            "server_name": server.name,
+            "tools_count": len(tools),
+            "tools": tools,
+            "synced_at": server.last_synced_at.strftime("%Y-%m-%d %H:%M:%S")
+        })
+    except Exception as e:
+        logger.exception(f"Client MCP sync error for server {mcp_id}: {e}")
+        return JsonResponse({
+            "status": "error",
+            "message": f"Failed to connect to FastMCP server: {str(e)}",
+            "client_id": client_id,
+            "mcp_id": server.id
+        }, status=502)
 
 
 # =========================================================================
