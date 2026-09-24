@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { Platform } from "react-native";
+import { Platform, PermissionsAndroid } from "react-native";
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant } from "livekit-client";
 import { Centrifuge } from "centrifuge";
 import { apiRequest } from "../constants/api";
@@ -127,6 +127,27 @@ const INITIAL_CALL_DATA: ActiveCallData = {
   ],
   roomName: "",
 };
+
+async function ensureAudioPermission(): Promise<boolean> {
+  if (Platform.OS === "android") {
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: "إذن استخدام الميكروفون",
+          message: "يحتاج تطبيق بوابة الموظف إلى إذن الميكروفون لإجراء واستقبال المكالمات الصوتية.",
+          buttonPositive: "موافق",
+          buttonNegative: "إلغاء",
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (err) {
+      console.warn("Failed to request Android audio permissions:", err);
+      return false;
+    }
+  }
+  return true;
+}
 
 export const useCallStore = create<CallStoreState>((set, get) => ({
   activeTab: "dialpad",
@@ -360,60 +381,64 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       }));
     }, 1000);
 
-    if (Platform.OS === "web") {
-      const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-      });
+    await ensureAudioPermission();
 
-      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-        if (track.kind === Track.Kind.Audio) {
+    const room = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+    });
+
+    room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+      if (track.kind === Track.Kind.Audio) {
+        if (Platform.OS === "web") {
           const el = track.attach();
           el.play().catch((e) => console.log("Audio play error:", e));
         }
-      });
+      }
+    });
 
-      room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-        if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
-          console.log("Ignoring participant disconnect during transfer/hold");
-          return;
-        }
+    room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+      if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+        console.log("Ignoring participant disconnect during transfer/hold");
+        return;
+      }
 
-        // Ignore bots, pipecat-agent, queue workers, and transfer helpers
-        const isHumanPeer =
-          participant.identity.startsWith("employee_") ||
-          participant.identity.startsWith("customer_") ||
-          participant.identity.startsWith("user_");
+      // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+      const isHumanPeer =
+        participant.identity.startsWith("employee_") ||
+        participant.identity.startsWith("customer_") ||
+        participant.identity.startsWith("user_");
 
-        if (!isHumanPeer) {
-          console.log("Ignoring non-human participant disconnect:", participant.identity);
-          return;
-        }
+      if (!isHumanPeer) {
+        console.log("Ignoring non-human participant disconnect:", participant.identity);
+        return;
+      }
 
-        console.log("Remote human participant disconnected:", participant.identity);
-        const remainingHumans = Array.from(room.remoteParticipants.values()).filter(
-          (p) =>
-            p.identity !== participant.identity &&
-            (p.identity.startsWith("employee_") ||
-             p.identity.startsWith("customer_") ||
-             p.identity.startsWith("user_"))
-        );
-        if (remainingHumans.length === 0) {
-          get().endCall();
-        }
-      });
-
-      room.on(RoomEvent.Disconnected, () => {
-        if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
-          console.log("Ignoring room disconnect during transfer/hold");
-          return;
-        }
+      console.log("Remote human participant disconnected:", participant.identity);
+      const remainingHumans = Array.from(room.remoteParticipants.values()).filter(
+        (p) =>
+          p.identity !== participant.identity &&
+          (p.identity.startsWith("employee_") ||
+           p.identity.startsWith("customer_") ||
+           p.identity.startsWith("user_"))
+      );
+      if (remainingHumans.length === 0) {
         get().endCall();
-      });
+      }
+    });
 
-      await room.connect(livekitUrl, livekitToken);
+    room.on(RoomEvent.Disconnected, () => {
+      if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+        console.log("Ignoring room disconnect during transfer/hold");
+        return;
+      }
+      get().endCall();
+    });
 
-      // Attach any tracks that arrived early
+    await room.connect(livekitUrl, livekitToken);
+
+    // Attach any tracks that arrived early on web
+    if (Platform.OS === "web") {
       room.remoteParticipants.forEach((p) => {
         p.trackPublications.forEach((pub) => {
           if (pub.track && pub.track.kind === Track.Kind.Audio) {
@@ -422,17 +447,15 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           }
         });
       });
-
-      try {
-        if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
-          await room.localParticipant.setMicrophoneEnabled(true);
-        }
-      } catch (micErr) {
-        console.warn("Failed to enable mic:", micErr);
-      }
-
-      set({ livekitRoom: room });
     }
+
+    try {
+      await room.localParticipant.setMicrophoneEnabled(true);
+    } catch (micErr) {
+      console.warn("Failed to enable mic:", micErr);
+    }
+
+    set({ livekitRoom: room });
   },
 
   startCall: async (targetNumberOrExt?: string, targetName?: string) => {
@@ -487,74 +510,78 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           },
         }));
 
-        if (Platform.OS === "web") {
-          const room = new Room({
-            adaptiveStream: true,
-            dynacast: true,
-          });
+        await ensureAudioPermission();
 
-          room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-            if (track.kind === Track.Kind.Audio) {
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+
+        room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+          if (track.kind === Track.Kind.Audio) {
+            if (Platform.OS === "web") {
               const audioElement = track.attach();
               audioElement.play().catch((err) => console.log("Audio play error:", err));
             }
-          });
+          }
+        });
 
-          room.on(RoomEvent.ParticipantConnected, () => {
-            set({ callState: "CONNECTED" });
-            if (!callTimerInterval) {
-              callTimerInterval = setInterval(() => {
-                set((state) => ({
-                  activeCall: {
-                    ...state.activeCall,
-                    durationSeconds: state.activeCall.durationSeconds + 1,
-                  },
-                }));
-              }, 1000);
-            }
-          });
+        room.on(RoomEvent.ParticipantConnected, () => {
+          set({ callState: "CONNECTED" });
+          if (!callTimerInterval) {
+            callTimerInterval = setInterval(() => {
+              set((state) => ({
+                activeCall: {
+                  ...state.activeCall,
+                  durationSeconds: state.activeCall.durationSeconds + 1,
+                },
+              }));
+            }, 1000);
+          }
+        });
 
-          room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-            if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
-              console.log("Ignoring participant disconnect during transfer/hold");
-              return;
-            }
+        room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+          if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+            console.log("Ignoring participant disconnect during transfer/hold");
+            return;
+          }
 
-            // Ignore bots, pipecat-agent, queue workers, and transfer helpers
-            const isHumanPeer =
-              participant.identity.startsWith("employee_") ||
-              participant.identity.startsWith("customer_") ||
-              participant.identity.startsWith("user_");
+          // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+          const isHumanPeer =
+            participant.identity.startsWith("employee_") ||
+            participant.identity.startsWith("customer_") ||
+            participant.identity.startsWith("user_");
 
-            if (!isHumanPeer) {
-              console.log("Ignoring non-human participant disconnect:", participant.identity);
-              return;
-            }
+          if (!isHumanPeer) {
+            console.log("Ignoring non-human participant disconnect:", participant.identity);
+            return;
+          }
 
-            console.log("Remote human participant disconnected:", participant.identity);
-            const remainingHumans = Array.from(room.remoteParticipants.values()).filter(
-              (p) =>
-                p.identity !== participant.identity &&
-                (p.identity.startsWith("employee_") ||
-                 p.identity.startsWith("customer_") ||
-                 p.identity.startsWith("user_"))
-            );
-            if (remainingHumans.length === 0) {
-              get().endCall();
-            }
-          });
-
-          room.on(RoomEvent.Disconnected, () => {
-            if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
-              console.log("Ignoring room disconnect during transfer/hold");
-              return;
-            }
+          console.log("Remote human participant disconnected:", participant.identity);
+          const remainingHumans = Array.from(room.remoteParticipants.values()).filter(
+            (p) =>
+              p.identity !== participant.identity &&
+              (p.identity.startsWith("employee_") ||
+               p.identity.startsWith("customer_") ||
+               p.identity.startsWith("user_"))
+          );
+          if (remainingHumans.length === 0) {
             get().endCall();
-          });
+          }
+        });
 
-          await room.connect(data.livekit_url, data.livekit_token);
+        room.on(RoomEvent.Disconnected, () => {
+          if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+            console.log("Ignoring room disconnect during transfer/hold");
+            return;
+          }
+          get().endCall();
+        });
 
-          // Attach tracks
+        await room.connect(data.livekit_url, data.livekit_token);
+
+        // Attach tracks on web
+        if (Platform.OS === "web") {
           room.remoteParticipants.forEach((p) => {
             p.trackPublications.forEach((pub) => {
               if (pub.track && pub.track.kind === Track.Kind.Audio) {
@@ -563,17 +590,15 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
               }
             });
           });
-
-          try {
-            if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
-              await room.localParticipant.setMicrophoneEnabled(true);
-            }
-          } catch (micErr) {
-            console.warn("Failed to enable mic:", micErr);
-          }
-
-          set({ livekitRoom: room });
         }
+
+        try {
+          await room.localParticipant.setMicrophoneEnabled(true);
+        } catch (micErr) {
+          console.warn("Failed to enable mic:", micErr);
+        }
+
+        set({ livekitRoom: room });
       }
     } catch (err: any) {
       alert(`فشل الاتصال: ${err.message}`);
@@ -643,7 +668,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         body: JSON.stringify({ room_name: incomingCall.roomName }),
       }, token);
 
-      if (data.status === "success" && Platform.OS === "web") {
+      if (data.status === "success") {
+        await ensureAudioPermission();
+
         const room = new Room({
           adaptiveStream: true,
           dynacast: true,
@@ -651,8 +678,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
         room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
           if (track.kind === Track.Kind.Audio) {
-            const el = track.attach();
-            el.play().catch((e) => console.log("Audio play error:", e));
+            if (Platform.OS === "web") {
+              const el = track.attach();
+              el.play().catch((e) => console.log("Audio play error:", e));
+            }
           }
         });
 
@@ -696,19 +725,19 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
         await room.connect(data.livekit_url, data.livekit_token);
 
-        room.remoteParticipants.forEach((p) => {
-          p.trackPublications.forEach((pub) => {
-            if (pub.track && pub.track.kind === Track.Kind.Audio) {
-              const el = pub.track.attach();
-              el.play().catch((e) => console.log("Audio attach error:", e));
-            }
+        if (Platform.OS === "web") {
+          room.remoteParticipants.forEach((p) => {
+            p.trackPublications.forEach((pub) => {
+              if (pub.track && pub.track.kind === Track.Kind.Audio) {
+                const el = pub.track.attach();
+                el.play().catch((e) => console.log("Audio attach error:", e));
+              }
+            });
           });
-        });
+        }
 
         try {
-          if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
-            await room.localParticipant.setMicrophoneEnabled(true);
-          }
+          await room.localParticipant.setMicrophoneEnabled(true);
         } catch (micErr) {
           console.warn("Failed to enable mic:", micErr);
         }
