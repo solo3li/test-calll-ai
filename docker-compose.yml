@@ -24,6 +24,8 @@ services:
     command: --config /etc/livekit.yaml --node-ip ${EXTERNAL_IP:-127.0.0.1}
     environment:
       - LIVEKIT_RTC_NODE_IP=${EXTERNAL_IP:-127.0.0.1}
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
     ports:
       - "50000-50020:50000-50020/udp"
       - "7881:7881"
