@@ -118,3 +118,167 @@ class CallSession(models.Model):
         }
 
 
+class UserCampaignLimit(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='campaign_limit')
+    max_concurrent_calls = models.PositiveIntegerField(default=1, verbose_name="الحد الأقصى للمكالمات المتزامنة")
+    is_auto_dialer_enabled = models.BooleanField(default=True, verbose_name="تمكين الاتصال التلقائي للحملات")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "حد الحملات المتزامنة للعميل"
+        verbose_name_plural = "حدود الحملات المتزامنة للعملاء"
+
+    def __str__(self):
+        return f"حد التزامن: {self.user.username} ({self.max_concurrent_calls} مكالمة)"
+
+    @classmethod
+    def get_limit_for_user(cls, user) -> int:
+        if not user or not user.is_authenticated:
+            return 1
+        limit_obj = cls.objects.filter(user=user).first()
+        if limit_obj:
+            return max(1, limit_obj.max_concurrent_calls)
+        return 1
+
+
+class OutboundCampaign(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'مسودة / جاهزة للاتصال'),
+        ('running', 'قيد الاتصال الآلي'),
+        ('paused', 'متوقف مؤقتاً'),
+        ('completed', 'مكتملة'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='outbound_campaigns')
+    name = models.CharField(max_length=200, verbose_name="اسم الحملة")
+    agent_profile = models.ForeignKey('agents.AgentProfile', on_delete=models.SET_NULL, null=True, blank=True, related_name='campaigns')
+    call_prompt = models.TextField(blank=True, default='', verbose_name="سيناريو وهدف المكالمة المخصص (Prompt)")
+    max_retries = models.PositiveIntegerField(default=1, verbose_name="الحد الأقصى لمحاولات إعادة الاتصال")
+    retry_delay_minutes = models.PositiveIntegerField(default=15, verbose_name="المدة بالدقائق قبل إعادة المحاولة")
+    gateway_type = models.CharField(max_length=32, default='auto')
+    gateway_id = models.IntegerField(null=True, blank=True)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='draft')
+
+    total_contacts = models.PositiveIntegerField(default=0)
+    completed_contacts = models.PositiveIntegerField(default=0)
+    answered_contacts = models.PositiveIntegerField(default=0)
+    hot_leads_count = models.PositiveIntegerField(default=0)
+    warm_leads_count = models.PositiveIntegerField(default=0)
+    cold_leads_count = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "حملة اتصالات صادرة"
+        verbose_name_plural = "حملات الاتصالات الصادرة"
+
+    def __str__(self):
+        return f"حملة: {self.name} ({self.get_status_display()}) - {self.user.username}"
+
+    def update_metrics(self):
+        self.total_contacts = self.contacts.count()
+        self.completed_contacts = self.contacts.filter(call_status__in=['answered', 'busy', 'no_answer', 'failed']).count()
+        self.answered_contacts = self.contacts.filter(call_status='answered').count()
+        self.hot_leads_count = self.contacts.filter(interest_level='hot').count()
+        self.warm_leads_count = self.contacts.filter(interest_level='warm').count()
+        self.cold_leads_count = self.contacts.filter(interest_level='cold').count()
+        if self.total_contacts > 0 and self.completed_contacts >= self.total_contacts and self.status == 'running':
+            self.status = 'completed'
+        self.save(update_fields=[
+            'total_contacts', 'completed_contacts', 'answered_contacts',
+            'hot_leads_count', 'warm_leads_count', 'cold_leads_count', 'status', 'updated_at'
+        ])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "agent_profile_id": self.agent_profile_id,
+            "agent_profile_name": self.agent_profile.name if self.agent_profile else "المساعد الافتراضي",
+            "call_prompt": self.call_prompt or "",
+            "max_retries": self.max_retries,
+            "retry_delay_minutes": self.retry_delay_minutes,
+            "gateway_type": self.gateway_type,
+            "gateway_id": self.gateway_id,
+            "status": self.status,
+            "status_display": self.get_status_display(),
+            "total_contacts": self.total_contacts,
+            "completed_contacts": self.completed_contacts,
+            "answered_contacts": self.answered_contacts,
+            "hot_leads_count": self.hot_leads_count,
+            "warm_leads_count": self.warm_leads_count,
+            "cold_leads_count": self.cold_leads_count,
+            "progress_percent": round((self.completed_contacts / self.total_contacts * 100), 1) if self.total_contacts > 0 else 0,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M"),
+        }
+
+
+class CampaignContact(models.Model):
+    CALL_STATUS_CHOICES = [
+        ('pending', 'جديد - في الانتظار'),
+        ('in_progress', 'جارِ الاتصال به الآن'),
+        ('answered', 'تم الرد والتواصل'),
+        ('busy', 'مشغول'),
+        ('no_answer', 'لم يرد'),
+        ('failed', 'فشل الاتصال / غير متاح'),
+    ]
+
+    INTEREST_CHOICES = [
+        ('uncontacted', 'لم يتحدد بعد'),
+        ('hot', '🔥 مهتم جداً / جاهز للمرحلة التالية'),
+        ('warm', '🟡 مهتم / يحتاج متابعة'),
+        ('cold', '❄️ غير مهتم / تم الرفض'),
+        ('callback', '⏰ طلب اتصال لاحقاً'),
+        ('unreached', '❌ تعذر الوصول إليه'),
+    ]
+
+    campaign = models.ForeignKey(OutboundCampaign, on_delete=models.CASCADE, related_name='contacts')
+    phone_number = models.CharField(max_length=32, db_index=True)
+    customer_name = models.CharField(max_length=150, blank=True, default='')
+    attributes = models.JSONField(default=dict, blank=True, help_text="بيانات العميل الإضافية من الملف")
+    call_status = models.CharField(max_length=32, choices=CALL_STATUS_CHOICES, default='pending', db_index=True)
+    interest_level = models.CharField(max_length=32, choices=INTEREST_CHOICES, default='uncontacted', db_index=True)
+    call_summary = models.TextField(blank=True, default='')
+    extracted_data = models.JSONField(default=dict, blank=True, help_text="البيانات المستخرجة بالذكاء الاصطناعي")
+    retries_count = models.PositiveIntegerField(default=0)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.PositiveIntegerField(default=0)
+    call_session = models.ForeignKey(CallSession, null=True, blank=True, on_delete=models.SET_NULL, related_name='campaign_contacts')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['id']
+        verbose_name = "جهة اتصال حملة"
+        verbose_name_plural = "جهات اتصال الحملات"
+
+    def __str__(self):
+        display = self.customer_name or self.phone_number
+        return f"{display} ({self.get_call_status_display()}) - {self.campaign.name}"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "campaign_id": self.campaign_id,
+            "phone_number": self.phone_number,
+            "customer_name": self.customer_name or "",
+            "attributes": self.attributes or {},
+            "call_status": self.call_status,
+            "call_status_display": self.get_call_status_display(),
+            "interest_level": self.interest_level,
+            "interest_level_display": self.get_interest_level_display(),
+            "call_summary": self.call_summary or "",
+            "extracted_data": self.extracted_data or {},
+            "retries_count": self.retries_count,
+            "last_attempt_at": self.last_attempt_at.strftime("%Y-%m-%d %H:%M") if self.last_attempt_at else None,
+            "duration_seconds": self.duration_seconds,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
+        }
+
+
+

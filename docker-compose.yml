@@ -54,6 +54,17 @@ services:
     networks:
       - voice_net
 
+  inngest:
+    image: inngest/inngest:latest
+    container_name: voice_inngest
+    restart: unless-stopped
+    command: inngest dev -u http://django:8000/api/inngest/ --host 0.0.0.0 --port 8288
+    ports:
+      - "8288:8288"
+    networks:
+      - voice_net
+
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: voice_postgres
@@ -75,6 +86,7 @@ services:
     restart: unless-stopped
     command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     volumes:
+      - ./django_app:/app
       - media_data:/app/media
     env_file:
       - .env

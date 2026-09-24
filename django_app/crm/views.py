@@ -347,6 +347,48 @@ def api_internal_save_call_session_and_memory(request):
         memory.total_calls_count = (memory.total_calls_count or 0) + 1
         memory.save()
 
+        # 3. Check and update matching CampaignContact
+        try:
+            from .models import CampaignContact
+            from .scoring import score_and_extract_lead
+            from .inngest_jobs import broadcast_campaign_update
+
+            target_phone = destination_phone or caller_phone
+            if target_phone:
+                contact = CampaignContact.objects.filter(
+                    campaign__user=user,
+                    phone_number=target_phone
+                ).exclude(call_status='answered').first()
+
+                if contact:
+                    campaign = contact.campaign
+                    contact.duration_seconds = duration_seconds
+                    contact.call_session = session
+
+                    if duration_seconds > 0:
+                        contact.call_status = 'answered'
+                        # Score lead with Gemini
+                        score_res = score_and_extract_lead(
+                            call_prompt=campaign.call_prompt,
+                            transcript=transcript_text,
+                            customer_name=contact.customer_name,
+                            attributes=contact.attributes
+                        )
+                        contact.interest_level = score_res.get("interest_level", "warm")
+                        contact.call_summary = score_res.get("call_summary") or summary
+                        contact.extracted_data = score_res.get("extracted_data", {})
+                    else:
+                        contact.call_status = 'no_answer'
+                        contact.interest_level = 'unreached'
+                        contact.call_summary = "لم يرد العميل على الاتصال."
+
+                    contact.save()
+                    campaign.update_metrics()
+                    broadcast_campaign_update(campaign.id, "contact_updated", contact.to_dict())
+                    logger.info(f"Updated CampaignContact #{contact.id} ({contact.phone_number}) as {contact.call_status} / {contact.interest_level}")
+        except Exception as c_err:
+            logger.warning(f"Error updating CampaignContact on call completion: {c_err}")
+
         logger.info(f"Successfully saved CallSession #{session.id} and updated CustomerMemory for ({user.id}, {caller_phone})")
 
         return JsonResponse({

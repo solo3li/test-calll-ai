@@ -201,6 +201,13 @@
         <span class="nav-text" data-i18n="nav_crm">ذاكرة وسجل العملاء</span>
       </button>
 
+      <!-- 6.5. Outbound Campaigns & CRM Leads Engine -->
+      <button type="button" onclick="switchTab('campaigns')" id="nav-btn-campaigns" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+        <span class="text-base shrink-0">🚀</span>
+        <span class="nav-text">حملات الاتصال والعملاء</span>
+        <span class="px-2 py-0.5 text-[9px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">AI CRM</span>
+      </button>
+
       <!-- 7. Store MCP -->
       <button type="button" onclick="switchTab('store')" id="nav-btn-store" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
         <span class="text-base shrink-0">🛍️</span>
@@ -1046,6 +1053,149 @@
 
       </div>
 
+      <!-- ==================== Tab 6.5: Outbound Campaigns & Leads CRM ==================== -->
+      <div id="tab-campaigns" class="tab-panel space-y-6">
+        
+        <!-- Header & Action Buttons -->
+        <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-6">
+          <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-[#EAE3D9]">
+            <div>
+              <h2 class="text-xl font-bold text-[#1C1917] flex items-center gap-2">
+                <span class="text-2xl">🚀</span>
+                <span>حملات الاتصال وإدارة العملاء (Campaigns & Leads CRM)</span>
+                <span class="px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">Inngest Powered</span>
+              </h2>
+              <p class="text-xs text-[#6E645D] mt-1">
+                ارفع قوائم العملاء بصيغ متعددة (Excel, CSV, TXT, JSON)، ونظمهم داخل CRM تفاعلي، وأطلق حملات الاتصال المتوازية بفرز واستخلاص ذكي فوري.
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2.5">
+              <a href="https://inngest.169.58.32.179.nip.io" target="_blank" class="px-3.5 py-2 rounded-xl bg-[#FAF0F2] hover:bg-[#F3DCE1] text-[#680E23] text-xs font-semibold border border-[#E8CCD2] transition flex items-center gap-1.5 shadow-sm">
+                <span>⚡</span>
+                <span>لوحة مراقبة Inngest</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+              <button type="button" onclick="loadCampaignsList()" class="px-3.5 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#2D2825] text-xs font-semibold border border-[#DDD5C7] transition flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                <span>تحديث</span>
+              </button>
+              <button type="button" onclick="openNewCampaignModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-[#680E23] to-[#8C1D40] hover:from-[#500B1B] hover:to-[#680E23] text-white text-xs font-bold transition shadow-md flex items-center gap-2">
+                <span>➕</span>
+                <span>إنشاء حملة جديدة (رفع ملف)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Stats Row -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="p-4 rounded-2xl bg-[#FBF9F5] border border-[#EAE3D9] text-center">
+              <span class="text-xs text-[#6E645D] font-medium block">إجمالي الحملات</span>
+              <span id="camp-stat-total-campaigns" class="text-2xl font-black text-[#1C1917] mt-1 block">0</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-[#FBF9F5] border border-[#EAE3D9] text-center">
+              <span class="text-xs text-[#6E645D] font-medium block">إجمالي جهات الاتصال</span>
+              <span id="camp-stat-total-contacts" class="text-2xl font-black text-[#680E23] mt-1 block">0</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/60 text-center">
+              <span class="text-xs text-amber-800 font-medium block">معدل التزامن المسموح (Limit)</span>
+              <span id="camp-stat-concurrency-limit" class="text-2xl font-black text-amber-900 mt-1 block">1 مكالمة</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/60 text-center">
+              <span class="text-xs text-rose-800 font-medium block">عملاء مهتمون (🔥 Hot Leads)</span>
+              <span id="camp-stat-total-hot" class="text-2xl font-black text-rose-900 mt-1 block">0</span>
+            </div>
+          </div>
+
+          <!-- Active Campaign Selector & Controls -->
+          <div id="campaign-active-panel" class="p-5 rounded-2xl bg-[#FBF9F5] border border-[#EAE3D9] space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <span class="text-sm font-bold text-[#1C1917]">اختر الحملة:</span>
+                <select id="campaign-select" onchange="onCampaignSelected(this.value)" class="px-3 py-1.5 rounded-xl border border-[#DDD5C7] text-xs font-semibold bg-white text-[#1C1917] focus:ring-2 focus:ring-[#680E23]/30 min-w-[220px]">
+                  <option value="">جارِ تحميل الحملات...</option>
+                </select>
+                <span id="camp-status-badge" class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">مسودة</span>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="btn-start-campaign" onclick="startCurrentCampaign()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                  <span>▶️</span>
+                  <span>بدء الاتصال التلقائي</span>
+                </button>
+                <button type="button" id="btn-pause-campaign" onclick="pauseCurrentCampaign()" class="hidden px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                  <span>⏸️</span>
+                  <span>إيقاف مؤقت</span>
+                </button>
+                <button type="button" onclick="exportCurrentCampaign('xlsx')" class="px-3.5 py-1.5 rounded-xl bg-[#680E23] hover:bg-[#500B1B] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                  <span>📊</span>
+                  <span>تصدير Excel (XLSX)</span>
+                </button>
+                <button type="button" onclick="exportCurrentCampaign('csv')" class="px-3 py-1.5 rounded-xl bg-white hover:bg-[#F5EFE6] text-[#2D2825] text-xs font-semibold border border-[#DDD5C7] transition flex items-center gap-1.5 shadow-sm">
+                  <span>📄</span>
+                  <span>CSV</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Progress Bar & Prompt Preview -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-xs text-[#6E645D]">
+                <span>نسبة الإنجاز: <strong id="camp-progress-text" class="text-[#1C1917]">0% (0 / 0)</strong></span>
+                <span>المساعد: <strong id="camp-agent-name" class="text-[#680E23]">-</strong> | محاولات الإعادة: <strong id="camp-max-retries">1</strong></span>
+              </div>
+              <div class="w-full h-2.5 rounded-full bg-[#EAE3D9] overflow-hidden">
+                <div id="camp-progress-bar" class="h-full bg-gradient-to-r from-[#680E23] to-emerald-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+              </div>
+              <p id="camp-prompt-preview" class="text-[11px] text-[#8C827A] italic line-clamp-2 mt-1">السيناريو: -</p>
+            </div>
+          </div>
+
+          <!-- CRM Leads Filter & Table -->
+          <div class="space-y-4">
+            <div class="flex flex-wrap justify-between items-center gap-3">
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <button type="button" onclick="filterCampaignContacts('all')" class="camp-filter-btn px-3 py-1 rounded-xl bg-[#680E23] text-white font-semibold transition" data-filter="all">الكل (<span id="count-filter-all">0</span>)</button>
+                <button type="button" onclick="filterCampaignContacts('pending')" class="camp-filter-btn px-3 py-1 rounded-xl bg-[#F5EFE6] text-[#6E645D] hover:bg-[#EAE3D9] font-semibold transition" data-filter="pending">في الانتظار (<span id="count-filter-pending">0</span>)</button>
+                <button type="button" onclick="filterCampaignContacts('answered')" class="camp-filter-btn px-3 py-1 rounded-xl bg-[#F5EFE6] text-[#6E645D] hover:bg-[#EAE3D9] font-semibold transition" data-filter="answered">تم الرد (<span id="count-filter-answered">0</span>)</button>
+                <button type="button" onclick="filterCampaignContacts('hot')" class="camp-filter-btn px-3 py-1 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 font-semibold transition" data-filter="hot">🔥 مهتم جداً (<span id="count-filter-hot">0</span>)</button>
+                <button type="button" onclick="filterCampaignContacts('warm')" class="camp-filter-btn px-3 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-semibold transition" data-filter="warm">🟡 متابعة (<span id="count-filter-warm">0</span>)</button>
+                <button type="button" onclick="filterCampaignContacts('cold')" class="camp-filter-btn px-3 py-1 rounded-xl bg-slate-50 text-slate-800 border border-slate-200 font-semibold transition" data-filter="cold">❄️ غير مهتم (<span id="count-filter-cold">0</span>)</button>
+              </div>
+
+              <!-- Search -->
+              <div class="relative min-w-[200px]">
+                <input type="text" id="camp-search-input" onkeyup="searchCampaignContacts(this.value)" placeholder="بحث بالاسم أو الرقم..." class="w-full px-3 py-1.5 pr-8 rounded-xl border border-[#DDD5C7] text-xs bg-white text-[#1C1917] focus:ring-2 focus:ring-[#680E23]/30">
+                <span class="absolute right-2.5 top-2 text-[#8C827A] text-xs">🔍</span>
+              </div>
+            </div>
+
+            <!-- Contacts Table -->
+            <div class="overflow-x-auto rounded-2xl border border-[#EAE3D9]">
+              <table class="w-full text-start border-collapse text-xs">
+                <thead>
+                  <tr class="bg-[#FBF9F5] border-b border-[#EAE3D9] text-[#6E645D] font-bold">
+                    <th class="py-3 px-4 text-start">العميل</th>
+                    <th class="py-3 px-3 text-start">الهاتف</th>
+                    <th class="py-3 px-3 text-start">الحالة</th>
+                    <th class="py-3 px-3 text-start">التصنيف (AI)</th>
+                    <th class="py-3 px-4 text-start">ملخص المكالمة</th>
+                    <th class="py-3 px-3 text-start">بيانات إضافية</th>
+                    <th class="py-3 px-3 text-center">إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="camp-contacts-tbody" class="divide-y divide-[#EAE3D9] bg-white">
+                  <tr>
+                    <td colspan="7" class="text-center py-8 text-[#8C827A]">اختر حملة أو قم بإنشاء حملة جديدة لرفع وعرض العملاء.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <!-- ==================== Tab 7: Store & Tools MCP ==================== -->
       <div id="tab-store" class="tab-panel space-y-6">
     <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-6">
@@ -1632,6 +1782,164 @@
             </div>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Modal: New Outbound Campaign & File Upload -->
+    <div id="modal-create-campaign" class="fixed inset-0 z-50 bg-[#FAF7F2]/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-white border border-[#EAE3D9] shadow-2xl rounded-3xl max-w-xl w-full p-6 space-y-5 text-xs max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9]">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-[#FAF0F2] text-[#680E23] flex items-center justify-center text-base font-bold">🚀</div>
+            <div>
+              <h3 class="text-base font-bold text-[#1C1917]">إنشاء حملة اتصال ورفع قائمة العملاء</h3>
+              <p class="text-[11px] text-[#6E645D]">ارفع ملف العملاء وحدد سيناريو المكالمة لفرزهم وتنظيمهم في الـ CRM</p>
+            </div>
+          </div>
+          <button type="button" onclick="closeNewCampaignModal()" class="text-[#6E645D] hover:text-[#2D2825] text-lg font-bold">&times;</button>
+        </div>
+
+        <form id="create-campaign-form" onsubmit="submitNewCampaign(event)" class="space-y-4">
+          <!-- Campaign Name -->
+          <div>
+            <label class="block font-bold text-[#443D39] mb-1">اسم الحملة *</label>
+            <input type="text" id="camp-input-name" required placeholder="مثال: حملة تجديد الاشتراكات - سبتمبر 2026" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23] focus:ring-[#680E23]" />
+          </div>
+
+          <!-- Agent Profile -->
+          <div>
+            <label class="block font-bold text-[#443D39] mb-1">المساعد الصوتي المنفذ للحملة</label>
+            <select id="camp-input-agent" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23]">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+
+          <!-- Domain-Agnostic Call Prompt -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="font-bold text-[#443D39]">سيناريو وتوجيهات المكالمة (Call Scenario Prompt) *</label>
+              <span class="text-[10px] text-[#680E23] font-medium">مرن لكافة المجالات</span>
+            </div>
+            <textarea id="camp-input-prompt" rows="3" required placeholder="أنت ممثل خدمة العملاء أو المبيعات. ابدأ بالترحيب باسم العميل، واعرض عليه العرض الجديد أو استفسر عن سبب انقطاعه أو أكد موعده، وسجل استجابته واستفساراته بدقة..." class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23] focus:ring-[#680E23] font-sans"></textarea>
+            <p class="text-[10px] text-[#8C827A] mt-1">يمكنك استخدام المتغيرات مثل {name} داخل السيناريو وسيتم استبدالها ببيانات كل عميل تلقائياً.</p>
+          </div>
+
+          <!-- File Upload Zone -->
+          <div>
+            <label class="block font-bold text-[#443D39] mb-1">ملف بيانات العملاء (Excel, CSV, TXT, JSON) *</label>
+            <div id="camp-file-dropzone" class="border-2 border-dashed border-[#DDD5C7] hover:border-[#680E23] rounded-2xl p-4 text-center cursor-pointer transition bg-[#FAF7F2]/60 hover:bg-[#FAF0F2]/50">
+              <input type="file" id="camp-input-file" accept=".csv, .xlsx, .xls, .txt, .json" onchange="onCampaignFileSelected(this)" class="hidden" required />
+              <div onclick="document.getElementById('camp-input-file').click()" class="space-y-1">
+                <span class="text-2xl block">📁</span>
+                <p id="camp-file-label" class="text-xs font-semibold text-[#1C1917]">اضغط لاختيار ملف من جهازك أو اسحبه وأفلته هنا</p>
+                <p class="text-[10px] text-[#6E645D]">يدعم: Excel (.xlsx, .xls), CSV, نصي (.txt), JSON - بترميز UTF-8 أو عربي</p>
+              </div>
+            </div>
+            <div id="camp-file-preview" class="hidden mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
+              <span id="camp-file-name" class="font-mono font-bold">file.xlsx</span>
+              <span id="camp-file-size" class="text-[10px] opacity-80">0 KB</span>
+            </div>
+          </div>
+
+          <!-- Call Parameters Accordion / Advanced -->
+          <div class="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label class="block font-medium text-[#443D39] mb-1">محاولات الإعادة في حال عدم الرد</label>
+              <input type="number" id="camp-input-retries" value="1" min="0" max="5" class="w-full px-3 py-1.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917]" />
+            </div>
+            <div>
+              <label class="block font-medium text-[#443D39] mb-1">الفارق بين المحاولات (دقائق)</label>
+              <input type="number" id="camp-input-delay" value="15" min="1" max="1440" class="w-full px-3 py-1.5 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917]" />
+            </div>
+          </div>
+
+          <!-- Inngest Concurrency Notice -->
+          <div class="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-amber-900 text-[11px] flex items-start gap-2">
+            <span class="text-base">⚡</span>
+            <div>
+              <span class="font-bold">إدارة التزامن عبر Inngest:</span>
+              <p class="mt-0.5 text-[10px] text-amber-800">
+                يتم تنظيم عدد المكالمات المتوازية تلقائياً بحسب الحد المسموح لحسابك (<strong id="camp-modal-limit-text">1 مكالمة متزامنة</strong>). يمكنك تعديل هذا الحد من لوحة إدارة المشرف (Django Admin -> User Campaign Limits).
+              </p>
+            </div>
+          </div>
+
+          <!-- Modal Error / Message -->
+          <div id="camp-modal-error" class="hidden p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs"></div>
+
+          <!-- Buttons -->
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE3D9]">
+            <button type="button" onclick="closeNewCampaignModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] font-medium transition">إلغاء</button>
+            <button type="submit" id="camp-btn-submit" class="px-5 py-2 rounded-xl bg-gradient-to-r from-[#680E23] to-[#8C1D40] hover:from-[#500B1B] hover:to-[#680E23] text-white font-bold transition shadow-md flex items-center gap-1.5">
+              <span>🚀</span>
+              <span>رفع وتنظيم العملاء في الـ CRM</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Contact Call Details & AI Analysis -->
+    <div id="modal-contact-details" class="fixed inset-0 z-50 bg-[#FAF7F2]/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-white border border-[#EAE3D9] shadow-2xl rounded-3xl max-w-lg w-full p-6 space-y-4 text-xs max-h-[85vh] overflow-y-auto">
+        <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9]">
+          <div class="flex items-center gap-2">
+            <span id="contact-modal-avatar" class="w-8 h-8 rounded-full bg-[#FAF0F2] text-[#680E23] font-bold flex items-center justify-center text-sm">👤</span>
+            <div>
+              <h3 id="contact-modal-name" class="text-base font-bold text-[#1C1917]">اسم العميل</h3>
+              <p id="contact-modal-phone" class="text-[11px] font-mono text-[#6E645D]">+966...</p>
+            </div>
+          </div>
+          <button type="button" onclick="closeContactModal()" class="text-[#6E645D] hover:text-[#2D2825] text-lg font-bold">&times;</button>
+        </div>
+
+        <div class="space-y-3">
+          <div class="flex items-center justify-between p-3 rounded-2xl bg-[#FAF7F2] border border-[#EAE3D9]">
+            <div>
+              <span class="text-[10px] text-[#6E645D] block">حالة الاتصال</span>
+              <span id="contact-modal-status" class="font-bold text-[#1C1917] mt-0.5 block">-</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-[#6E645D] block">تصنيف الاهتمام (AI)</span>
+              <span id="contact-modal-interest" class="font-bold text-[#1C1917] mt-0.5 block">-</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-[#6E645D] block">المدة</span>
+              <span id="contact-modal-duration" class="font-bold text-[#1C1917] mt-0.5 block">0 ثانية</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-[#6E645D] block">المحاولات</span>
+              <span id="contact-modal-retries" class="font-bold text-[#1C1917] mt-0.5 block">0</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 class="font-bold text-[#1C1917] mb-1">ملخص المكالمة:</h4>
+            <div id="contact-modal-summary" class="p-3 rounded-xl bg-white border border-[#EAE3D9] text-[#443D39] leading-relaxed whitespace-pre-wrap">لا يوجد ملخص بعد.</div>
+          </div>
+
+          <div>
+            <h4 class="font-bold text-[#1C1917] mb-1">استخلاصات الذكاء الاصطناعي (AI Insights):</h4>
+            <div id="contact-modal-insights" class="p-3 rounded-xl bg-rose-50/50 border border-rose-100 text-rose-950 space-y-1">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <div>
+            <h4 class="font-bold text-[#1C1917] mb-1">البيانات الإضافية المرفوعة (Attributes):</h4>
+            <div id="contact-modal-attrs" class="p-2.5 rounded-xl bg-[#FAF7F2] border border-[#EAE3D9] max-h-32 overflow-y-auto">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-3 border-t border-[#EAE3D9]">
+          <button type="button" id="contact-modal-dial-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition flex items-center gap-1.5 shadow-sm">
+            <span>📞</span>
+            <span>اتصال الآن</span>
+          </button>
+          <button type="button" onclick="closeContactModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] font-medium transition">إغلاق</button>
+        </div>
       </div>
     </div>
       </div>
@@ -2803,7 +3111,9 @@
 
       updateHeaderTitle();
       syncFloatingVoiceBar();
-      if (tabId === 'store') {
+      if (tabId === 'campaigns') {
+        loadCampaignsList();
+      } else if (tabId === 'store') {
         loadMcpServers();
       } else if (tabId === 'billing') {
         loadWalletData();
@@ -3032,6 +3342,28 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+    }
+
+    function showToast(message, type = 'info') {
+      let toastContainer = document.getElementById('global-toast-container');
+      if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'global-toast-container';
+        toastContainer.className = 'fixed bottom-5 left-5 z-[9999] flex flex-col gap-2 max-w-sm pointer-events-none';
+        document.body.appendChild(toastContainer);
+      }
+      const toast = document.createElement('div');
+      const bgClass = type === 'error' ? 'bg-rose-900/95 border-rose-700 text-white' : (type === 'success' ? 'bg-emerald-900/95 border-emerald-700 text-white' : 'bg-[#2D2825]/95 border-[#443D39] text-white');
+      toast.className = `pointer-events-auto px-4 py-3 rounded-2xl shadow-2xl border text-xs font-medium flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 ${bgClass}`;
+      toast.innerHTML = `<span>${type === 'error' ? '⚠️' : (type === 'success' ? '✅' : 'ℹ️')}</span><span>${escapeHtml(message)}</span>`;
+      toastContainer.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
     }
 
     function appendTranscript(speaker, text) {
@@ -6099,11 +6431,620 @@
       }
     }
 
+    // ==================== Outbound Campaigns & Leads CRM Logic ====================
+    let campaignsList = [];
+    let currentCampaignId = null;
+    let currentCampaignData = null;
+    let currentCampaignContacts = [];
+    let currentContactFilter = 'all';
+    let currentContactSearch = '';
+    let campaignSearchDebounceTimer = null;
+    let campaignAutoPollTimer = null;
+
+    async function loadCampaignsList(selectCampaignId = null) {
+      try {
+        const res = await fetch('/api/crm/campaigns/');
+        const data = await res.json();
+        if (data.status !== 'success') return;
+
+        campaignsList = data.campaigns || [];
+        const userLimit = data.user_concurrency_limit || 1;
+
+        // Update stats
+        const totalCampsEl = document.getElementById('camp-stat-total-campaigns');
+        if (totalCampsEl) totalCampsEl.innerText = campaignsList.length;
+
+        const limitEl = document.getElementById('camp-stat-concurrency-limit');
+        if (limitEl) limitEl.innerText = `${userLimit} مكالمات متزامنة`;
+
+        const modalLimitText = document.getElementById('camp-modal-limit-text');
+        if (modalLimitText) modalLimitText.innerText = `${userLimit} مكالمات متزامنة`;
+
+        // Populate dropdown
+        const select = document.getElementById('campaign-select');
+        if (!select) return;
+
+        if (campaignsList.length === 0) {
+          select.innerHTML = '<option value="">لا توجد حملات منشأة بعد</option>';
+          resetCampaignDetailsUI();
+          return;
+        }
+
+        let targetId = selectCampaignId || currentCampaignId;
+        if (!targetId || !campaignsList.find(c => c.id == targetId)) {
+          targetId = campaignsList[0].id;
+        }
+
+        select.innerHTML = campaignsList.map(c => `
+          <option value="${c.id}" ${c.id == targetId ? 'selected' : ''}>
+            ${escapeHtml(c.name)} (${c.total_contacts} عميل - ${getStatusLabel(c.status)})
+          </option>
+        `).join('');
+
+        await onCampaignSelected(targetId);
+      } catch (err) {
+        console.error('Error loading campaigns list:', err);
+      }
+    }
+
+    function getStatusLabel(status) {
+      switch (status) {
+        case 'running': return '⚡ قيد الاتصال';
+        case 'paused': return '⏸️ متوقفة مؤقتاً';
+        case 'completed': return '✅ مكتملة';
+        case 'cancelled': return '⛔ ملغية';
+        default: return '📝 مسودة';
+      }
+    }
+
+    function getStatusBadgeHtml(status) {
+      switch (status) {
+        case 'running':
+          return '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">⚡ قيد الاتصال التلقائي</span>';
+        case 'paused':
+          return '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">⏸️ متوقفة مؤقتاً</span>';
+        case 'completed':
+          return '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">✅ مكتملة بنجاح</span>';
+        default:
+          return '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FAF0F2] text-[#680E23] border border-[#E8CCD2]">📝 مسودة (جاهزة للاتصال)</span>';
+      }
+    }
+
+    function resetCampaignDetailsUI() {
+      const tbody = document.getElementById('camp-contacts-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-[#8C827A]">اختر حملة أو أنشئ حملة جديدة لرفع وعرض قائمة العملاء.</td></tr>';
+      }
+      const progressBar = document.getElementById('camp-progress-bar');
+      if (progressBar) progressBar.style.width = '0%';
+      const progressText = document.getElementById('camp-progress-text');
+      if (progressText) progressText.innerText = '0% (0 / 0)';
+    }
+
+    async function onCampaignSelected(campaignId) {
+      if (!campaignId) return;
+      currentCampaignId = campaignId;
+
+      try {
+        let url = `/api/crm/campaigns/${campaignId}/?limit=300`;
+        if (currentContactFilter && currentContactFilter !== 'all') {
+          if (['hot', 'warm', 'cold'].includes(currentContactFilter)) {
+            url += `&interest=${currentContactFilter}`;
+          } else {
+            url += `&call_status=${currentContactFilter}`;
+          }
+        }
+        if (currentContactSearch) {
+          url += `&q=${encodeURIComponent(currentContactSearch)}`;
+        }
+
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.status !== 'success') {
+          console.error('Failed to load campaign detail:', data.message);
+          return;
+        }
+
+        currentCampaignData = data.campaign;
+        currentCampaignContacts = data.contacts || [];
+
+        renderCampaignHeaderAndStats(data.campaign);
+        renderCampaignContactsTable(currentCampaignContacts);
+
+        // Auto polling if campaign is running
+        if (data.campaign.status === 'running') {
+          if (!campaignAutoPollTimer) {
+            campaignAutoPollTimer = setInterval(() => {
+              if (activeTabId === 'campaigns' && currentCampaignId) {
+                onCampaignSelected(currentCampaignId);
+              }
+            }, 5000);
+          }
+        } else {
+          if (campaignAutoPollTimer) {
+            clearInterval(campaignAutoPollTimer);
+            campaignAutoPollTimer = null;
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching campaign detail:', err);
+      }
+    }
+
+    function renderCampaignHeaderAndStats(camp) {
+      // Badges & Buttons
+      const statusBadge = document.getElementById('camp-status-badge');
+      if (statusBadge) statusBadge.outerHTML = `<span id="camp-status-badge">${getStatusBadgeHtml(camp.status)}</span>`;
+
+      const btnStart = document.getElementById('btn-start-campaign');
+      const btnPause = document.getElementById('btn-pause-campaign');
+      if (camp.status === 'running') {
+        if (btnStart) btnStart.classList.add('hidden');
+        if (btnPause) btnPause.classList.remove('hidden');
+      } else {
+        if (btnStart) btnStart.classList.remove('hidden');
+        if (btnPause) btnPause.classList.add('hidden');
+      }
+
+      // Progress bar
+      const total = camp.total_contacts || 0;
+      const completed = camp.completed_calls || 0;
+      const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      const pBar = document.getElementById('camp-progress-bar');
+      if (pBar) pBar.style.width = `${pct}%`;
+
+      const pText = document.getElementById('camp-progress-text');
+      if (pText) pText.innerText = `${pct}% (${completed} / ${total})`;
+
+      const agentNameEl = document.getElementById('camp-agent-name');
+      if (agentNameEl) agentNameEl.innerText = camp.agent_profile_name || 'افتراضي';
+
+      const retriesEl = document.getElementById('camp-max-retries');
+      if (retriesEl) retriesEl.innerText = camp.max_retries;
+
+      const promptPreview = document.getElementById('camp-prompt-preview');
+      if (promptPreview) promptPreview.innerText = camp.call_prompt ? `السيناريو: "${camp.call_prompt}"` : 'السيناريو: السيناريو الافتراضي';
+
+      // Stats Counters
+      const statContacts = document.getElementById('camp-stat-total-contacts');
+      if (statContacts) statContacts.innerText = total;
+
+      const statHot = document.getElementById('camp-stat-total-hot');
+      if (statHot) statHot.innerText = camp.hot_leads || 0;
+
+      // Filter counters
+      const fAll = document.getElementById('count-filter-all');
+      if (fAll) fAll.innerText = total;
+      const fPending = document.getElementById('count-filter-pending');
+      if (fPending) fPending.innerText = camp.pending_calls || 0;
+      const fAnswered = document.getElementById('count-filter-answered');
+      if (fAnswered) fAnswered.innerText = completed;
+      const fHot = document.getElementById('count-filter-hot');
+      if (fHot) fHot.innerText = camp.hot_leads || 0;
+      const fWarm = document.getElementById('count-filter-warm');
+      if (fWarm) fWarm.innerText = camp.warm_leads || 0;
+      const fCold = document.getElementById('count-filter-cold');
+      if (fCold) fCold.innerText = camp.cold_leads || 0;
+    }
+
+    function renderCampaignContactsTable(contacts) {
+      const tbody = document.getElementById('camp-contacts-tbody');
+      if (!tbody) return;
+
+      if (!contacts || contacts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-[#8C827A]">لا توجد نتائج مطابقة لفلتر البحث.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = contacts.map(c => {
+        // Status Badge
+        let statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700">⏳ في الانتظار</span>';
+        if (c.call_status === 'in_progress') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-800 animate-pulse font-bold">📞 جاري الاتصال</span>';
+        } else if (c.call_status === 'answered') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold">✅ تم الرد</span>';
+        } else if (c.call_status === 'failed') {
+          statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] bg-rose-100 text-rose-800">❌ لم يرد (${c.retries_count} محاولة)</span>`;
+        } else if (c.call_status === 'callback') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-800">⏰ معاودة اتصال</span>';
+        }
+
+        // AI Score Badge
+        let aiBadge = '<span class="text-[#8C827A] text-[10px]">لم يتم الاتصال</span>';
+        if (c.interest_level === 'hot') {
+          aiBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 shadow-sm flex items-center gap-1 w-fit"><span>🔥</span><span>مهتم جداً</span></span>';
+        } else if (c.interest_level === 'warm') {
+          aiBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 w-fit"><span>🟡</span><span>متابعة</span></span>';
+        } else if (c.interest_level === 'cold') {
+          aiBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700 w-fit"><span>❄️</span><span>غير مهتم</span></span>';
+        } else if (c.interest_level === 'unreachable') {
+          aiBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-600 w-fit">تعذر الوصول</span>';
+        }
+
+        // Attributes pills
+        let attrsHtml = '<span class="text-[#8C827A] text-[10px]">-</span>';
+        if (c.attributes && typeof c.attributes === 'object' && Object.keys(c.attributes).length > 0) {
+          attrsHtml = Object.entries(c.attributes).slice(0, 3).map(([k, v]) => `
+            <span class="inline-block px-1.5 py-0.5 text-[9px] rounded bg-[#FAF7F2] border border-[#DDD5C7] text-[#443D39] mr-1 mb-1">
+              <strong>${escapeHtml(k)}:</strong> ${escapeHtml(String(v))}
+            </span>
+          `).join('');
+        }
+
+        // Summary snippet
+        const summaryText = c.call_summary ? escapeHtml(c.call_summary) : '<span class="text-[#8C827A] italic">لا يوجد ملخص بعد</span>';
+
+        return `
+          <tr class="hover:bg-[#FAF7F2]/50 transition">
+            <td class="py-3 px-4 font-bold text-[#1C1917] whitespace-nowrap">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full bg-[#FAF0F2] text-[#680E23] flex items-center justify-center text-[10px] font-bold">👤</span>
+                <span>${escapeHtml(c.customer_name)}</span>
+              </div>
+            </td>
+            <td class="py-3 px-3 font-mono text-[#2D2825] text-xs whitespace-nowrap dir-ltr text-start">${escapeHtml(c.phone_number)}</td>
+            <td class="py-3 px-3 whitespace-nowrap">${statusBadge}</td>
+            <td class="py-3 px-3 whitespace-nowrap">${aiBadge}</td>
+            <td class="py-3 px-4 text-[#443D39] max-w-[240px] truncate" title="${escapeHtml(c.call_summary || '')}">
+              ${summaryText}
+            </td>
+            <td class="py-3 px-3 max-w-[180px]">
+              ${attrsHtml}
+            </td>
+            <td class="py-3 px-3 text-center whitespace-nowrap">
+              <div class="flex items-center justify-center gap-1.5">
+                <button type="button" onclick="dialSingleContact(${c.id})" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-semibold transition" title="إجراء مكالمة فورية لهذا العميل">
+                  📞 اتصال
+                </button>
+                <button type="button" onclick="openContactDetailsModal(${c.id})" class="px-2.5 py-1 rounded-lg bg-[#FAF0F2] hover:bg-[#F3DCE1] text-[#680E23] border border-[#E8CCD2] text-[11px] font-semibold transition" title="عرض التفاصيل واستخلاصات الذكاء الاصطناعي">
+                  🔍 تفاصيل
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openNewCampaignModal() {
+      const modal = document.getElementById('modal-create-campaign');
+      if (!modal) return;
+
+      // Populate agent profile dropdown from userProfiles
+      const agentSelect = document.getElementById('camp-input-agent');
+      if (agentSelect) {
+        if (typeof userProfiles !== 'undefined' && userProfiles && userProfiles.length > 0) {
+          agentSelect.innerHTML = userProfiles.map(p => `
+            <option value="${p.id}" ${p.is_active ? 'selected' : ''}>${escapeHtml(p.name)} (${p.dialect_display || p.dialect})</option>
+          `).join('');
+        } else {
+          agentSelect.innerHTML = '<option value="">المساعد الافتراضي</option>';
+        }
+      }
+
+      // Reset fields
+      const nameInput = document.getElementById('camp-input-name');
+      if (nameInput) {
+        const d = new Date();
+        nameInput.value = `حملة ${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} - ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+      }
+
+      const promptInput = document.getElementById('camp-input-prompt');
+      if (promptInput) {
+        promptInput.value = 'أنت ممثل خدمة عملاء محترف ومستشار أعمال ودود. ابدأ بالترحيب بالعميل {name} بأسلوب لبق، واعرض عليه تفاصيل العرض والفرصة المميزة، واستمع باهتمام لاستفساراته، ودون ملاحظاته وقراره بدقة.';
+      }
+
+      const fileInput = document.getElementById('camp-input-file');
+      if (fileInput) fileInput.value = '';
+
+      const filePreview = document.getElementById('camp-file-preview');
+      if (filePreview) filePreview.classList.add('hidden');
+
+      const fileLabel = document.getElementById('camp-file-label');
+      if (fileLabel) fileLabel.innerText = 'اضغط لاختيار ملف من جهازك أو اسحبه وأفلته هنا';
+
+      const errorBox = document.getElementById('camp-modal-error');
+      if (errorBox) {
+        errorBox.classList.add('hidden');
+        errorBox.innerText = '';
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeNewCampaignModal() {
+      const modal = document.getElementById('modal-create-campaign');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function onCampaignFileSelected(input) {
+      if (!input.files || input.files.length === 0) return;
+      const file = input.files[0];
+      const preview = document.getElementById('camp-file-preview');
+      const nameEl = document.getElementById('camp-file-name');
+      const sizeEl = document.getElementById('camp-file-size');
+      const labelEl = document.getElementById('camp-file-label');
+
+      if (nameEl) nameEl.innerText = file.name;
+      if (sizeEl) sizeEl.innerText = `${(file.size / 1024).toFixed(1)} KB`;
+      if (labelEl) labelEl.innerText = `تم اختيار: ${file.name}`;
+      if (preview) preview.classList.remove('hidden');
+    }
+
+    async function submitNewCampaign(event) {
+      event.preventDefault();
+
+      const btnSubmit = document.getElementById('camp-btn-submit');
+      const errorBox = document.getElementById('camp-modal-error');
+      if (errorBox) errorBox.classList.add('hidden');
+
+      const fileInput = document.getElementById('camp-input-file');
+      if (!fileInput.files || fileInput.files.length === 0) {
+        if (errorBox) {
+          errorBox.innerText = 'يرجى اختيار ملف بيانات العملاء أولاً.';
+          errorBox.classList.remove('hidden');
+        }
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      formData.append('name', document.getElementById('camp-input-name').value.trim());
+      formData.append('call_prompt', document.getElementById('camp-input-prompt').value.trim());
+
+      const agentSelect = document.getElementById('camp-input-agent');
+      if (agentSelect && agentSelect.value) {
+        formData.append('agent_profile_id', agentSelect.value);
+      }
+
+      const retries = document.getElementById('camp-input-retries');
+      if (retries) formData.append('max_retries', retries.value);
+
+      const delay = document.getElementById('camp-input-delay');
+      if (delay) formData.append('retry_delay_minutes', delay.value);
+
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<span>⏳</span><span>جاري رفع وتحليل الملف...</span>';
+      }
+
+      try {
+        const res = await fetch('/api/crm/campaigns/upload/', {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+          }
+        });
+
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(`تم استيراد ${data.total_extracted} عميل بنجاح وتنظيمهم في الـ CRM!`, 'success');
+          closeNewCampaignModal();
+          await loadCampaignsList(data.campaign.id);
+        } else {
+          if (errorBox) {
+            errorBox.innerText = data.message || 'فشل استيراد الملف.';
+            errorBox.classList.remove('hidden');
+          }
+        }
+      } catch (err) {
+        console.error('Error uploading campaign:', err);
+        if (errorBox) {
+          errorBox.innerText = 'حدث خطأ في الاتصال أثناء رفع الملف: ' + err.message;
+          errorBox.classList.remove('hidden');
+        }
+      } finally {
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.innerHTML = '<span>🚀</span><span>رفع وتنظيم العملاء في الـ CRM</span>';
+        }
+      }
+    }
+
+    async function startCurrentCampaign() {
+      if (!currentCampaignId) return;
+      if (!confirm('هل تريد بالتأكيد بدء حملة الاتصال التلقائي الآن؟ سيتم جدولة المكالمات وتوزيعها عبر Inngest وفق معدل التزامن المحدد.')) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/crm/campaigns/${currentCampaignId}/start/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+          }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(data.message, 'success');
+          await onCampaignSelected(currentCampaignId);
+        } else {
+          alert(data.message || 'فشل بدء الحملة');
+        }
+      } catch (err) {
+        console.error('Error starting campaign:', err);
+        alert('حدث خطأ أثناء إطلاق الحملة: ' + err.message);
+      }
+    }
+
+    async function pauseCurrentCampaign() {
+      if (!currentCampaignId) return;
+
+      try {
+        const res = await fetch(`/api/crm/campaigns/${currentCampaignId}/pause/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+          }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(data.message, 'info');
+          await onCampaignSelected(currentCampaignId);
+        } else {
+          alert(data.message || 'فشل إيقاف الحملة');
+        }
+      } catch (err) {
+        console.error('Error pausing campaign:', err);
+        alert('حدث خطأ أثناء إيقاف الحملة: ' + err.message);
+      }
+    }
+
+    async function dialSingleContact(contactId) {
+      if (!contactId) return;
+
+      try {
+        const res = await fetch(`/api/crm/campaigns/contacts/${contactId}/dial/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+          }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(data.message, 'success');
+          setTimeout(() => {
+            if (currentCampaignId) onCampaignSelected(currentCampaignId);
+          }, 1500);
+        } else {
+          alert(data.message || 'تعذر إجراء المكالمة');
+        }
+      } catch (err) {
+        console.error('Error dialing contact:', err);
+        alert('حدث خطأ أثناء الاتصال: ' + err.message);
+      }
+    }
+
+    function exportCurrentCampaign(format = 'xlsx') {
+      if (!currentCampaignId) {
+        alert('يرجى اختيار حملة أولاً.');
+        return;
+      }
+      const filter = currentContactFilter || 'all';
+      const url = `/api/crm/campaigns/${currentCampaignId}/export/?format=${format}&filter=${filter}`;
+      window.open(url, '_blank');
+    }
+
+    function filterCampaignContacts(status) {
+      currentContactFilter = status;
+
+      // Update button styling
+      document.querySelectorAll('.camp-filter-btn').forEach(btn => {
+        if (btn.getAttribute('data-filter') === status) {
+          btn.className = 'camp-filter-btn px-3 py-1 rounded-xl bg-[#680E23] text-white font-semibold transition';
+        } else {
+          btn.className = 'camp-filter-btn px-3 py-1 rounded-xl bg-[#F5EFE6] text-[#6E645D] hover:bg-[#EAE3D9] font-semibold transition';
+        }
+      });
+
+      if (currentCampaignId) {
+        onCampaignSelected(currentCampaignId);
+      }
+    }
+
+    function searchCampaignContacts(val) {
+      currentContactSearch = val.trim();
+      clearTimeout(campaignSearchDebounceTimer);
+      campaignSearchDebounceTimer = setTimeout(() => {
+        if (currentCampaignId) {
+          onCampaignSelected(currentCampaignId);
+        }
+      }, 350);
+    }
+
+    function openContactDetailsModal(contactId) {
+      const contact = currentCampaignContacts.find(c => c.id == contactId);
+      if (!contact) return;
+
+      const modal = document.getElementById('modal-contact-details');
+      if (!modal) return;
+
+      document.getElementById('contact-modal-name').innerText = contact.customer_name;
+      document.getElementById('contact-modal-phone').innerText = contact.phone_number;
+
+      // Status
+      const statusEl = document.getElementById('contact-modal-status');
+      if (statusEl) statusEl.innerText = contact.call_status;
+
+      // Interest
+      const interestEl = document.getElementById('contact-modal-interest');
+      if (interestEl) {
+        if (contact.interest_level === 'hot') interestEl.innerText = '🔥 مهتم جداً';
+        else if (contact.interest_level === 'warm') interestEl.innerText = '🟡 للمتابعة';
+        else if (contact.interest_level === 'cold') interestEl.innerText = '❄️ غير مهتم';
+        else interestEl.innerText = 'لم يحدد بعد';
+      }
+
+      const durEl = document.getElementById('contact-modal-duration');
+      if (durEl) durEl.innerText = `${contact.duration_seconds || 0} ثانية`;
+
+      const retriesEl = document.getElementById('contact-modal-retries');
+      if (retriesEl) retriesEl.innerText = contact.retries_count || 0;
+
+      // Summary
+      const summaryEl = document.getElementById('contact-modal-summary');
+      if (summaryEl) summaryEl.innerText = contact.call_summary || 'لم تجرَ المكالمة بعد.';
+
+      // AI Insights
+      const insightsEl = document.getElementById('contact-modal-insights');
+      if (insightsEl) {
+        const ext = contact.extracted_data || {};
+        if (ext.customer_intent || ext.key_answers || ext.action_required) {
+          insightsEl.innerHTML = `
+            <div><strong>🎯 نية العميل:</strong> ${escapeHtml(ext.customer_intent || '-')}</div>
+            <div><strong>💡 الإجابات الرئيسية:</strong> ${escapeHtml(ext.key_answers || '-')}</div>
+            <div><strong>📌 الإجراء المطلوب:</strong> ${escapeHtml(ext.action_required || '-')}</div>
+          `;
+        } else {
+          insightsEl.innerHTML = '<span class="text-[#8C827A] italic">لا توجد استخلاصات ذكية بعد.</span>';
+        }
+      }
+
+      // Attributes
+      const attrsEl = document.getElementById('contact-modal-attrs');
+      if (attrsEl) {
+        const attrs = contact.attributes || {};
+        if (Object.keys(attrs).length > 0) {
+          attrsEl.innerHTML = `
+            <table class="w-full text-start text-[11px]">
+              ${Object.entries(attrs).map(([k, v]) => `
+                <tr class="border-b border-[#EAE3D9]/60">
+                  <td class="font-bold py-1 text-[#680E23] w-1/3">${escapeHtml(k)}</td>
+                  <td class="py-1 text-[#2D2825]">${escapeHtml(String(v))}</td>
+                </tr>
+              `).join('')}
+            </table>
+          `;
+        } else {
+          attrsEl.innerHTML = '<span class="text-[#8C827A] italic">لا توجد حقول إضافية.</span>';
+        }
+      }
+
+      // Dial button inside modal
+      const dialBtn = document.getElementById('contact-modal-dial-btn');
+      if (dialBtn) {
+        dialBtn.onclick = () => {
+          dialSingleContact(contact.id);
+          closeContactModal();
+        };
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeContactModal() {
+      const modal = document.getElementById('modal-contact-details');
+      if (modal) modal.classList.add('hidden');
+    }
+
     // Initialize lists on load
     checkPartnerStatusOnLoad();
     loadDeveloperKeys();
     loadDocuments();
     loadProfiles();
+    loadCampaignsList();
     loadMcpServer();
     loadCustomersList();
     loadCustomerMemory();
