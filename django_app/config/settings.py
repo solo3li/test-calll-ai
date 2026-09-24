@@ -18,6 +18,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.nip.io',
     'https://169.58.32.179.nip.io',
     'https://app.169.58.32.179.nip.io',
+    'https://employee.169.58.32.179.nip.io',
+    'http://employee.169.58.32.179.nip.io',
     'http://169.58.32.179.nip.io',
     'http://app.169.58.32.179.nip.io',
     'https://localhost',

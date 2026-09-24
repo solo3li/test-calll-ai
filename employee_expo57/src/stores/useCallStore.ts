@@ -272,7 +272,15 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
           // Join room and enable microphone
           await room.connect(data.livekit_url, data.livekit_token);
-          await room.localParticipant.setMicrophoneEnabled(true);
+          try {
+            if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+              await room.localParticipant.setMicrophoneEnabled(true);
+            } else {
+              console.warn("navigator.mediaDevices.getUserMedia is unavailable in current context (requires HTTPS or localhost)");
+            }
+          } catch (micErr) {
+            console.warn("Failed to enable microphone:", micErr);
+          }
 
           set({ livekitRoom: room });
         } else {
@@ -365,7 +373,15 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         });
 
         await room.connect(data.livekit_url, data.livekit_token);
-        await room.localParticipant.setMicrophoneEnabled(true);
+        try {
+          if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+            await room.localParticipant.setMicrophoneEnabled(true);
+          } else {
+            console.warn("navigator.mediaDevices.getUserMedia is unavailable in current context (requires HTTPS or localhost)");
+          }
+        } catch (micErr) {
+          console.warn("Failed to enable microphone:", micErr);
+        }
 
         set({ livekitRoom: room, incomingCall: null });
       }

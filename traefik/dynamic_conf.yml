@@ -32,6 +32,14 @@ http:
       tls:
         certResolver: "letsencrypt"
 
+    employee-router:
+      rule: "Host(`employee.169.58.32.179.nip.io`)"
+      entryPoints:
+        - "websecure"
+      service: "employee-service"
+      tls:
+        certResolver: "letsencrypt"
+
   services:
     django-service:
       loadBalancer:
@@ -52,3 +60,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://inngest:8288"
+
+    employee-service:
+      loadBalancer:
+        servers:
+          - url: "http://172.17.0.1:8081"
