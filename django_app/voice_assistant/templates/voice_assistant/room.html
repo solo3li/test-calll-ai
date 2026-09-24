@@ -1107,6 +1107,21 @@
             </div>
           </div>
 
+          <!-- Outbound Gateway Missing Warning Banner -->
+          <div id="camp-no-gateway-alert" class="hidden p-4 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-900 text-xs flex flex-wrap items-center justify-between gap-3 shadow-sm">
+            <div class="flex items-center gap-2.5">
+              <span class="text-xl">⚠️</span>
+              <div>
+                <strong class="block text-amber-950">تنبيه هام: لا يوجد مسار اتصال صادر (SIP Trunk) مفعل حالياً</strong>
+                <span class="text-[11px] text-amber-800">لن يتم الاتصال بالعملاء حتى تقوم بإعداد وتفعيل خط اتصال صادر (سحابي أو سنترال PBX) من تبويب الربط الهاتفي.</span>
+              </div>
+            </div>
+            <button type="button" onclick="switchTab('pbx')" class="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm">
+              <span>⚙️</span>
+              <span>إعداد مسار الاتصال (SIP Trunk)</span>
+            </button>
+          </div>
+
           <!-- Active Campaign Selector & Controls -->
           <div id="campaign-active-panel" class="p-5 rounded-2xl bg-[#FBF9F5] border border-[#EAE3D9] space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-4">
@@ -1127,6 +1142,10 @@
                 <button type="button" id="btn-pause-campaign" onclick="pauseCurrentCampaign()" class="hidden px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
                   <span>⏸️</span>
                   <span>إيقاف مؤقت</span>
+                </button>
+                <button type="button" id="btn-reset-campaign" onclick="resetCurrentCampaignContacts()" class="px-3 py-1.5 rounded-xl bg-[#FAF0F2] hover:bg-[#F3DCE1] text-[#680E23] border border-[#E8CCD2] text-xs font-semibold transition flex items-center gap-1.5 shadow-sm" title="إعادة تعيين كافة جهات الاتصال إلى حالة الانتظار">
+                  <span>🔄</span>
+                  <span>إعادة ضبط القائمة</span>
                 </button>
                 <button type="button" onclick="exportCurrentCampaign('xlsx')" class="px-3.5 py-1.5 rounded-xl bg-[#680E23] hover:bg-[#500B1B] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
                   <span>📊</span>
@@ -6438,8 +6457,30 @@
     let currentCampaignContacts = [];
     let currentContactFilter = 'all';
     let currentContactSearch = '';
+    let hasActiveOutboundGateway = false;
     let campaignSearchDebounceTimer = null;
     let campaignAutoPollTimer = null;
+
+    function updateGatewayAlertUI() {
+      const alertEl = document.getElementById('camp-no-gateway-alert');
+      if (alertEl) {
+        if (!hasActiveOutboundGateway) {
+          alertEl.classList.remove('hidden');
+        } else {
+          alertEl.classList.add('hidden');
+        }
+      }
+      const btnStart = document.getElementById('btn-start-campaign');
+      if (btnStart) {
+        if (!hasActiveOutboundGateway) {
+          btnStart.title = 'لا يوجد خط اتصال صادر (SIP Trunk) مفعل حالياً';
+          btnStart.classList.add('opacity-80');
+        } else {
+          btnStart.title = '';
+          btnStart.classList.remove('opacity-80');
+        }
+      }
+    }
 
     async function loadCampaignsList(selectCampaignId = null) {
       try {
@@ -6449,6 +6490,8 @@
 
         campaignsList = data.campaigns || [];
         const userLimit = data.user_concurrency_limit || 1;
+        hasActiveOutboundGateway = data.has_outbound_gateway !== undefined ? Boolean(data.has_outbound_gateway) : false;
+        updateGatewayAlertUI();
 
         // Update stats
         const totalCampsEl = document.getElementById('camp-stat-total-campaigns');
@@ -6547,6 +6590,11 @@
 
         currentCampaignData = data.campaign;
         currentCampaignContacts = data.contacts || [];
+
+        if (data.has_outbound_gateway !== undefined) {
+          hasActiveOutboundGateway = Boolean(data.has_outbound_gateway);
+          updateGatewayAlertUI();
+        }
 
         renderCampaignHeaderAndStats(data.campaign);
         renderCampaignContactsTable(currentCampaignContacts);
@@ -6845,6 +6893,13 @@
 
     async function startCurrentCampaign() {
       if (!currentCampaignId) return;
+
+      if (!hasActiveOutboundGateway) {
+        showToast('لا يمكن بدء الحملة: لا يوجد خط اتصال صادر (SIP Trunk) مفعل.', 'error');
+        alert('تنبيه هام: لا يوجد مسار اتصال صادر (SIP Trunk) مفعل حالياً في حسابك.\n\nيرجى التوجه لتبويب "الربط الهاتفي والسنترال" وإعداد خط صادر أولاً للتمكن من الاتصال بالعملاء.');
+        return;
+      }
+
       if (!confirm('هل تريد بالتأكيد بدء حملة الاتصال التلقائي الآن؟ سيتم جدولة المكالمات وتوزيعها عبر Inngest وفق معدل التزامن المحدد.')) {
         return;
       }
@@ -6892,8 +6947,40 @@
       }
     }
 
+    async function resetCurrentCampaignContacts() {
+      if (!currentCampaignId) return;
+      if (!confirm('هل تريد إعادة تعيين كافة جهات الاتصال في هذه الحملة إلى حالة "في الانتظار" (Pending) وتصفير المحاولات السابقة؟')) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/crm/campaigns/${currentCampaignId}/reset/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+          }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(data.message, 'success');
+          await onCampaignSelected(currentCampaignId);
+        } else {
+          alert(data.message || 'فشلت إعادة الضبط');
+        }
+      } catch (err) {
+        console.error('Error resetting campaign contacts:', err);
+        alert('حدث خطأ أثناء إعادة ضبط جهات الاتصال: ' + err.message);
+      }
+    }
+
     async function dialSingleContact(contactId) {
       if (!contactId) return;
+
+      if (!hasActiveOutboundGateway) {
+        showToast('لا يمكن الاتصال: لا يوجد خط اتصال صادر (SIP Trunk) مفعل.', 'error');
+        alert('تنبيه: لا يوجد خط صادر (SIP Trunk) مفعل لإجراء هذا الاتصال. يرجى إعداد خط صادر أولاً من تبويب "الربط الهاتفي والسنترال".');
+        return;
+      }
 
       try {
         const res = await fetch(`/api/crm/campaigns/contacts/${contactId}/dial/`, {

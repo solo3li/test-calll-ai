@@ -86,12 +86,26 @@ def _initiate_contact_call_sync(contact_id: int) -> dict:
             })
             return {"status": "success", "room_name": room_name, "dial_data": dial_res}
         else:
-            contact.call_status = 'failed'
-            contact.interest_level = 'unreached'
-            contact.call_summary = dial_res.get("message") or "فشل الاتصال بالمزود الخارجي"
-            contact.save(update_fields=['call_status', 'interest_level', 'call_summary', 'updated_at'])
-            campaign.update_metrics()
-            return {"status": "error", "message": dial_res.get("message")}
+            if dial_res.get("code") == "no_outbound_gateway":
+                # DO NOT mark as failed or waste retries when there is no gateway!
+                contact.call_status = 'pending'
+                contact.interest_level = 'uncontacted'
+                contact.call_summary = ''
+                contact.save(update_fields=['call_status', 'interest_level', 'call_summary', 'updated_at'])
+                campaign.status = 'paused'
+                campaign.save(update_fields=['status', 'updated_at'])
+                campaign.update_metrics()
+                broadcast_campaign_update(campaign.id, "campaign_paused_no_gateway", {
+                    "message": "تم إيقاف الحملة مؤقتاً لعدم وجود مسار اتصال صادر مفعل."
+                })
+                return {"status": "aborted", "code": "no_outbound_gateway", "message": dial_res.get("message")}
+            else:
+                contact.call_status = 'failed'
+                contact.interest_level = 'unreached'
+                contact.call_summary = dial_res.get("message") or "فشل الاتصال بالمزود الخارجي"
+                contact.save(update_fields=['call_status', 'interest_level', 'call_summary', 'updated_at'])
+                campaign.update_metrics()
+                return {"status": "error", "message": dial_res.get("message")}
     except Exception as err:
         logger.exception(f"Error in _initiate_contact_call_sync for contact {contact_id}")
         return {"status": "error", "message": str(err)}
@@ -160,6 +174,10 @@ async def fn_dial_campaign_contact(ctx: inngest.Context) -> dict:
         return await sync_to_async(_initiate_contact_call_sync, thread_sensitive=True)(contact_id)
 
     call_result = await ctx.step.run("initiate-call", step_initiate_call)
+
+    # If call was aborted due to missing outbound gateway, exit immediately without retries
+    if call_result.get("code") == "no_outbound_gateway" or call_result.get("status") == "aborted":
+        return {"status": "aborted", "reason": "no_outbound_gateway", "contact_id": contact_id}
 
     if call_result.get("status") != "success":
         retry_info = await sync_to_async(_check_and_mark_retry_sync, thread_sensitive=True)(contact_id)

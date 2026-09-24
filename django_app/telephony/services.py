@@ -70,6 +70,66 @@ async def _async_dial_sip_participant(trunk_id, destination_phone, room_name, ca
         await lk.aclose()
 
 
+def check_has_active_outbound_gateway(user, gateway_type='auto', gateway_id=None, partner=None) -> tuple:
+    """
+    Validates if an active, usable outbound SIP trunk (PBX or Cloud) is available.
+    Returns: (is_available: bool, trunk_id: str|None, trunk_name: str, caller_id: str, error_message: str)
+    """
+    gateway_type = str(gateway_type or 'auto').strip().lower()
+
+    if gateway_type == 'pbx' and gateway_id:
+        pbx_t = InboundPBXTrunk.objects.filter(id=gateway_id, user=user, is_active=True, enable_outbound=True).first()
+        if not pbx_t and partner:
+            pbx_t = InboundPBXTrunk.objects.filter(id=gateway_id, user=partner.user, is_active=True, enable_outbound=True).first()
+        if not pbx_t or not pbx_t.livekit_outbound_trunk_id:
+            return False, None, "", "", "سنترال PBX المختار غير مفعل للصادر أو غير متصل بـ LiveKit"
+        caller_id_val = pbx_t.inbound_numbers.split(',')[0].strip() if pbx_t.inbound_numbers else ""
+        return True, pbx_t.livekit_outbound_trunk_id, f"سنترال {pbx_t.name}", caller_id_val, ""
+
+    elif gateway_type == 'cloud':
+        trunk = OutboundSIPTrunk.objects.filter(user=user, is_active=True).first()
+        if not trunk and partner:
+            trunk = OutboundSIPTrunk.objects.filter(user=partner.user, is_active=True).first()
+        if not trunk or not trunk.livekit_outbound_trunk_id:
+            return False, None, "", "", "الجذع السحابي العام غير مهيأ. يرجى ضبط بيانات المزود في إعدادات الجذع الخارجي."
+        return True, trunk.livekit_outbound_trunk_id, trunk.name, trunk.caller_id, ""
+
+    else:
+        # Auto: check default PBX trunk first, then default cloud trunk, then any
+        default_pbx = InboundPBXTrunk.objects.filter(user=user, is_active=True, enable_outbound=True, is_default_outbound=True).first()
+        if default_pbx and default_pbx.livekit_outbound_trunk_id:
+            caller_id_val = default_pbx.inbound_numbers.split(',')[0].strip() if default_pbx.inbound_numbers else ""
+            return True, default_pbx.livekit_outbound_trunk_id, f"سنترال {default_pbx.name} (افتراضي)", caller_id_val, ""
+
+        trunk = OutboundSIPTrunk.objects.filter(user=user, is_active=True, is_default=True).first()
+        if not trunk:
+            trunk = OutboundSIPTrunk.objects.filter(user=user, is_active=True).first()
+        if trunk and trunk.livekit_outbound_trunk_id:
+            return True, trunk.livekit_outbound_trunk_id, trunk.name, trunk.caller_id, ""
+
+        any_pbx = InboundPBXTrunk.objects.filter(user=user, is_active=True, enable_outbound=True).exclude(livekit_outbound_trunk_id='').first()
+        if any_pbx:
+            caller_id_val = any_pbx.inbound_numbers.split(',')[0].strip() if any_pbx.inbound_numbers else ""
+            return True, any_pbx.livekit_outbound_trunk_id, f"سنترال {any_pbx.name}", caller_id_val, ""
+
+        if partner:
+            p_pbx = InboundPBXTrunk.objects.filter(user=partner.user, is_active=True, enable_outbound=True, is_default_outbound=True).first()
+            if p_pbx and p_pbx.livekit_outbound_trunk_id:
+                caller_id_val = p_pbx.inbound_numbers.split(',')[0].strip() if p_pbx.inbound_numbers else ""
+                return True, p_pbx.livekit_outbound_trunk_id, f"سنترال الشريك {p_pbx.name}", caller_id_val, ""
+            p_trunk = OutboundSIPTrunk.objects.filter(user=partner.user, is_active=True, is_default=True).first()
+            if not p_trunk:
+                p_trunk = OutboundSIPTrunk.objects.filter(user=partner.user, is_active=True).first()
+            if p_trunk and p_trunk.livekit_outbound_trunk_id:
+                return True, p_trunk.livekit_outbound_trunk_id, f"جذع الشريك {p_trunk.name}", p_trunk.caller_id, ""
+            p_any_pbx = InboundPBXTrunk.objects.filter(user=partner.user, is_active=True, enable_outbound=True).exclude(livekit_outbound_trunk_id='').first()
+            if p_any_pbx:
+                caller_id_val = p_any_pbx.inbound_numbers.split(',')[0].strip() if p_any_pbx.inbound_numbers else ""
+                return True, p_any_pbx.livekit_outbound_trunk_id, f"سنترال الشريك {p_any_pbx.name}", caller_id_val, ""
+
+        return False, None, "", "", "لا يوجد مسار اتصال صادر مفعل (سحابي أو سنترال SIP Trunk). يرجى إعداد وتفعيل مسار اتصال صادر أولاً للتمكن من الاتصال."
+
+
 def initiate_outbound_call(
     user,
     phone_number: str,
@@ -162,88 +222,17 @@ def initiate_outbound_call(
             logger.warning(f"Error checking wallet for outbound call: {b_err}")
 
     # 3. Gateway Resolution (PBX / Cloud / Auto)
-    livekit_outbound_trunk_id = None
-    trunk_name = ""
-    caller_id_val = ""
-
-    if gateway_type == 'pbx' and gateway_id:
-        pbx_t = InboundPBXTrunk.objects.filter(id=gateway_id, user=user, is_active=True, enable_outbound=True).first()
-        if not pbx_t and partner:
-            pbx_t = InboundPBXTrunk.objects.filter(id=gateway_id, user=partner.user, is_active=True, enable_outbound=True).first()
-        if not pbx_t or not pbx_t.livekit_outbound_trunk_id:
-            return {
-                "status": "error",
-                "code": "invalid_gateway",
-                "message": "سنترال PBX المختار غير مفعل للصادر أو غير متصل بـ LiveKit",
-                "http_status": 400
-            }
-        livekit_outbound_trunk_id = pbx_t.livekit_outbound_trunk_id
-        trunk_name = f"سنترال {pbx_t.name}"
-        caller_id_val = pbx_t.inbound_numbers.split(',')[0].strip() if pbx_t.inbound_numbers else ""
-
-    elif gateway_type == 'cloud':
-        trunk = OutboundSIPTrunk.objects.filter(user=user, is_active=True).first()
-        if not trunk and partner:
-            trunk = OutboundSIPTrunk.objects.filter(user=partner.user, is_active=True).first()
-        if not trunk or not trunk.livekit_outbound_trunk_id:
-            return {
-                "status": "error",
-                "code": "invalid_gateway",
-                "message": "الجذع السحابي العام غير مهيأ. يرجى ضبط بيانات المزود في إعدادات الجذع الخارجي.",
-                "http_status": 400
-            }
-        livekit_outbound_trunk_id = trunk.livekit_outbound_trunk_id
-        trunk_name = trunk.name
-        caller_id_val = trunk.caller_id
-
-    else:
-        # Auto: check default PBX trunk first, then default cloud trunk, then any
-        default_pbx = InboundPBXTrunk.objects.filter(user=user, is_active=True, enable_outbound=True, is_default_outbound=True).first()
-        if default_pbx and default_pbx.livekit_outbound_trunk_id:
-            livekit_outbound_trunk_id = default_pbx.livekit_outbound_trunk_id
-            trunk_name = f"سنترال {default_pbx.name} (افتراضي)"
-            caller_id_val = default_pbx.inbound_numbers.split(',')[0].strip() if default_pbx.inbound_numbers else ""
-        else:
-            trunk = OutboundSIPTrunk.objects.filter(user=user, is_active=True, is_default=True).first()
-            if not trunk:
-                trunk = OutboundSIPTrunk.objects.filter(user=user, is_active=True).first()
-            if trunk and trunk.livekit_outbound_trunk_id:
-                livekit_outbound_trunk_id = trunk.livekit_outbound_trunk_id
-                trunk_name = trunk.name
-                caller_id_val = trunk.caller_id
-            else:
-                any_pbx = InboundPBXTrunk.objects.filter(user=user, is_active=True, enable_outbound=True).exclude(livekit_outbound_trunk_id='').first()
-                if any_pbx:
-                    livekit_outbound_trunk_id = any_pbx.livekit_outbound_trunk_id
-                    trunk_name = f"سنترال {any_pbx.name}"
-                    caller_id_val = any_pbx.inbound_numbers.split(',')[0].strip() if any_pbx.inbound_numbers else ""
-                elif partner:
-                    # Inherit partner's active trunk for sub-client
-                    p_pbx = InboundPBXTrunk.objects.filter(user=partner.user, is_active=True, enable_outbound=True, is_default_outbound=True).first()
-                    if p_pbx and p_pbx.livekit_outbound_trunk_id:
-                        livekit_outbound_trunk_id = p_pbx.livekit_outbound_trunk_id
-                        trunk_name = f"سنترال الشريك {p_pbx.name}"
-                        caller_id_val = p_pbx.inbound_numbers.split(',')[0].strip() if p_pbx.inbound_numbers else ""
-                    else:
-                        p_trunk = OutboundSIPTrunk.objects.filter(user=partner.user, is_active=True, is_default=True).first()
-                        if not p_trunk:
-                            p_trunk = OutboundSIPTrunk.objects.filter(user=partner.user, is_active=True).first()
-                        if p_trunk and p_trunk.livekit_outbound_trunk_id:
-                            livekit_outbound_trunk_id = p_trunk.livekit_outbound_trunk_id
-                            trunk_name = f"جذع الشريك {p_trunk.name}"
-                            caller_id_val = p_trunk.caller_id
-                        else:
-                            p_any_pbx = InboundPBXTrunk.objects.filter(user=partner.user, is_active=True, enable_outbound=True).exclude(livekit_outbound_trunk_id='').first()
-                            if p_any_pbx:
-                                livekit_outbound_trunk_id = p_any_pbx.livekit_outbound_trunk_id
-                                trunk_name = f"سنترال الشريك {p_any_pbx.name}"
-                                caller_id_val = p_any_pbx.inbound_numbers.split(',')[0].strip() if p_any_pbx.inbound_numbers else ""
-
-    if not livekit_outbound_trunk_id:
+    has_gw, livekit_outbound_trunk_id, trunk_name, caller_id_val, err_msg = check_has_active_outbound_gateway(
+        user=user,
+        gateway_type=gateway_type,
+        gateway_id=gateway_id,
+        partner=partner
+    )
+    if not has_gw:
         return {
             "status": "error",
             "code": "no_outbound_gateway",
-            "message": "لا يوجد مسار اتصال صادر مفعل (سحابي أو سنترال محلي). يرجى تفعيل الجذع السحابي أو تمكين المكالمات الصادرة في سنترال Issabel. / No active outbound route configured.",
+            "message": err_msg or "لا يوجد مسار اتصال صادر مفعل (سحابي أو سنترال SIP Trunk).",
             "http_status": 422
         }
 

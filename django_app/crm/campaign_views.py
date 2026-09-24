@@ -106,11 +106,14 @@ def api_upload_and_create_campaign(request):
 @login_required(login_url='/login/')
 def api_list_campaigns(request):
     """List all outbound campaigns for the authenticated user."""
+    from telephony.services import check_has_active_outbound_gateway
     campaigns = OutboundCampaign.objects.filter(user=request.user)
     limit = UserCampaignLimit.get_limit_for_user(request.user)
+    has_gw, _, _, _, _ = check_has_active_outbound_gateway(user=request.user)
     return JsonResponse({
         "status": "success",
         "user_concurrency_limit": limit,
+        "has_outbound_gateway": has_gw,
         "campaigns": [c.to_dict() for c in campaigns]
     })
 
@@ -118,8 +121,15 @@ def api_list_campaigns(request):
 @login_required(login_url='/login/')
 def api_get_campaign_detail(request, campaign_id):
     """Retrieve campaign details and filtered CRM contact list."""
+    from telephony.services import check_has_active_outbound_gateway
     campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
     contacts_qs = campaign.contacts.all()
+
+    has_gw, _, _, _, _ = check_has_active_outbound_gateway(
+        user=request.user,
+        gateway_type=campaign.gateway_type,
+        gateway_id=campaign.gateway_id
+    )
 
     # Filters
     call_status = request.GET.get('call_status', '').strip()
@@ -146,6 +156,7 @@ def api_get_campaign_detail(request, campaign_id):
         "status": "success",
         "campaign": campaign.to_dict(),
         "user_concurrency_limit": UserCampaignLimit.get_limit_for_user(request.user),
+        "has_outbound_gateway": has_gw,
         "contacts": contacts_data,
         "total_filtered": contacts_qs.count()
     })
@@ -158,12 +169,27 @@ def api_start_campaign(request, campaign_id):
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
     campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+
+    # 1. Strict Pre-flight Check: Verify Outbound SIP Trunk / Gateway exists BEFORE doing anything
+    from telephony.services import check_has_active_outbound_gateway
+    has_gw, _, _, _, err_msg = check_has_active_outbound_gateway(
+        user=request.user,
+        gateway_type=campaign.gateway_type,
+        gateway_id=campaign.gateway_id
+    )
+    if not has_gw:
+        return JsonResponse({
+            "status": "error",
+            "code": "no_outbound_gateway",
+            "message": "لا يمكن بدء الحملة: لا يوجد خط اتصال صادر (SIP Trunk) مفعل في حسابك. يرجى إعداد وتفعيل خط صادر أولاً من تبويب 'الربط الهاتفي والسنترال' لتتمكن من إجراء المكالمات الصادرة."
+        }, status=422)
+
     limit = UserCampaignLimit.get_limit_for_user(request.user)
 
     campaign.status = 'running'
     campaign.save(update_fields=['status', 'updated_at'])
 
-    pending_contacts = list(campaign.contacts.filter(call_status__in=['pending', 'failed']).values_list('id', flat=True))
+    pending_contacts = list(campaign.contacts.filter(call_status='pending').values_list('id', flat=True))
     if not pending_contacts:
         return JsonResponse({
             "status": "error",
@@ -219,12 +245,56 @@ def api_pause_campaign(request, campaign_id):
 
 
 @login_required(login_url='/login/')
+def api_reset_campaign_contacts(request, campaign_id):
+    """
+    Resets all contacts in a campaign back to 'pending',
+    zeroes retries and clears failure summaries, setting campaign back to 'draft'.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+    campaign.status = 'draft'
+    campaign.save(update_fields=['status', 'updated_at'])
+
+    updated_count = campaign.contacts.filter(call_status__in=['failed', 'busy', 'no_answer', 'in_progress']).update(
+        call_status='pending',
+        interest_level='uncontacted',
+        retries_count=0,
+        call_summary='',
+        extracted_data={}
+    )
+    campaign.update_metrics()
+
+    return JsonResponse({
+        "status": "success",
+        "message": f"تمت إعادة تعيين {updated_count} عميل لحالة 'في الانتظار' بنجاح وجاهزيتهم للاتصال.",
+        "campaign": campaign.to_dict()
+    })
+
+
+@login_required(login_url='/login/')
 def api_dial_single_contact(request, contact_id):
     """Manually trigger an outbound call for a single contact in the CRM table."""
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
     contact = get_object_or_404(CampaignContact, id=contact_id, campaign__user=request.user)
+
+    # Strict Pre-flight Check: Verify Outbound SIP Trunk / Gateway exists
+    from telephony.services import check_has_active_outbound_gateway
+    has_gw, _, _, _, err_msg = check_has_active_outbound_gateway(
+        user=request.user,
+        gateway_type=contact.campaign.gateway_type,
+        gateway_id=contact.campaign.gateway_id
+    )
+    if not has_gw:
+        return JsonResponse({
+            "status": "error",
+            "code": "no_outbound_gateway",
+            "message": "لا يمكن إجراء المكالمة: لا يوجد خط اتصال صادر (SIP Trunk) مفعل حالياً. يرجى إعداد وتفعيل خط صادر أولاً من تبويب 'الربط الهاتفي والسنترال'."
+        }, status=422)
+
     limit = UserCampaignLimit.get_limit_for_user(request.user)
 
     try:

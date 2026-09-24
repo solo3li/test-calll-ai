@@ -19,6 +19,7 @@ urlpatterns = [
     path('campaigns/<int:campaign_id>/', campaign_views.api_get_campaign_detail, name='api_get_campaign_detail'),
     path('campaigns/<int:campaign_id>/start/', campaign_views.api_start_campaign, name='api_start_campaign'),
     path('campaigns/<int:campaign_id>/pause/', campaign_views.api_pause_campaign, name='api_pause_campaign'),
+    path('campaigns/<int:campaign_id>/reset/', campaign_views.api_reset_campaign_contacts, name='api_reset_campaign_contacts'),
     path('campaigns/<int:campaign_id>/export/', campaign_views.api_export_campaign_contacts, name='api_export_campaign_contacts'),
     path('campaigns/contacts/<int:contact_id>/dial/', campaign_views.api_dial_single_contact, name='api_dial_single_contact'),
 ]
