@@ -49,6 +49,8 @@ services:
     container_name: voice_centrifugo
     restart: unless-stopped
     command: centrifugo -c /centrifugo/config.json
+    volumes:
+      - ./centrifugo/config.json:/centrifugo/config.json
     depends_on:
       - redis
     networks:
