@@ -6,6 +6,7 @@ import { useCall } from "../context/CallContext";
 
 export const ActiveCallView: React.FC = () => {
   const {
+    callState,
     activeCall,
     isMuted,
     isOnHold,
@@ -14,6 +15,9 @@ export const ActiveCallView: React.FC = () => {
     endCall,
     setTransferModalVisible,
     sendWhatsAppOrSms,
+    transferTargetName,
+    transferDurationSeconds,
+    cancelTransfer,
   } = useCall();
 
   const formatTime = (totalSeconds: number) => {
@@ -22,20 +26,103 @@ export const ActiveCallView: React.FC = () => {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // ── Render 1: TRANSFERRING Screen (Shown to Employee 2 after initiating transfer) ──
+  if (callState === "TRANSFERRING") {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} bounces={false}>
+        <View style={styles.topStatusRow}>
+          <Text style={styles.activeCallLabel}>تحويل المكالمة</Text>
+          <View style={[styles.liveBadge, { backgroundColor: "rgba(217, 119, 6, 0.12)" }]}>
+            <Text style={[styles.liveDot, { color: Colors.holdAmber }]}>((•))</Text>
+            <Text style={[styles.liveText, { color: Colors.holdAmber }]}>جاري التحويل</Text>
+          </View>
+        </View>
+
+        <View style={styles.specialCard}>
+          <View style={styles.specialIconCircle}>
+            <Ionicons name="shuffle" size={36} color={Colors.primary} />
+          </View>
+
+          <Text style={styles.specialTitle}>{transferTargetName || "الوجهة المحددة"}</Text>
+          <Text style={styles.specialSubtitle}>جاري الرنين على الموظفين في الطابور بالتناوب...</Text>
+
+          <View style={styles.timerRow}>
+            <Ionicons name="time-outline" size={16} color={Colors.primary} />
+            <Text style={styles.timerText}>{formatTime(transferDurationSeconds)}</Text>
+          </View>
+
+          <View style={styles.infoNoteBox}>
+            <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
+            <Text style={styles.infoNoteText}>
+              الطرف المتصل الآن في وضع الانتظار ويستمع لنغمة التحويل. ستعود تلقائياً بمجرد إتمام الرد.
+            </Text>
+          </View>
+
+          <TouchableOpacity style={styles.cancelTransferBtn} onPress={cancelTransfer} activeOpacity={0.8}>
+            <Ionicons name="close-circle-outline" size={20} color="#fff" />
+            <Text style={styles.cancelTransferBtnText}>إلغاء التحويل واستعادة المكالمة</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ── Render 2: HOLD Screen (Shown to Caller / Employee 1 while waiting for transfer) ──
+  if (callState === "HOLD") {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} bounces={false}>
+        <View style={styles.topStatusRow}>
+          <Text style={styles.activeCallLabel}>قيد الانتظار</Text>
+          <View style={[styles.liveBadge, { backgroundColor: "rgba(128, 0, 32, 0.1)" }]}>
+            <Text style={styles.liveDot}>((•))</Text>
+            <Text style={styles.liveText}>Hold</Text>
+          </View>
+        </View>
+
+        <View style={styles.specialCard}>
+          <View style={[styles.specialIconCircle, { backgroundColor: "rgba(128, 0, 32, 0.08)" }]}>
+            <Ionicons name="musical-notes" size={36} color={Colors.primary} />
+          </View>
+
+          <Text style={styles.specialTitle}>جاري تحويل مكالمتك</Text>
+          <Text style={styles.specialSubtitle}>يرجى الانتظار، سيقوم الزميل بالرد عليك خلال لحظات...</Text>
+
+          <View style={styles.timerRow}>
+            <Ionicons name="time-outline" size={16} color={Colors.primary} />
+            <Text style={styles.timerText}>{formatTime(activeCall.durationSeconds)}</Text>
+          </View>
+
+          <View style={[styles.infoNoteBox, { backgroundColor: "rgba(22, 163, 74, 0.08)" }]}>
+            <Ionicons name="volume-high-outline" size={16} color={Colors.liveGreen} />
+            <Text style={[styles.infoNoteText, { color: Colors.liveGreen }]}>
+              نغمة الانتظار تعمل في الخلفية...
+            </Text>
+          </View>
+
+          <TouchableOpacity style={styles.endCallSpecialBtn} onPress={endCall} activeOpacity={0.8}>
+            <Ionicons name="call" size={18} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
+            <Text style={styles.endCallSpecialBtnText}>إنهاء المكالمة</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ── Render 3: Standard CONNECTED / Active Call Screen ──
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} bounces={false}>
       {/* 1. Header: Active Call Status & Live Badge */}
       <View style={styles.topStatusRow}>
-        <Text style={styles.activeCallLabel}>Active Call</Text>
+        <Text style={styles.activeCallLabel}>مكالمة جارية</Text>
         <View style={styles.liveBadge}>
           <Text style={styles.liveDot}>((•))</Text>
-          <Text style={styles.liveText}>Live</Text>
+          <Text style={styles.liveText}>مباشر</Text>
         </View>
       </View>
 
       {/* 2. Caller Information */}
       <View style={styles.callerInfoSection}>
-        <Text style={styles.callerName}>{activeCall.callerName}</Text>
+        <Text style={styles.callerName}>{activeCall.callerName || "مكالمة WebRTC"}</Text>
         <Text style={styles.callerPhone}>{activeCall.phoneNumber}</Text>
 
         <View style={styles.timerRow}>
@@ -60,7 +147,7 @@ export const ActiveCallView: React.FC = () => {
             />
           </TouchableOpacity>
           <Text style={[styles.controlLabel, isMuted && { color: Colors.endCallRed }]}>
-            {isMuted ? "Muted" : "Mute"}
+            {isMuted ? "كتم الصوت" : "كتم"}
           </Text>
         </View>
 
@@ -78,7 +165,7 @@ export const ActiveCallView: React.FC = () => {
             />
           </TouchableOpacity>
           <Text style={[styles.controlLabel, isOnHold && { color: Colors.holdAmber }]}>
-            {isOnHold ? "On Hold" : "Hold"}
+            {isOnHold ? "معلّق" : "تعليق"}
           </Text>
         </View>
 
@@ -91,7 +178,7 @@ export const ActiveCallView: React.FC = () => {
           >
             <Ionicons name="shuffle-outline" size={24} color={Colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.controlLabel}>Transfer</Text>
+          <Text style={styles.controlLabel}>تحويل</Text>
         </View>
 
         {/* End Call */}
@@ -99,37 +186,47 @@ export const ActiveCallView: React.FC = () => {
           <TouchableOpacity style={styles.endCallButton} onPress={endCall} activeOpacity={0.7}>
             <Ionicons name="call" size={24} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
           </TouchableOpacity>
-          <Text style={[styles.controlLabel, { color: Colors.endCallRed }]}>End Call</Text>
+          <Text style={[styles.controlLabel, { color: Colors.endCallRed }]}>إنهاء</Text>
         </View>
       </View>
 
-      {/* 4. AI Call Summary Card */}
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryHeader}>
-          <Text style={styles.summaryTitle}>AI Call Summary</Text>
+      {/* 4. Live AI / Call Info Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardTitleGroup}>
+            <Ionicons name="sparkles" size={16} color={Colors.primary} />
+            <Text style={styles.cardTitle}>بيانات المكالمة الحالية</Text>
+          </View>
           <View style={styles.sentimentBadge}>
             <Text style={styles.sentimentText}>{activeCall.sentiment}</Text>
           </View>
         </View>
 
-        <View style={styles.bulletsList}>
+        <View style={styles.summaryList}>
           {activeCall.summaryBullets.map((bullet, idx) => (
-            <View key={idx} style={styles.bulletRow}>
+            <View key={idx} style={styles.summaryBulletRow}>
               <View style={styles.bulletDot} />
-              <Text style={styles.bulletText}>{bullet}</Text>
+              <Text style={styles.summaryText}>{bullet}</Text>
             </View>
           ))}
         </View>
       </View>
 
-      {/* 5. WhatsApp / SMS Action Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={sendWhatsAppOrSms} activeOpacity={0.8}>
-        <View style={styles.actionIconGroup}>
-          <FontAwesome5 name="whatsapp" size={20} color="#fff" style={styles.actionIcon} />
-          <Ionicons name="chatbubble-ellipses" size={19} color="#fff" />
+      {/* 5. Quick Actions */}
+      <View style={styles.quickActionsSection}>
+        <Text style={styles.quickActionsHeader}>إجراءات سريعة</Text>
+        <View style={styles.quickActionsGrid}>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={sendWhatsAppOrSms} activeOpacity={0.7}>
+            <FontAwesome5 name="whatsapp" size={16} color={Colors.primary} />
+            <Text style={styles.quickActionText}>مراسلة واتساب</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.7}>
+            <Ionicons name="document-text-outline" size={16} color={Colors.primary} />
+            <Text style={styles.quickActionText}>إضافة ملاحظة</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.actionButtonText}>Send Summary via WhatsApp/SMS</Text>
-      </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 };
@@ -140,55 +237,67 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+    padding: 16,
+    paddingBottom: 32,
   },
   topStatusRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 16,
   },
   activeCallLabel: {
     color: Colors.textMuted,
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   liveBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    backgroundColor: Colors.liveBadgeBg,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 5,
   },
   liveDot: {
-    color: Colors.endCallRed,
-    fontSize: 12,
+    color: Colors.liveGreen,
+    fontSize: 10,
     fontWeight: "bold",
   },
   liveText: {
-    color: Colors.endCallRed,
-    fontSize: 13,
-    fontWeight: "bold",
+    color: Colors.liveGreen,
+    fontSize: 12,
+    fontWeight: "600",
   },
   callerInfoSection: {
-    marginBottom: 26,
+    alignItems: "center",
+    marginBottom: 24,
   },
   callerName: {
     color: Colors.textPrimary,
-    fontSize: 25,
+    fontSize: 22,
     fontWeight: "bold",
-    letterSpacing: 0.3,
     marginBottom: 4,
+    textAlign: "center",
   },
   callerPhone: {
     color: Colors.textMuted,
-    fontSize: 15,
+    fontSize: 14,
     marginBottom: 8,
   },
   timerRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   timerText: {
     color: Colors.primary,
@@ -197,36 +306,42 @@ const styles = StyleSheet.create({
   },
   controlsRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-around",
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 24,
+    paddingHorizontal: 8,
   },
   controlCol: {
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
   roundButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 1.5,
-    borderColor: Colors.primaryBorder,
-    backgroundColor: Colors.primaryBg,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   roundButtonActiveMute: {
+    backgroundColor: "rgba(220, 38, 38, 0.1)",
     borderColor: Colors.endCallRed,
-    backgroundColor: Colors.endCallRedBg,
   },
   roundButtonActiveHold: {
+    backgroundColor: "rgba(217, 119, 6, 0.1)",
     borderColor: Colors.holdAmber,
-    backgroundColor: Colors.holdAmberBg,
   },
   endCallButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: Colors.endCallRed,
     alignItems: "center",
     justifyContent: "center",
@@ -237,86 +352,199 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   controlLabel: {
-    color: Colors.primary,
-    fontSize: 12,
+    color: Colors.textSecondary,
+    fontSize: 11,
     fontWeight: "500",
   },
-  summaryCard: {
+  card: {
     backgroundColor: Colors.card,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
     padding: 16,
-    marginBottom: 22,
+    marginBottom: 16,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
-  summaryHeader: {
+  cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: 12,
   },
-  summaryTitle: {
-    color: Colors.primary,
-    fontSize: 15,
-    fontWeight: "600",
+  cardTitleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  cardTitle: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "bold",
   },
   sentimentBadge: {
-    backgroundColor: Colors.liveGreenBg,
+    backgroundColor: Colors.primaryBg,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
   },
   sentimentText: {
-    color: Colors.liveGreen,
+    color: Colors.primary,
     fontSize: 11,
     fontWeight: "600",
   },
-  bulletsList: {
-    gap: 10,
+  summaryList: {
+    gap: 8,
   },
-  bulletRow: {
+  summaryBulletRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
   },
   bulletDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: Colors.primaryBorder,
-    marginTop: 7,
-  },
-  bulletText: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 13.5,
-    lineHeight: 19,
-  },
-  actionButton: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: Colors.primary,
-    borderRadius: 12,
+    marginTop: 6,
+  },
+  summaryText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    flex: 1,
+  },
+  quickActionsSection: {
+    marginTop: 4,
+  },
+  quickActionsHeader: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  quickActionsGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  quickActionBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
-    gap: 10,
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  quickActionText: {
+    color: Colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  // ── Special State Card Styles (Transferring / Hold) ──
+  specialCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 24,
+    alignItems: "center",
     shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3,
+    marginTop: 10,
+  },
+  specialIconCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: Colors.primaryFade,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  specialTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: Colors.textPrimary,
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  specialSubtitle: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: "center",
+    marginBottom: 16,
+    lineHeight: 18,
+    maxWidth: 280,
+  },
+  infoNoteBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.primaryFade,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginVertical: 18,
+    width: "100%",
+  },
+  infoNoteText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    flex: 1,
+    lineHeight: 16,
+  },
+  cancelTransferBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: Colors.endCallRed,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    width: "100%",
+    shadowColor: Colors.endCallRed,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,
   },
-  actionIconGroup: {
+  cancelTransferBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  endCallSpecialBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: Colors.endCallRed,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    width: "100%",
   },
-  actionIcon: {
-    marginRight: 2,
-  },
-  actionButtonText: {
+  endCallSpecialBtnText: {
     color: "#fff",
-    fontSize: 13.5,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

@@ -13,9 +13,13 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
+from django.utils import timezone
+from asgiref.sync import async_to_sync
+import inngest
 from livekit import api
 
 from .models import EmployeeProfile, CallQueue, QueueMembership, EmployeeCallLog
+from .inngest_jobs import inngest_client
 
 logger = logging.getLogger(__name__)
 
@@ -335,10 +339,17 @@ async def _async_create_queue_trunk_and_rule(queue_name, queue_code, user_id):
     finally:
         await lk.aclose()
 
-@login_required(login_url='/login/')
+@csrf_exempt
 def list_call_queues(request):
-    """List all call queues for authenticated user with waiting metrics."""
-    queues = CallQueue.objects.filter(user=request.user).prefetch_related('memberships__employee')
+    """List all call queues for authenticated user or employee with waiting metrics."""
+    employee = get_employee_from_token(request)
+    if not employee and not request.user.is_authenticated:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    if employee:
+        queues = CallQueue.objects.filter(is_active=True).prefetch_related('memberships__employee')
+    else:
+        queues = CallQueue.objects.filter(user=request.user, is_active=True).prefetch_related('memberships__employee')
     r = None
     try:
         r = redis.Redis.from_url(settings.REDIS_URL)
@@ -540,6 +551,15 @@ def api_dial_call(request):
                 call_type='outbound',
             )
 
+            # Mark caller status as busy
+            if caller.status != 'busy':
+                caller.status = 'busy'
+                caller.save(update_fields=['status'])
+                publish_to_centrifugo("employees:presence", {
+                    "event": "status_change",
+                    "employee": caller.to_dict()
+                })
+
             return JsonResponse({
                 "status": "success",
                 "call_type": "direct_internal",
@@ -672,6 +692,15 @@ def api_get_call_token(request):
                 call_type='inbound',
             )
 
+        # Mark answering employee as busy
+        if employee.status != 'busy':
+            employee.status = 'busy'
+            employee.save(update_fields=['status'])
+            publish_to_centrifugo("employees:presence", {
+                "event": "status_change",
+                "employee": employee.to_dict()
+            })
+
         return JsonResponse({
             "status": "success",
             "room_name": room_name,
@@ -776,6 +805,30 @@ def api_hangup_call(request):
             except Exception as e:
                 logger.warning(f"Failed to delete LiveKit room {room_name}: {e}")
 
+        # Restore calling employee status to ready
+        if employee and employee.status == 'busy':
+            employee.status = 'ready'
+            employee.save(update_fields=['status'])
+            publish_to_centrifugo("employees:presence", {
+                "event": "status_change",
+                "employee": employee.to_dict()
+            })
+
+        # Restore peer employees to ready if internal call
+        if room_name and room_name.startswith("call_ext_"):
+            parts = room_name.split("_")
+            if len(parts) >= 4:
+                ext1, ext2 = parts[2], parts[3]
+                peers = EmployeeProfile.objects.filter(extension__in=[ext1, ext2], is_active=True)
+                for peer in peers:
+                    if peer.status == 'busy':
+                        peer.status = 'ready'
+                        peer.save(update_fields=['status'])
+                        publish_to_centrifugo("employees:presence", {
+                            "event": "status_change",
+                            "employee": peer.to_dict()
+                        })
+
         return JsonResponse({"status": "success", "message": "Call hung up and room cleaned up"})
 
     except Exception as e:
@@ -785,9 +838,11 @@ def api_hangup_call(request):
 @csrf_exempt
 def api_transfer_call(request):
     """
-    Handle Call Transfer from an active WebRTC session to another employee or call queue.
-    Does NOT terminate the room or drop the customer.
-    Pushes transfer job to Redis for agent hold music and rings the target employee.
+    Handle Clean Call Transfer from an active WebRTC session to another employee or call queue.
+    - Closes room_A immediately on LiveKit.
+    - Finalizes Employee 2's call log.
+    - Puts Caller (Employee 1) on local HOLD with Centrifugo notification.
+    - Triggers durable Inngest queue hunting workflow.
     """
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
@@ -804,13 +859,12 @@ def api_transfer_call(request):
         if not room_name or not target:
             return JsonResponse({"status": "error", "message": "room_name و target مطلوبان"}, status=400)
 
-        # Check if target is an employee (search globally across all active employees)
+        # 1. Target resolution
         target_emp = EmployeeProfile.objects.filter(
             extension=target,
             is_active=True
         ).exclude(id=employee.id).first()
 
-        # Or check if target is a call queue (search globally across all active queues)
         target_queue = None
         if not target_emp:
             target_queue = CallQueue.objects.filter(
@@ -821,41 +875,222 @@ def api_transfer_call(request):
         if not target_emp and not target_queue:
             return JsonResponse({"status": "error", "message": f"التحويلة أو الطابور '{target}' غير موجود"}, status=404)
 
-        target_name = target_emp.display_name if target_emp else target_queue.name
-        target_type = "employee" if target_emp else "queue"
-        target_id = target_emp.id if target_emp else target_queue.id
+        if target_emp:
+            target_name = target_emp.display_name
+            target_type = "employee"
+            target_id = target_emp.id
+            q_membership = QueueMembership.objects.filter(employee=target_emp, is_active=True).first()
+            queue = q_membership.queue if q_membership else CallQueue.objects.filter(is_active=True).first()
+            other_cands = []
+            if queue:
+                other_cands = list(
+                    queue.memberships.filter(is_active=True)
+                    .exclude(employee_id__in=[target_emp.id, employee.id])
+                    .order_by('order')
+                    .values_list('employee_id', flat=True)
+                )
+            candidate_ids = [target_emp.id] + other_cands
+        else:
+            target_name = target_queue.name
+            target_type = "queue"
+            target_id = target_queue.id
+            queue = target_queue
+            candidate_ids = list(
+                queue.memberships.filter(is_active=True)
+                .exclude(employee_id=employee.id)
+                .order_by('order')
+                .values_list('employee_id', flat=True)
+            )
 
-        # Push to Redis transfer_events queue for the agent service
+        if not candidate_ids:
+            return JsonResponse({"status": "error", "message": "لا يوجد موظفون في هذا الطابور للتحويل إليهم"}, status=400)
+
+        # 2. Identify Caller (Employee 1, the other party in room)
+        caller_id = data.get('caller_id')
+        caller_name = ""
+        caller_ext = ""
+
+        if caller_id:
+            caller_emp = EmployeeProfile.objects.filter(id=caller_id, is_active=True).first()
+            if caller_emp:
+                caller_name = caller_emp.display_name
+                caller_ext = caller_emp.extension
+
+        if not caller_ext:
+            other_log = EmployeeCallLog.objects.filter(room_name=room_name).exclude(employee=employee).first()
+            if other_log and other_log.employee:
+                caller_id = other_log.employee.id
+                caller_name = other_log.employee.display_name
+                caller_ext = other_log.employee.extension
+
+        if not caller_ext and "call_ext_" in room_name:
+            parts = room_name.replace("call_ext_", "").split("_")
+            if len(parts) >= 2:
+                other_ext = parts[0] if parts[1] == employee.extension else parts[1]
+                caller_emp = EmployeeProfile.objects.filter(extension=other_ext, is_active=True).first()
+                if caller_emp:
+                    caller_id = caller_emp.id
+                    caller_name = caller_emp.display_name
+                    caller_ext = caller_emp.extension
+
+        if not caller_ext:
+            caller_ext = "unknown"
+            caller_name = "المتصل"
+
+        # 3. Finalize Employee 2's call log
+        now = timezone.now()
+        my_log = EmployeeCallLog.objects.filter(room_name=room_name, employee=employee, ended_at__isnull=True).first()
+        if my_log:
+            elapsed = int((now - my_log.started_at).total_seconds())
+            my_log.ended_at = now
+            my_log.duration_secs = max(elapsed, 0)
+            my_log.save(update_fields=['ended_at', 'duration_secs'])
+
+        # 4. Generate transfer_id and store state in Redis
+        transfer_id = f"tr_{uuid.uuid4().hex[:8]}"
         r = redis.Redis.from_url(settings.REDIS_URL)
-        transfer_payload = {
-            "event": "transfer_request",
-            "room_name": room_name,
-            "from_user": employee.extension,
-            "from_name": employee.display_name,
-            "from_employee_id": employee.id,
-            "target": target,
-            "target_type": target_type,
-            "target_id": target_id,
-            "target_name": target_name,
-            "real_target_user": str(target_emp.id) if target_emp else str(target),
-            "timestamp": time.time()
-        }
-        r.rpush("transfer_events", json.dumps(transfer_payload))
+        r.set(f"transfer:{transfer_id}:caller_id", caller_id or "", ex=300)
+        r.set(f"transfer:{transfer_id}:from_id", employee.id, ex=300)
+        r.set(f"transfer:{transfer_id}:state", "ringing", ex=300)
 
-        logger.info(f"Initiated call transfer from {employee.extension} to {target} in room {room_name}")
+        # 5. Delete old LiveKit room cleanly
+        import asyncio
+        async def _delete_old_room():
+            try:
+                lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+                await lk.room.delete_room(api.DeleteRoomRequest(room=room_name))
+                await lk.aclose()
+            except Exception as lk_err:
+                logger.debug(f"LiveKit room deletion note: {lk_err}")
+        try:
+            asyncio.run(_delete_old_room())
+        except Exception as e:
+            logger.warning(f"Failed to delete old room {room_name}: {e}")
+
+        # 6. Notify Caller (Employee 1) on HOLD
+        if caller_id:
+            publish_to_centrifugo(f"employee:{caller_id}", {
+                "event": "transfer_hold",
+                "transfer_id": transfer_id,
+                "transferred_by": employee.display_name,
+                "target_name": target_name,
+                "message": f"جاري تحويل مكالمتك إلى {target_name}، يرجى الانتظار...",
+                "hold_audio_url": "https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3",
+                "timestamp": time.time()
+            })
+
+        # 7. Dispatch Inngest event
+        ring_timeout = queue.ring_timeout_seconds if queue else 15
+        total_timeout = queue.total_timeout_seconds if queue else 60
+        async_to_sync(inngest_client.send)(
+            inngest.Event(
+                name="call_center/transfer.requested",
+                data={
+                    "transfer_id": transfer_id,
+                    "old_room_name": room_name,
+                    "from_employee_id": employee.id,
+                    "from_employee_name": employee.display_name,
+                    "from_employee_extension": employee.extension,
+                    "caller_id": caller_id,
+                    "caller_name": caller_name,
+                    "caller_extension": caller_ext,
+                    "candidate_ids": candidate_ids,
+                    "ring_timeout_seconds": ring_timeout,
+                    "total_timeout_seconds": total_timeout,
+                }
+            )
+        )
+
+        logger.info(f"Initiated clean call transfer {transfer_id} from {employee.extension} to {target_name} (candidates: {candidate_ids})")
 
         return JsonResponse({
             "status": "success",
             "message": f"جاري تحويل المكالمة إلى {target_name} ({target})",
-            "room_name": room_name,
+            "transfer_id": transfer_id,
             "target": target,
             "target_name": target_name,
-            "target_type": target_type
+            "target_type": target_type,
+            "caller_name": caller_name,
+            "caller_extension": caller_ext
         })
-
 
     except Exception as e:
         logger.error(f"Error in api_transfer_call: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_transfer_cancel(request):
+    """Cancel an ongoing call transfer and restore the call with the original caller."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        transfer_id = str(data.get('transfer_id', '')).strip()
+
+        if not transfer_id:
+            return JsonResponse({"status": "error", "message": "transfer_id مطلوب"}, status=400)
+
+        r = redis.Redis.from_url(settings.REDIS_URL)
+        r.set(f"transfer:{transfer_id}:state", "cancelled", ex=300)
+
+        async_to_sync(inngest_client.send)(
+            inngest.Event(
+                name="call_center/transfer.action",
+                data={
+                    "transfer_id": transfer_id,
+                    "employee_id": employee.id,
+                    "action": "cancel"
+                }
+            )
+        )
+
+        logger.info(f"Transfer {transfer_id} cancelled by employee {employee.extension}")
+        return JsonResponse({"status": "success", "message": "تم إلغاء التحويل واستعادة المكالمة"})
+
+    except Exception as e:
+        logger.error(f"Error in api_transfer_cancel: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_transfer_action(request):
+    """Handle candidate answer or reject for a transferred call."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        transfer_id = str(data.get('transfer_id', '')).strip()
+        action = str(data.get('action', '')).strip()
+
+        if not transfer_id or action not in ['answer', 'reject']:
+            return JsonResponse({"status": "error", "message": "transfer_id و action ('answer' / 'reject') مطلوبان"}, status=400)
+
+        async_to_sync(inngest_client.send)(
+            inngest.Event(
+                name="call_center/transfer.action",
+                data={
+                    "transfer_id": transfer_id,
+                    "employee_id": employee.id,
+                    "action": action
+                }
+            )
+        )
+
+        return JsonResponse({"status": "success", "action": action})
+
+    except Exception as e:
+        logger.error(f"Error in api_transfer_action: {e}", exc_info=True)
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 

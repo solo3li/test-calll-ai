@@ -7,7 +7,7 @@ import { useAuthStore } from "./useAuthStore";
 import { useDirectoryStore } from "./useDirectoryStore";
 import { MOCK_HISTORY, CallRecord, ContactItem, MOCK_CONTACTS } from "../constants/mockData";
 
-export type CallState = "IDLE" | "DIALING" | "RINGING" | "CONNECTED" | "ON_HOLD";
+export type CallState = "IDLE" | "DIALING" | "RINGING" | "CONNECTED" | "ON_HOLD" | "TRANSFERRING" | "HOLD";
 export type TabKey = "dialpad" | "history" | "contacts";
 
 export interface ActiveCallData {
@@ -27,6 +27,9 @@ export interface IncomingCallData {
   callerDepartment: string;
   callType: "direct_internal" | "queue" | "transfer" | "ring_back";
   queueName?: string;
+  transferId?: string;
+  transferredBy?: string;
+  ringTimeoutSeconds?: number;
 }
 
 interface CallStoreState {
@@ -43,6 +46,11 @@ interface CallStoreState {
   transferModalVisible: boolean;
   incomingModalVisible: boolean;
   playingAudioId: string | null;
+
+  // Transfer State
+  transferId: string | null;
+  transferTargetName: string;
+  transferDurationSeconds: number;
 
   // Real-time connections
   livekitRoom: Room | null;
@@ -65,12 +73,42 @@ interface CallStoreState {
   endCall: () => void;
   toggleMute: () => void;
   toggleHold: () => void;
-  transferCall: (targetExtension: string) => Promise<void>;
+  transferCall: (targetExtension: string, targetName?: string) => Promise<void>;
+  cancelTransfer: () => Promise<void>;
+  connectLiveKitRoom: (url: string, token: string, roomName: string, partnerName?: string) => Promise<void>;
   simulateIncomingCall: () => void;
 }
 
 let callTimerInterval: any = null;
-let isTransferring = false; // prevent RoomEvent.Disconnected from calling endCall() during intentional transfer
+let isTransferring = false;
+let holdAudioInstance: any = null;
+
+const playHoldAudio = () => {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try {
+      if (holdAudioInstance) {
+        holdAudioInstance.pause();
+        holdAudioInstance.currentTime = 0;
+      }
+      const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3");
+      audio.loop = true;
+      audio.play().catch((e) => console.log("Hold audio autoplay blocked/note:", e));
+      holdAudioInstance = audio;
+    } catch (e) {
+      console.warn("Hold audio creation error:", e);
+    }
+  }
+};
+
+const stopHoldAudio = () => {
+  if (holdAudioInstance) {
+    try {
+      holdAudioInstance.pause();
+      holdAudioInstance.currentTime = 0;
+    } catch (e) {}
+    holdAudioInstance = null;
+  }
+};
 
 const INITIAL_CALL_DATA: ActiveCallData = {
   callerName: "",
@@ -98,6 +136,11 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   transferModalVisible: false,
   incomingModalVisible: false,
   playingAudioId: null,
+
+  transferId: null,
+  transferTargetName: "",
+  transferDurationSeconds: 0,
+
   livekitRoom: null,
   centrifuge: null,
 
@@ -124,10 +167,12 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         token: config.token,
       });
 
-      // 1. Personal Employee Channel for direct incoming calls
+      // 1. Personal Employee Channel for direct incoming calls & transfers
       const empSub = centrifuge.newSubscription(config.channel);
       empSub.on("publication", (ctx) => {
         const payload = ctx.data;
+        console.log("[Centrifugo Event]", payload.event, payload);
+
         if (payload.event === "incoming_call") {
           set({
             incomingCall: {
@@ -137,10 +182,80 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
               callerDepartment: payload.caller_department || "",
               callType: payload.call_type || "direct_internal",
               queueName: payload.queue_name,
+              transferId: payload.transfer_id,
+              transferredBy: payload.transferred_by,
+              ringTimeoutSeconds: payload.ring_timeout_seconds,
             },
             incomingModalVisible: true,
           });
+        } else if (payload.event === "transfer_hold") {
+          // Caller is put on local hold
+          isTransferring = true;
+          if (get().livekitRoom) {
+            try { get().livekitRoom?.disconnect(); } catch (e) {}
+          }
+          if (callTimerInterval) {
+            clearInterval(callTimerInterval);
+            callTimerInterval = null;
+          }
+          playHoldAudio();
+          set((state) => ({
+            callState: "HOLD",
+            transferId: payload.transfer_id,
+            activeCall: {
+              ...state.activeCall,
+              callerName: payload.target_name ? `تحويل إلى: ${payload.target_name}` : "جاري التحويل...",
+              summaryBullets: [
+                "المكالمة قيد التحويل إلى زميل متاح",
+                "نغمة الانتظار تعمل حتى قبول الطرف الآخر",
+              ],
+            },
+          }));
+          callTimerInterval = setInterval(() => {
+            set((state) => ({
+              activeCall: {
+                ...state.activeCall,
+                durationSeconds: state.activeCall.durationSeconds + 1,
+              },
+            }));
+          }, 1000);
+        } else if (payload.event === "transfer_room_ready") {
+          // New LiveKit room is ready
+          stopHoldAudio();
+          get().connectLiveKitRoom(
+            payload.livekit_url,
+            payload.livekit_token,
+            payload.room_name,
+            payload.partner_name || "الطرف الآخر"
+          );
+        } else if (payload.event === "transfer_success") {
+          // Transferrer notified of success
+          if (callTimerInterval) {
+            clearInterval(callTimerInterval);
+            callTimerInterval = null;
+          }
+          set({
+            callState: "IDLE",
+            transferId: null,
+            activeCall: INITIAL_CALL_DATA,
+          });
+          alert(`✅ تم تحويل المكالمة بنجاح إلى: ${payload.transferred_to}`);
+        } else if (payload.event === "transfer_cancelled") {
+          // Transfer cancelled, reconnecting parties
+          stopHoldAudio();
+          alert("تم إلغاء التحويل واستعادة المكالمة");
+          get().connectLiveKitRoom(
+            payload.livekit_url,
+            payload.livekit_token,
+            payload.room_name,
+            payload.partner_name || "الزميل"
+          );
+        } else if (payload.event === "transfer_failed") {
+          stopHoldAudio();
+          alert(`فشل التحويل: ${payload.message || "لم يرد أحد على المكالمة"}`);
+          get().endCall();
         } else if (payload.event === "call_ended") {
+          stopHoldAudio();
           get().endCall();
         }
       });
@@ -161,7 +276,6 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       queueSub.on("publication", (ctx) => {
         const payload = ctx.data;
         if (payload.event === "call_accepted") {
-          // If another agent answered the queue call, dismiss our modal
           if (get().incomingCall?.roomName === payload.room_name) {
             const currentEmpId = useAuthStore.getState().employee?.id;
             if (payload.accepted_by?.id !== currentEmpId) {
@@ -180,16 +294,113 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   disconnectSignaling: () => {
+    stopHoldAudio();
     const { centrifuge, livekitRoom } = get();
     if (centrifuge) centrifuge.disconnect();
     if (livekitRoom) livekitRoom.disconnect();
     set({ centrifuge: null, livekitRoom: null });
   },
 
+  connectLiveKitRoom: async (livekitUrl: string, livekitToken: string, roomName: string, partnerName?: string) => {
+    const existing = get().livekitRoom;
+    if (existing) {
+      try { existing.disconnect(); } catch (e) {}
+    }
+
+    if (callTimerInterval) {
+      clearInterval(callTimerInterval);
+      callTimerInterval = null;
+    }
+
+    set((state) => ({
+      callState: "CONNECTED",
+      incomingModalVisible: false,
+      incomingCall: null,
+      transferId: null,
+      activeCall: {
+        ...state.activeCall,
+        roomName,
+        callerName: partnerName || state.activeCall.callerName || "مكالمة نشطة",
+        durationSeconds: 0,
+      },
+    }));
+
+    callTimerInterval = setInterval(() => {
+      set((state) => ({
+        activeCall: {
+          ...state.activeCall,
+          durationSeconds: state.activeCall.durationSeconds + 1,
+        },
+      }));
+    }, 1000);
+
+    if (Platform.OS === "web") {
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+
+      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+        if (track.kind === Track.Kind.Audio) {
+          const el = track.attach();
+          el.play().catch((e) => console.log("Audio play error:", e));
+        }
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+        console.log("Remote participant disconnected:", participant.identity);
+        const remaining = Array.from(room.remoteParticipants.values()).filter(
+          (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
+        );
+        if (remaining.length === 0) {
+          get().endCall();
+        }
+      });
+
+      room.on(RoomEvent.Disconnected, () => {
+        if (isTransferring) {
+          isTransferring = false;
+          return;
+        }
+        get().endCall();
+      });
+
+      await room.connect(livekitUrl, livekitToken);
+
+      // Attach any tracks that arrived early
+      room.remoteParticipants.forEach((p) => {
+        p.trackPublications.forEach((pub) => {
+          if (pub.track && pub.track.kind === Track.Kind.Audio) {
+            const el = pub.track.attach();
+            el.play().catch((e) => console.log("Audio attach error:", e));
+          }
+        });
+      });
+
+      try {
+        if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+          await room.localParticipant.setMicrophoneEnabled(true);
+        }
+      } catch (micErr) {
+        console.warn("Failed to enable mic:", micErr);
+      }
+
+      set({ livekitRoom: room });
+    }
+  },
+
   startCall: async (targetNumberOrExt?: string, targetName?: string) => {
-    const target = targetNumberOrExt || get().dialpadInput || "102";
+    const target = targetNumberOrExt || get().dialpadInput.trim();
+    if (!target) {
+      alert("الرجاء إدخال رقم هاتف أو تحويلة للاتصال");
+      return;
+    }
+
     const token = useAuthStore.getState().token;
-    if (!token) return;
+    if (!token) {
+      alert("يرجى تسجيل الدخول للاتصال");
+      return;
+    }
 
     set({
       callState: "DIALING",
@@ -230,22 +441,19 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           },
         }));
 
-        // Connect to LiveKit WebRTC Room
         if (Platform.OS === "web") {
           const room = new Room({
             adaptiveStream: true,
             dynacast: true,
           });
 
-          // Handle incoming audio stream from the other party
-          room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, publication: any, participant: RemoteParticipant) => {
+          room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
             if (track.kind === Track.Kind.Audio) {
               const audioElement = track.attach();
               audioElement.play().catch((err) => console.log("Audio play error:", err));
             }
           });
 
-          // When the other person joins, move state to CONNECTED
           room.on(RoomEvent.ParticipantConnected, () => {
             set({ callState: "CONNECTED" });
             if (!callTimerInterval) {
@@ -260,70 +468,49 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             }
           });
 
-          // When the other person leaves or disconnects, end call immediately if no other callers remain
           room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-            console.log("Remote participant disconnected:", participant.identity);
-            const isBot = participant.identity === "queue-manager"
-              || participant.identity.startsWith("queue-")
-              || participant.identity.startsWith("transfer-")
-              || participant.identity === "transfer-bot";
-            if (isBot) {
-              console.log("System bot disconnected (handoff complete), call continuing with caller.");
-              return;
-            }
             const remaining = Array.from(room.remoteParticipants.values()).filter(
-              (p) => p.identity !== "queue-manager"
-                && !p.identity.startsWith("queue-")
-                && !p.identity.startsWith("transfer-")
-                && p.identity !== participant.identity
+              (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
             );
             if (remaining.length === 0) {
-              console.log("All remote participants left. Ending call.");
               get().endCall();
             }
           });
 
           room.on(RoomEvent.Disconnected, () => {
-            console.log("LiveKit room disconnected");
             if (isTransferring) {
-              console.log("Disconnected due to transfer handoff — skipping endCall.");
               isTransferring = false;
               return;
             }
             get().endCall();
           });
 
-          // Join room and enable microphone
           await room.connect(data.livekit_url, data.livekit_token);
+
+          // Attach tracks
+          room.remoteParticipants.forEach((p) => {
+            p.trackPublications.forEach((pub) => {
+              if (pub.track && pub.track.kind === Track.Kind.Audio) {
+                const el = pub.track.attach();
+                el.play().catch((e) => console.log("Audio attach error:", e));
+              }
+            });
+          });
+
           try {
             if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
               await room.localParticipant.setMicrophoneEnabled(true);
-            } else {
-              console.warn("navigator.mediaDevices.getUserMedia is unavailable in current context (requires HTTPS or localhost)");
             }
           } catch (micErr) {
-            console.warn("Failed to enable microphone:", micErr);
+            console.warn("Failed to enable mic:", micErr);
           }
 
           set({ livekitRoom: room });
-        } else {
-          // Non-web fallback timer
-          set({ callState: "CONNECTED" });
-          if (!callTimerInterval) {
-            callTimerInterval = setInterval(() => {
-              set((state) => ({
-                activeCall: {
-                  ...state.activeCall,
-                  durationSeconds: state.activeCall.durationSeconds + 1,
-                },
-              }));
-            }, 1000);
-          }
         }
       }
     } catch (err: any) {
-      alert(err.message || "فشل الاتصال");
-      get().endCall();
+      alert(`فشل الاتصال: ${err.message}`);
+      set({ callState: "IDLE", activeCall: INITIAL_CALL_DATA });
     }
   },
 
@@ -332,24 +519,42 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     const token = useAuthStore.getState().token;
     if (!incomingCall || !token) return;
 
+    // Check if this is an incoming transferred call
+    if (incomingCall.callType === "transfer" && incomingCall.transferId) {
+      try {
+        await apiRequest("/api/call-center/calls/transfer/action/", {
+          method: "POST",
+          body: JSON.stringify({
+            transfer_id: incomingCall.transferId,
+            action: "answer",
+          }),
+        }, token);
+        set({ incomingModalVisible: false });
+        // The transfer_room_ready Centrifugo event will arrive and connect to LiveKit!
+        return;
+      } catch (err: any) {
+        alert(`فشل الرد على التحويل: ${err.message}`);
+        return;
+      }
+    }
+
     set({
-      incomingModalVisible: false,
       callState: "CONNECTED",
+      incomingModalVisible: false,
       activeCall: {
         callerName: incomingCall.callerName,
         phoneNumber: incomingCall.callerExtension,
         extension: incomingCall.callerExtension,
         durationSeconds: 0,
-        sentiment: "Neutral / طبيعية",
+        sentiment: "Positive / جيدة",
         summaryBullets: [
-          `مكالمة واردة من: ${incomingCall.callerName} (${incomingCall.callerDepartment || "داخلي"})`,
-          `نوع المكالمة: ${incomingCall.callType === "queue" ? incomingCall.queueName || "طابور" : "اتصال مباشر"}`,
+          "مكالمة واردة عبر شبكة الكول سنتر WebRTC",
+          `المتصل: ${incomingCall.callerName} (تحويلة: ${incomingCall.callerExtension})`,
         ],
         roomName: incomingCall.roomName,
       },
     });
 
-    // Start duration ticker
     if (callTimerInterval) clearInterval(callTimerInterval);
     callTimerInterval = setInterval(() => {
       set((state) => ({
@@ -384,33 +589,17 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           }
         });
 
-        // When the other person leaves or disconnects, end call immediately if no other callers remain
         room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-          console.log("Remote participant disconnected:", participant.identity);
-          const isBot = participant.identity === "queue-manager"
-            || participant.identity.startsWith("queue-")
-            || participant.identity.startsWith("transfer-")
-            || participant.identity === "transfer-bot";
-          if (isBot) {
-            console.log("System bot disconnected (handoff complete), call continuing with caller.");
-            return;
-          }
           const remaining = Array.from(room.remoteParticipants.values()).filter(
-            (p) => p.identity !== "queue-manager"
-              && !p.identity.startsWith("queue-")
-              && !p.identity.startsWith("transfer-")
-              && p.identity !== participant.identity
+            (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
           );
           if (remaining.length === 0) {
-            console.log("All remote participants left. Ending call.");
             get().endCall();
           }
         });
 
         room.on(RoomEvent.Disconnected, () => {
-          console.log("LiveKit room disconnected");
           if (isTransferring) {
-            console.log("Disconnected due to transfer handoff — skipping endCall.");
             isTransferring = false;
             return;
           }
@@ -419,12 +608,11 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
         await room.connect(data.livekit_url, data.livekit_token);
 
-        // Attach any tracks that arrived before the TrackSubscribed handler was registered
-        room.remoteParticipants.forEach((participant) => {
-          participant.trackPublications.forEach((publication) => {
-            if (publication.track && publication.track.kind === Track.Kind.Audio) {
-              const el = publication.track.attach();
-              el.play().catch((e) => console.log("Audio attach (existing) error:", e));
+        room.remoteParticipants.forEach((p) => {
+          p.trackPublications.forEach((pub) => {
+            if (pub.track && pub.track.kind === Track.Kind.Audio) {
+              const el = pub.track.attach();
+              el.play().catch((e) => console.log("Audio attach error:", e));
             }
           });
         });
@@ -432,11 +620,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         try {
           if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
             await room.localParticipant.setMicrophoneEnabled(true);
-          } else {
-            console.warn("navigator.mediaDevices.getUserMedia is unavailable in current context (requires HTTPS or localhost)");
           }
         } catch (micErr) {
-          console.warn("Failed to enable microphone:", micErr);
+          console.warn("Failed to enable mic:", micErr);
         }
 
         set({ livekitRoom: room, incomingCall: null });
@@ -449,16 +635,27 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   declineCall: () => {
     const { incomingCall } = get();
     const token = useAuthStore.getState().token;
-    if (incomingCall?.roomName && token) {
+
+    if (incomingCall?.callType === "transfer" && incomingCall.transferId && token) {
+      apiRequest("/api/call-center/calls/transfer/action/", {
+        method: "POST",
+        body: JSON.stringify({
+          transfer_id: incomingCall.transferId,
+          action: "reject",
+        }),
+      }, token).catch((e) => console.log("Decline transfer error:", e));
+    } else if (incomingCall?.roomName && token) {
       apiRequest("/api/call-center/calls/hangup/", {
         method: "POST",
         body: JSON.stringify({ room_name: incomingCall.roomName }),
       }, token).catch((err) => console.log("Decline hangup API error:", err));
     }
+
     set({ incomingModalVisible: false, incomingCall: null });
   },
 
   endCall: () => {
+    stopHoldAudio();
     if (callTimerInterval) {
       clearInterval(callTimerInterval);
       callTimerInterval = null;
@@ -470,36 +667,15 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     if (livekitRoom) {
       try {
         livekitRoom.disconnect();
-      } catch (e) {
-        // Ignore disconnect errors
-      }
+      } catch (e) {}
     }
 
-    // Notify backend and all peers via /api/calls/hangup/
     const token = useAuthStore.getState().token;
     if (roomNameToHangup && token) {
       apiRequest("/api/call-center/calls/hangup/", {
         method: "POST",
         body: JSON.stringify({ room_name: roomNameToHangup }),
       }, token).catch((err) => console.log("Hangup API error:", err));
-    }
-
-    // Add to history
-    if (activeCall.callerName && activeCall.durationSeconds > 0) {
-      const newRecord: CallRecord = {
-        id: Date.now().toString(),
-        callerName: activeCall.callerName,
-        phoneNumber: activeCall.phoneNumber,
-        type: "outbound",
-        timestamp: "الآن",
-        duration: `${Math.floor(activeCall.durationSeconds / 60)} د ${activeCall.durationSeconds % 60} ث`,
-        aiSummary: "مكالمة WebRTC عبر LiveKit",
-        hasRecording: false,
-        sentiment: "positive",
-      };
-      set((state) => ({
-        history: [newRecord, ...state.history],
-      }));
     }
 
     set({
@@ -510,6 +686,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       activeCall: INITIAL_CALL_DATA,
       incomingModalVisible: false,
       incomingCall: null,
+      transferId: null,
+      transferTargetName: "",
+      transferDurationSeconds: 0,
     });
   },
 
@@ -532,13 +711,19 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     });
   },
 
-  transferCall: async (targetExtension: string) => {
+  transferCall: async (targetExtension: string, targetName?: string) => {
     const token = useAuthStore.getState().token;
     const { activeCall, livekitRoom } = get();
     if (!token || !activeCall.roomName) return;
 
     try {
-      await apiRequest("/api/call-center/calls/transfer/", {
+      const res = await apiRequest<{
+        status: string;
+        message: string;
+        transfer_id: string;
+        target: string;
+        target_name: string;
+      }>("/api/call-center/calls/transfer/", {
         method: "POST",
         body: JSON.stringify({
           room_name: activeCall.roomName,
@@ -546,16 +731,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         }),
       }, token);
 
-      // Set flag BEFORE disconnect so RoomEvent.Disconnected knows to skip endCall()
       isTransferring = true;
-
-      // Leave the LiveKit room locally (customer stays connected via server-side room)
       if (livekitRoom) {
-        try {
-          livekitRoom.disconnect();
-        } catch (e) {
-          // ignore
-        }
+        try { livekitRoom.disconnect(); } catch (e) {}
       }
 
       if (callTimerInterval) {
@@ -566,22 +744,35 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       set({
         transferModalVisible: false,
         livekitRoom: null,
-        callState: "IDLE",
-        activeCall: {
-          roomName: "",
-          callerName: "",
-          phoneNumber: "",
-          extension: "",
-          durationSeconds: 0,
-          sentiment: "neutral",
-          summaryBullets: [],
-        },
+        callState: "TRANSFERRING",
+        transferId: res.transfer_id,
+        transferTargetName: res.target_name || targetName || targetExtension,
+        transferDurationSeconds: 0,
       });
 
-      alert(`✅ تم تحويل المكالمة إلى التحويلة ${targetExtension} بنجاح`);
+      callTimerInterval = setInterval(() => {
+        set((state) => ({
+          transferDurationSeconds: state.transferDurationSeconds + 1,
+        }));
+      }, 1000);
     } catch (err: any) {
-      isTransferring = false; // reset on error
+      isTransferring = false;
       alert(`فشل التحويل: ${err.message}`);
+    }
+  },
+
+  cancelTransfer: async () => {
+    const token = useAuthStore.getState().token;
+    const { transferId } = get();
+    if (!token || !transferId) return;
+
+    try {
+      await apiRequest("/api/call-center/calls/transfer/cancel/", {
+        method: "POST",
+        body: JSON.stringify({ transfer_id: transferId }),
+      }, token);
+    } catch (err: any) {
+      alert(`فشل إلغاء التحويل: ${err.message}`);
     }
   },
 

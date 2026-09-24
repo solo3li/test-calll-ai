@@ -18,7 +18,9 @@ export default function Index() {
     callState === "CONNECTED" ||
     callState === "ON_HOLD" ||
     callState === "DIALING" ||
-    callState === "RINGING";
+    callState === "RINGING" ||
+    callState === "TRANSFERRING" ||
+    callState === "HOLD";
 
   return (
     <WindowFrame>

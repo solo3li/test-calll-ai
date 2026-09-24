@@ -1,11 +1,19 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useCall } from "../context/CallContext";
+import { useDirectoryStore } from "../stores/useDirectoryStore";
 
 export const TransferModal: React.FC = () => {
-  const { transferModalVisible, setTransferModalVisible, contacts, transferCall } = useCall();
+  const { transferModalVisible, setTransferModalVisible, transferCall } = useCall();
+  const { queues, employees, fetchDirectory } = useDirectoryStore();
+
+  useEffect(() => {
+    if (transferModalVisible) {
+      fetchDirectory();
+    }
+  }, [transferModalVisible]);
 
   return (
     <Modal
@@ -19,8 +27,10 @@ export const TransferModal: React.FC = () => {
           {/* Modal Header */}
           <View style={styles.modalHeader}>
             <View style={styles.headerLeft}>
-              <Ionicons name="shuffle-outline" size={20} color={Colors.primary} />
-              <Text style={styles.modalTitle}>Transfer Call</Text>
+              <View style={styles.iconCircle}>
+                <Ionicons name="shuffle-outline" size={18} color={Colors.primary} />
+              </View>
+              <Text style={styles.modalTitle}>تحويل المكالمة</Text>
             </View>
             <TouchableOpacity onPress={() => setTransferModalVisible(false)} style={styles.closeBtn}>
               <Ionicons name="close" size={20} color={Colors.textMuted} />
@@ -28,85 +38,87 @@ export const TransferModal: React.FC = () => {
           </View>
 
           <Text style={styles.subtitle}>
-            Select an available agent or department to transfer this call:
+            اختر طابوراً أو زميلاً متاحاً لتحويل المكالمة إليه:
           </Text>
 
-          {/* Quick Department Transfer */}
-          <View style={styles.quickQueuesRow}>
-            <TouchableOpacity
-              style={styles.queueBtn}
-              onPress={() =>
-                transferCall({
-                  id: "q-sales",
-                  name: "Sales Queue",
-                  role: "Department",
-                  extension: "100",
-                  department: "Sales",
-                  status: "available",
-                })
-              }
-            >
-              <Text style={styles.queueBtnText}>Sales (100)</Text>
-            </TouchableOpacity>
+          {/* 1. Dynamic Queues / Departments */}
+          {queues && queues.length > 0 && (
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionHeader}>طوابير الاتصال (توزيع تلقائي):</Text>
+              <View style={styles.quickQueuesRow}>
+                {queues.map((q) => (
+                  <TouchableOpacity
+                    key={q.id}
+                    style={styles.queueBtn}
+                    onPress={() => transferCall(q.code, q.name)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="layers-outline" size={14} color={Colors.primary} style={{ marginBottom: 2 }} />
+                    <Text style={styles.queueBtnText} numberOfLines={1}>{q.name}</Text>
+                    <Text style={styles.queueCodeText}>كود: {q.code}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
 
-            <TouchableOpacity
-              style={styles.queueBtn}
-              onPress={() =>
-                transferCall({
-                  id: "q-support",
-                  name: "Support Queue",
-                  role: "Department",
-                  extension: "200",
-                  department: "Support",
-                  status: "available",
+          {/* 2. Colleagues list */}
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionHeader}>الزملاء (أولوية مباشرة ثم الكيو):</Text>
+            <ScrollView style={styles.agentList} showsVerticalScrollIndicator={false}>
+              {employees && employees.length > 0 ? (
+                employees.map((emp) => {
+                  const isAvailable = emp.status === "ready";
+                  const statusColor = isAvailable
+                    ? Colors.liveGreen
+                    : emp.status === "busy"
+                    ? Colors.endCallRed
+                    : Colors.holdAmber;
+                  const statusText = isAvailable
+                    ? "متاح"
+                    : emp.status === "busy"
+                    ? "مشغول"
+                    : emp.status === "break"
+                    ? "استراحة"
+                    : "غير متصل";
+
+                  return (
+                    <TouchableOpacity
+                      key={emp.id}
+                      style={[styles.agentRow, !isAvailable && styles.agentRowDisabled]}
+                      disabled={!isAvailable}
+                      onPress={() => transferCall(emp.extension, emp.display_name)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.agentInfo}>
+                        <Text style={styles.agentName}>{emp.display_name}</Text>
+                        <Text style={styles.agentRole}>
+                          {emp.department || "المبيعات"} (تحويلة: {emp.extension})
+                        </Text>
+                      </View>
+
+                      <View style={styles.statusGroup}>
+                        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                        <Text style={[styles.statusLabel, { color: statusColor }]}>
+                          {statusText}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
                 })
-              }
-            >
-              <Text style={styles.queueBtnText}>Support (200)</Text>
-            </TouchableOpacity>
+              ) : (
+                <Text style={styles.emptyText}>لا يوجد زملاء متاحون حالياً</Text>
+              )}
+            </ScrollView>
           </View>
-
-          {/* Colleagues list */}
-          <ScrollView style={styles.agentList} showsVerticalScrollIndicator={false}>
-            {contacts.map((agent) => {
-              const isAvailable = agent.status === "available";
-              return (
-                <TouchableOpacity
-                  key={agent.id}
-                  style={[styles.agentRow, !isAvailable && styles.agentRowDisabled]}
-                  disabled={!isAvailable}
-                  onPress={() => transferCall(agent)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.agentInfo}>
-                    <Text style={styles.agentName}>{agent.name}</Text>
-                    <Text style={styles.agentRole}>
-                      {agent.role} (Ext {agent.extension})
-                    </Text>
-                  </View>
-
-                  <View style={styles.statusGroup}>
-                    <View
-                      style={[
-                        styles.statusDot,
-                        { backgroundColor: isAvailable ? Colors.liveGreen : Colors.holdAmber },
-                      ]}
-                    />
-                    <Text style={styles.statusLabel}>
-                      {isAvailable ? "Available" : "Busy"}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
 
           {/* Cancel Button */}
           <TouchableOpacity
             style={styles.cancelButton}
             onPress={() => setTransferModalVisible(false)}
+            activeOpacity={0.7}
           >
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={styles.cancelText}>إلغاء</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -124,12 +136,12 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: "100%",
-    maxWidth: 340,
+    maxWidth: 380,
     backgroundColor: Colors.card,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    padding: 18,
+    borderColor: Colors.border,
+    padding: 20,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.18,
@@ -145,7 +157,15 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
+  },
+  iconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primaryFade,
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalTitle: {
     color: Colors.textPrimary,
@@ -159,30 +179,47 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 12,
     marginBottom: 14,
-    lineHeight: 16,
+    lineHeight: 18,
+  },
+  sectionBlock: {
+    marginBottom: 14,
+  },
+  sectionHeader: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   quickQueuesRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
-    marginBottom: 14,
   },
   queueBtn: {
     flex: 1,
-    backgroundColor: Colors.primaryBg,
+    minWidth: 140,
+    backgroundColor: Colors.primaryFade,
     borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-    paddingVertical: 8,
-    borderRadius: 8,
+    borderColor: Colors.borderLight,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
     alignItems: "center",
   },
   queueBtnText: {
     color: Colors.primary,
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+  queueCodeText: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    marginTop: 2,
   },
   agentList: {
     maxHeight: 180,
-    marginBottom: 14,
   },
   agentRow: {
     flexDirection: "row",
@@ -190,10 +227,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.cardBorder,
+    borderBottomColor: Colors.borderLight,
   },
   agentRowDisabled: {
-    opacity: 0.4,
+    opacity: 0.45,
   },
   agentInfo: {
     flex: 1,
@@ -211,27 +248,34 @@ const styles = StyleSheet.create({
   statusGroup: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: 6,
   },
   statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   statusLabel: {
-    color: Colors.textMuted,
     fontSize: 11,
+    fontWeight: "600",
+  },
+  emptyText: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    textAlign: "center",
+    paddingVertical: 12,
   },
   cancelButton: {
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: Colors.primaryBorder,
+    borderColor: Colors.border,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: "center",
+    marginTop: 4,
   },
   cancelText: {
-    color: Colors.primary,
+    color: Colors.textSecondary,
     fontSize: 13,
     fontWeight: "600",
   },

@@ -24,6 +24,12 @@ interface CallContextType {
   playingAudioId: string | null;
   setPlayingAudioId: (id: string | null) => void;
 
+  // Transfer State
+  transferId: string | null;
+  transferTargetName: string;
+  transferDurationSeconds: number;
+  cancelTransfer: () => Promise<void>;
+
   // Actions
   toggleMute: () => void;
   toggleHold: () => void;
@@ -31,7 +37,7 @@ interface CallContextType {
   startCall: (number?: string, name?: string) => void;
   answerCall: () => void;
   declineCall: () => void;
-  transferCall: (contact: ContactItem) => void;
+  transferCall: (target: string | ContactItem, name?: string) => void;
   sendWhatsAppOrSms: () => void;
   simulateIncomingCall: () => void;
   resetToDefaultMock: () => void;
@@ -53,8 +59,12 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const transferCall = (contact: ContactItem) => {
-    store.transferCall(contact.extension);
+  const transferCall = (target: string | ContactItem, name?: string) => {
+    if (typeof target === "string") {
+      store.transferCall(target, name);
+    } else if (target && typeof target === "object") {
+      store.transferCall(target.extension, target.name);
+    }
   };
 
   const resetToDefaultMock = () => {
@@ -79,6 +89,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTransferModalVisible: store.setTransferModalVisible,
     playingAudioId: store.playingAudioId,
     setPlayingAudioId: store.setPlayingAudioId,
+
+    transferId: store.transferId,
+    transferTargetName: store.transferTargetName,
+    transferDurationSeconds: store.transferDurationSeconds,
+    cancelTransfer: store.cancelTransfer,
 
     toggleMute: store.toggleMute,
     toggleHold: store.toggleHold,
