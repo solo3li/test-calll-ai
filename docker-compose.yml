@@ -6,8 +6,11 @@ services:
     container_name: voice_traefik
     restart: unless-stopped
     ports:
+      - "80:80"
       - "8080:80"
       - "443:443"
+    volumes:
+      - traefik_acme:/acme
     networks:
       - voice_net
 
@@ -129,6 +132,7 @@ services:
 volumes:
   pgdata:
   media_data:
+  traefik_acme:
 
 networks:
   voice_net:

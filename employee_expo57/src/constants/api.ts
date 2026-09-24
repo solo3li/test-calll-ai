@@ -1,8 +1,8 @@
 import { Platform } from "react-native";
 
-export const API_BASE_URL = "https://app.localhost";
-export const LIVEKIT_DEFAULT_URL = "wss://livekit.localhost";
-export const CENTRIFUGO_DEFAULT_WS = "wss://centrifugo.localhost/connection/websocket";
+export const API_BASE_URL = "https://app.169.58.32.179.nip.io";
+export const LIVEKIT_DEFAULT_URL = "wss://livekit.169.58.32.179.nip.io";
+export const CENTRIFUGO_DEFAULT_WS = "wss://centrifugo.169.58.32.179.nip.io/connection/websocket";
 
 export async function apiRequest<T = any>(
   endpoint: string,

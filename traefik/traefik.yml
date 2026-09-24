@@ -2,6 +2,9 @@ api:
   dashboard: false
   insecure: false
 
+log:
+  level: INFO
+
 entryPoints:
   web:
     address: ":80"
@@ -12,6 +15,13 @@ entryPoints:
           scheme: https
   websecure:
     address: ":443"
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "hostmaster@169.58.32.179.nip.io"
+      storage: "/acme/acme.json"
+      tlsChallenge: {}
 
 providers:
   file:

@@ -36,7 +36,13 @@ def generate_self_signed_cert():
         x509.DNSName("app.localhost"),
         x509.DNSName("centrifugo.localhost"),
         x509.DNSName("livekit.localhost"),
+        x509.DNSName("169.58.32.179.nip.io"),
+        x509.DNSName("*.169.58.32.179.nip.io"),
+        x509.DNSName("app.169.58.32.179.nip.io"),
+        x509.DNSName("centrifugo.169.58.32.179.nip.io"),
+        x509.DNSName("livekit.169.58.32.179.nip.io"),
         x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+        x509.IPAddress(ipaddress.IPv4Address("169.58.32.179")),
     ]
     
     cert = (
