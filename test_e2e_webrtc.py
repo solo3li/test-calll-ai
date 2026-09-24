@@ -5,9 +5,9 @@ import urllib3
 sys.stdout.reconfigure(encoding='utf-8')
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-BASE_URL = "https://localhost"
+BASE_URL = "https://app.169.58.32.179.nip.io"
 session = requests.Session()
-session.verify = False
+session.verify = True
 
 API_KEY = "voice-internal-secret-token-key-12345"
 internal_headers = {

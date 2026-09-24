@@ -3,7 +3,7 @@ api:
   insecure: false
 
 log:
-  level: INFO
+  level: DEBUG
 
 entryPoints:
   web:
@@ -19,9 +19,10 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "hostmaster@169.58.32.179.nip.io"
+      email: "hamed3alii.3@gmail.com"
       storage: "/acme/acme.json"
-      tlsChallenge: {}
+      httpChallenge:
+        entryPoint: "web"
 
 providers:
   file:

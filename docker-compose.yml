@@ -11,6 +11,7 @@ services:
       - "443:443"
     volumes:
       - traefik_acme:/acme
+      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
     networks:
       - voice_net
 

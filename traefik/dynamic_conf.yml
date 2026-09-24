@@ -1,6 +1,6 @@
 http:
   routers:
-    django-nip-router:
+    django-router:
       rule: "Host(`app.169.58.32.179.nip.io`) || Host(`169.58.32.179.nip.io`)"
       entryPoints:
         - "websecure"
@@ -8,14 +8,7 @@ http:
       tls:
         certResolver: "letsencrypt"
 
-    django-local-router:
-      rule: "Host(`app.localhost`) || Host(`localhost`)"
-      entryPoints:
-        - "websecure"
-      service: "django-service"
-      tls: {}
-
-    livekit-nip-router:
+    livekit-router:
       rule: "Host(`livekit.169.58.32.179.nip.io`)"
       entryPoints:
         - "websecure"
@@ -23,27 +16,13 @@ http:
       tls:
         certResolver: "letsencrypt"
 
-    livekit-local-router:
-      rule: "Host(`livekit.localhost`)"
-      entryPoints:
-        - "websecure"
-      service: "livekit-service"
-      tls: {}
-
-    centrifugo-nip-router:
+    centrifugo-router:
       rule: "Host(`centrifugo.169.58.32.179.nip.io`)"
       entryPoints:
         - "websecure"
       service: "centrifugo-service"
       tls:
         certResolver: "letsencrypt"
-
-    centrifugo-local-router:
-      rule: "Host(`centrifugo.localhost`)"
-      entryPoints:
-        - "websecure"
-      service: "centrifugo-service"
-      tls: {}
 
   services:
     django-service:
@@ -60,10 +39,3 @@ http:
       loadBalancer:
         servers:
           - url: "http://centrifugo:8000"
-
-tls:
-  stores:
-    default:
-      defaultCertificate:
-        certFile: /certs/local.crt
-        keyFile: /certs/local.key
