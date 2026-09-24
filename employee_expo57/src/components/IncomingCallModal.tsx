@@ -1,4 +1,4 @@
-import React from "react";
+import * as React from "react";
 import { View, Text, StyleSheet, Modal, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
@@ -29,11 +29,15 @@ export const IncomingCallModal: React.FC = () => {
             تحويلة: {incomingCall.callerExtension || "داخلي"}
           </Text>
 
-          {/* Queue Tag */}
+          {/* Queue / Transfer Tag */}
           <View style={styles.queueTag}>
             <Text style={styles.queueTagText}>
-              {isQueue
+              {incomingCall.callType === "queue"
                 ? `🔔 وارد من ${incomingCall.queueName || "طابور المبيعات"}`
+                : incomingCall.callType === "transfer"
+                ? `🔄 مكالمة محولة إليك`
+                : incomingCall.callType === "ring_back"
+                ? `⚠️ استرجاع مكالمة: لم يتم الرد على التحويل`
                 : `🔔 مكالمة داخلية مباشرة (${incomingCall.callerDepartment || "زميل"})`}
             </Text>
           </View>

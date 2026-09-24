@@ -733,3 +733,79 @@ def api_hangup_call(request):
     except Exception as e:
         logger.error(f"Error in api_hangup_call: {e}", exc_info=True)
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+@csrf_exempt
+def api_transfer_call(request):
+    """
+    Handle Call Transfer from an active WebRTC session to another employee or call queue.
+    Does NOT terminate the room or drop the customer.
+    Pushes transfer job to Redis for agent hold music and rings the target employee.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        room_name = data.get('room_name')
+        target = str(data.get('target', '')).strip()
+
+        if not room_name or not target:
+            return JsonResponse({"status": "error", "message": "room_name و target مطلوبان"}, status=400)
+
+        # Check if target is an employee (search globally across all active employees)
+        target_emp = EmployeeProfile.objects.filter(
+            extension=target,
+            is_active=True
+        ).exclude(id=employee.id).first()
+
+        # Or check if target is a call queue (search globally across all active queues)
+        target_queue = None
+        if not target_emp:
+            target_queue = CallQueue.objects.filter(
+                code=target,
+                is_active=True
+            ).first()
+
+        if not target_emp and not target_queue:
+            return JsonResponse({"status": "error", "message": f"التحويلة أو الطابور '{target}' غير موجود"}, status=404)
+
+        target_name = target_emp.display_name if target_emp else target_queue.name
+        target_type = "employee" if target_emp else "queue"
+        target_id = target_emp.id if target_emp else target_queue.id
+
+        # Push to Redis transfer_events queue for the agent service
+        r = redis.Redis.from_url(settings.REDIS_URL)
+        transfer_payload = {
+            "event": "transfer_request",
+            "room_name": room_name,
+            "from_user": employee.extension,
+            "from_name": employee.display_name,
+            "from_employee_id": employee.id,
+            "target": target,
+            "target_type": target_type,
+            "target_id": target_id,
+            "target_name": target_name,
+            "real_target_user": str(target_emp.id) if target_emp else str(target),
+            "timestamp": time.time()
+        }
+        r.rpush("transfer_events", json.dumps(transfer_payload))
+
+        logger.info(f"Initiated call transfer from {employee.extension} to {target} in room {room_name}")
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"جاري تحويل المكالمة إلى {target_name} ({target})",
+            "room_name": room_name,
+            "target": target,
+            "target_name": target_name,
+            "target_type": target_type
+        })
+
+    except Exception as e:
+        logger.error(f"Error in api_transfer_call: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+

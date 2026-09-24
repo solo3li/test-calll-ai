@@ -25,7 +25,7 @@ export interface IncomingCallData {
   callerName: string;
   callerExtension: string;
   callerDepartment: string;
-  callType: "direct_internal" | "queue";
+  callType: "direct_internal" | "queue" | "transfer" | "ring_back";
   queueName?: string;
 }
 
@@ -262,12 +262,19 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           // When the other person leaves or disconnects, end call immediately if no other callers remain
           room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
             console.log("Remote participant disconnected:", participant.identity);
-            if (participant.identity === "queue-manager" || participant.identity.startsWith("queue-")) {
-              console.log("Queue manager disconnected (handoff complete), call continuing with caller.");
+            const isBot = participant.identity === "queue-manager"
+              || participant.identity.startsWith("queue-")
+              || participant.identity.startsWith("transfer-")
+              || participant.identity === "transfer-bot";
+            if (isBot) {
+              console.log("System bot disconnected (handoff complete), call continuing with caller.");
               return;
             }
             const remaining = Array.from(room.remoteParticipants.values()).filter(
-              (p) => p.identity !== "queue-manager" && !p.identity.startsWith("queue-") && p.identity !== participant.identity
+              (p) => p.identity !== "queue-manager"
+                && !p.identity.startsWith("queue-")
+                && !p.identity.startsWith("transfer-")
+                && p.identity !== participant.identity
             );
             if (remaining.length === 0) {
               console.log("All remote participants left. Ending call.");
@@ -374,12 +381,19 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         // When the other person leaves or disconnects, end call immediately if no other callers remain
         room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
           console.log("Remote participant disconnected:", participant.identity);
-          if (participant.identity === "queue-manager" || participant.identity.startsWith("queue-")) {
-            console.log("Queue manager disconnected (handoff complete), call continuing with caller.");
+          const isBot = participant.identity === "queue-manager"
+            || participant.identity.startsWith("queue-")
+            || participant.identity.startsWith("transfer-")
+            || participant.identity === "transfer-bot";
+          if (isBot) {
+            console.log("System bot disconnected (handoff complete), call continuing with caller.");
             return;
           }
           const remaining = Array.from(room.remoteParticipants.values()).filter(
-            (p) => p.identity !== "queue-manager" && !p.identity.startsWith("queue-") && p.identity !== participant.identity
+            (p) => p.identity !== "queue-manager"
+              && !p.identity.startsWith("queue-")
+              && !p.identity.startsWith("transfer-")
+              && p.identity !== participant.identity
           );
           if (remaining.length === 0) {
             console.log("All remote participants left. Ending call.");
@@ -498,18 +512,48 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
   transferCall: async (targetExtension: string) => {
     const token = useAuthStore.getState().token;
-    const { activeCall } = get();
+    const { activeCall, livekitRoom } = get();
     if (!token || !activeCall.roomName) return;
 
     try {
-      await apiRequest("/api/calls/dial/", {
+      await apiRequest("/api/call-center/calls/transfer/", {
         method: "POST",
-        body: JSON.stringify({ target: targetExtension }),
+        body: JSON.stringify({
+          room_name: activeCall.roomName,
+          target: targetExtension,
+        }),
       }, token);
 
-      alert(`تم تحويل المكالمة بنجاح إلى التحويلة ${targetExtension}`);
-      set({ transferModalVisible: false });
-      get().endCall();
+      // Disconnect local participant ONLY from LiveKit room without deleting room on server
+      if (livekitRoom) {
+        try {
+          livekitRoom.disconnect();
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (callTimerInterval) {
+        clearInterval(callTimerInterval);
+        callTimerInterval = null;
+      }
+
+      set({
+        transferModalVisible: false,
+        livekitRoom: null,
+        callState: "IDLE",
+        activeCall: {
+          roomName: "",
+          callerName: "",
+          phoneNumber: "",
+          extension: "",
+          durationSeconds: 0,
+          sentiment: "neutral",
+          summaryBullets: [],
+        },
+      });
+
+      alert(`جاري تحويل المكالمة إلى التحويلة ${targetExtension}...`);
     } catch (err: any) {
       alert(`فشل التحويل: ${err.message}`);
     }
