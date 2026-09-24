@@ -135,10 +135,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   incomingCall: null,
   isMuted: false,
   isOnHold: false,
-  dialpadInput: "102",
-  history: MOCK_HISTORY,
+  dialpadInput: "",
+  history: [],
   historyFilter: "all",
-  contacts: MOCK_CONTACTS,
+  contacts: [],
   transferModalVisible: false,
   incomingModalVisible: false,
   playingAudioId: null,
@@ -884,15 +884,6 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   simulateIncomingCall: () => {
-    set({
-      incomingCall: {
-        roomName: `sim_room_${Date.now()}`,
-        callerName: "سارة خليل (تجربة)",
-        callerExtension: "102",
-        callerDepartment: "الدعم الفني",
-        callType: "direct_internal",
-      },
-      incomingModalVisible: true,
-    });
+    // Demo mock function disabled
   },
 }));

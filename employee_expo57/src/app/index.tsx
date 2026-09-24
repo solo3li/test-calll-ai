@@ -8,7 +8,6 @@ import { HistoryView } from "../components/HistoryView";
 import { ContactsView } from "../components/ContactsView";
 import { TransferModal } from "../components/TransferModal";
 import { IncomingCallModal } from "../components/IncomingCallModal";
-import { DevStateSwitcher } from "../components/DevStateSwitcher";
 import { useCall } from "../context/CallContext";
 
 export default function Index() {
@@ -37,7 +36,6 @@ export default function Index() {
       {/* Modals & Helpers */}
       <TransferModal />
       <IncomingCallModal />
-      <DevStateSwitcher />
     </WindowFrame>
   );
 }
