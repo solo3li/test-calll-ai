@@ -70,6 +70,7 @@ interface CallStoreState {
 }
 
 let callTimerInterval: any = null;
+let isTransferring = false; // prevent RoomEvent.Disconnected from calling endCall() during intentional transfer
 
 const INITIAL_CALL_DATA: ActiveCallData = {
   callerName: "",
@@ -284,6 +285,11 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
           room.on(RoomEvent.Disconnected, () => {
             console.log("LiveKit room disconnected");
+            if (isTransferring) {
+              console.log("Disconnected due to transfer handoff — skipping endCall.");
+              isTransferring = false;
+              return;
+            }
             get().endCall();
           });
 
@@ -403,10 +409,26 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
         room.on(RoomEvent.Disconnected, () => {
           console.log("LiveKit room disconnected");
+          if (isTransferring) {
+            console.log("Disconnected due to transfer handoff — skipping endCall.");
+            isTransferring = false;
+            return;
+          }
           get().endCall();
         });
 
         await room.connect(data.livekit_url, data.livekit_token);
+
+        // Attach any tracks that arrived before the TrackSubscribed handler was registered
+        room.remoteParticipants.forEach((participant) => {
+          participant.trackPublications.forEach((publication) => {
+            if (publication.track && publication.track.kind === Track.Kind.Audio) {
+              const el = publication.track.attach();
+              el.play().catch((e) => console.log("Audio attach (existing) error:", e));
+            }
+          });
+        });
+
         try {
           if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
             await room.localParticipant.setMicrophoneEnabled(true);
@@ -524,7 +546,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         }),
       }, token);
 
-      // Disconnect local participant ONLY from LiveKit room without deleting room on server
+      // Set flag BEFORE disconnect so RoomEvent.Disconnected knows to skip endCall()
+      isTransferring = true;
+
+      // Leave the LiveKit room locally (customer stays connected via server-side room)
       if (livekitRoom) {
         try {
           livekitRoom.disconnect();
@@ -553,8 +578,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         },
       });
 
-      alert(`جاري تحويل المكالمة إلى التحويلة ${targetExtension}...`);
+      alert(`✅ تم تحويل المكالمة إلى التحويلة ${targetExtension} بنجاح`);
     } catch (err: any) {
+      isTransferring = false; // reset on error
       alert(`فشل التحويل: ${err.message}`);
     }
   },
