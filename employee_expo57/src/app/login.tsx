@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -46,9 +47,11 @@ export default function LoginScreen() {
       <View style={styles.card}>
         {/* Header / Brand */}
         <View style={styles.header}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="headset-outline" size={32} color={Colors.primaryTeal} />
-          </View>
+          <Image
+            source={require("../../assets/images/logo.png")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>تسجيل دخول الموظف</Text>
           <Text style={styles.subtitle}>بوابة الاتصال الداخلي والمبيعات (WebRTC)</Text>
         </View>
@@ -201,16 +204,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 24,
   },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.primaryTealBg,
+  logoImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.primaryTealBorder,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 14,
+    borderColor: Colors.cardBorder,
   },
   title: {
     fontSize: 22,

@@ -130,8 +130,22 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
 
     await ctx.step.run("close-old-room", step_close_old_room)
 
+    # Step 2: Initialize transfer state in Redis inside a step so replays don't overwrite it
+    async def step_init_transfer_state():
+        r_init = _get_redis()
+        current_state = r_init.get(f"transfer:{transfer_id}:state")
+        if not current_state:
+            r_init.set(f"transfer:{transfer_id}:state", "ringing", ex=total_timeout_seconds + 60)
+        return {"status": "initialized"}
+
+    await ctx.step.run("init-transfer-state", step_init_transfer_state)
+
     r = _get_redis()
-    r.set(f"transfer:{transfer_id}:state", "ringing", ex=total_timeout_seconds + 30)
+    # Check if transfer already finished in previous step executions
+    current_state = r.get(f"transfer:{transfer_id}:state")
+    if current_state in [b"completed", b"cancelled"]:
+        logger.info(f"[Inngest Transfer {transfer_id}] Pre-loop check: state is already {current_state}")
+        return {"status": current_state.decode()}
 
     # Step 3: Iterate through candidate employees in order
     transferred_success = False
@@ -141,12 +155,18 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
         # Check current Redis state before attempting next candidate
         current_state = r.get(f"transfer:{transfer_id}:state")
         if current_state in [b"completed", b"cancelled"]:
-            logger.info(f"[Inngest Transfer {transfer_id}] Stopped: state is already {current_state}")
+            logger.info(f"[Inngest Transfer {transfer_id}] Stopped in loop: state is already {current_state}")
             return {"status": current_state.decode()}
 
         # Verify candidate is still available in DB
         cand = await sync_to_async(_get_employee_sync, thread_sensitive=True)(cand_id)
-        if not cand or cand.status not in ['ready', 'available']:
+        if not cand:
+            continue
+
+        # If candidate was already set as current candidate or transfer completed, don't skip them
+        current_cand_id = r.get(f"transfer:{transfer_id}:current_candidate")
+        is_current_candidate = (current_cand_id == str(cand_id).encode())
+        if not is_current_candidate and cand.status not in ['ready', 'available']:
             logger.info(f"[Inngest Transfer {transfer_id}] Candidate {cand_id} not available (status={getattr(cand, 'status', None)}), skipping.")
             continue
 
@@ -176,6 +196,10 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
         )
 
         if action_event is None:
+            # Check if state was changed in the meantime
+            if r.get(f"transfer:{transfer_id}:state") in [b"completed", b"cancelled"]:
+                return {"status": r.get(f"transfer:{transfer_id}:state").decode()}
+
             # Timeout on this candidate
             logger.info(f"[Inngest Transfer {transfer_id}] Candidate {cand_id} timed out after {ring_timeout_seconds}s.")
             async def step_timeout_candidate():
@@ -254,9 +278,10 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                 await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(from_emp_id, "ready")
 
                 r.set(f"transfer:{transfer_id}:state", "completed", ex=300)
+                r.set(f"transfer:{transfer_id}:answered_by", cand.id, ex=300)
                 return {"status": "completed", "room": new_room, "answered_by": cand.id}
 
-            res = await ctx.step.run("complete-transfer", step_complete_transfer)
+            res = await ctx.step.run(f"complete-transfer-{cand_id}", step_complete_transfer)
             transferred_success = True
             return res
 
@@ -323,9 +348,21 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
             continue
 
     # Step 4: If nobody answered or all rejected / timed out
+    # Pre-check Redis: if state is completed or cancelled, DO NOT send transfer_failed!
+    final_state = r.get(f"transfer:{transfer_id}:state")
+    if final_state in [b"completed", b"cancelled"]:
+        logger.info(f"[Inngest Transfer {transfer_id}] Skipping failure step: state is {final_state}")
+        return {"status": final_state.decode()}
+
     if not transferred_success:
         logger.info(f"[Inngest Transfer {transfer_id}] All candidates exhausted. Transfer failed.")
         async def step_finalize_failed():
+            # Check inside step as well
+            r_check = _get_redis()
+            if r_check.get(f"transfer:{transfer_id}:state") in [b"completed", b"cancelled"]:
+                logger.info(f"[Inngest Transfer {transfer_id}] In-step check: transfer already resolved. Skipping failure.")
+                return {"status": "already_resolved"}
+
             publish_to_centrifugo(f"employee:{caller_id}", {
                 "event": "transfer_failed",
                 "transfer_id": transfer_id,
@@ -338,7 +375,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
             })
             await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(caller_id, "ready")
             await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(from_emp_id, "ready")
-            r.set(f"transfer:{transfer_id}:state", "failed", ex=300)
+            r_check.set(f"transfer:{transfer_id}:state", "failed", ex=300)
             return {"status": "failed", "reason": "all_candidates_exhausted"}
 
         res = await ctx.step.run("finalize-failed-transfer", step_finalize_failed)

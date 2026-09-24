@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Platform, StatusBar, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Platform, StatusBar, TouchableOpacity, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useAuthStore } from "../stores/useAuthStore";
@@ -45,11 +45,16 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
       <View style={[styles.windowContainer, isWeb && styles.webCardContainer]}>
         {/* Window title bar */}
         <View style={styles.windowHeader}>
-          {/* Mac window dots */}
+          {/* Mac window dots & Brand Logo */}
           <View style={styles.dotsRow}>
             <View style={[styles.dot, { backgroundColor: Colors.dotRed }]} />
             <View style={[styles.dot, { backgroundColor: Colors.dotYellow }]} />
             <View style={[styles.dot, { backgroundColor: Colors.dotGreen }]} />
+            <Image
+              source={require("../../assets/images/logo.png")}
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
           </View>
 
           {/* Logged in Employee Info */}
@@ -157,6 +162,12 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+  headerLogo: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    marginLeft: 6,
   },
   appTitle: {
     fontSize: 12,

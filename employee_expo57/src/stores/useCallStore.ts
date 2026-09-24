@@ -231,6 +231,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           // New LiveKit room is ready
           isTransferring = false;
           stopHoldAudio();
+          set({
+            transferId: null,
+          });
           get().connectLiveKitRoom(
             payload.livekit_url,
             payload.livekit_token,
@@ -264,6 +267,11 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             payload.partner_name || "الزميل"
           );
         } else if (payload.event === "transfer_failed") {
+          // Guard: If employee is already in an active connected call, ignore delayed/stray transfer_failed!
+          if (get().callState === "CONNECTED" && !isTransferring && !get().transferId) {
+            console.log("Suppressing stray transfer_failed because call is actively connected in room:", get().activeCall.roomName);
+            return;
+          }
           isTransferring = false;
           stopHoldAudio();
           alert(`فشل التحويل: ${payload.message || "لم يرد أحد على المكالمة"}`);
