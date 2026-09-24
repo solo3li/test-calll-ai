@@ -198,7 +198,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
             answered_emp_id = cand_id
 
             async def step_complete_transfer():
-                new_room = f"call_tr_{caller_ext}_{cand.extension}_{uuid.uuid4().hex[:6]}"
+                new_room = f"call_ext_{caller_ext}_{cand.extension}_tr_{uuid.uuid4().hex[:6]}"
                 
                 # Tokens
                 caller_token = generate_livekit_token(
@@ -272,7 +272,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                 })
 
                 # Reconnect Caller and Transferrer in a restored room
-                restored_room = f"call_rst_{caller_ext}_{from_emp_ext}_{uuid.uuid4().hex[:6]}"
+                restored_room = f"call_ext_{caller_ext}_{from_emp_ext}_rst_{uuid.uuid4().hex[:6]}"
                 caller_token = generate_livekit_token(
                     restored_room,
                     f"employee_{caller_id}_{caller_ext}",

@@ -370,11 +370,27 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           console.log("Ignoring participant disconnect during transfer/hold");
           return;
         }
-        console.log("Remote participant disconnected:", participant.identity);
-        const remaining = Array.from(room.remoteParticipants.values()).filter(
-          (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
+
+        // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+        const isHumanPeer =
+          participant.identity.startsWith("employee_") ||
+          participant.identity.startsWith("customer_") ||
+          participant.identity.startsWith("user_");
+
+        if (!isHumanPeer) {
+          console.log("Ignoring non-human participant disconnect:", participant.identity);
+          return;
+        }
+
+        console.log("Remote human participant disconnected:", participant.identity);
+        const remainingHumans = Array.from(room.remoteParticipants.values()).filter(
+          (p) =>
+            p.identity !== participant.identity &&
+            (p.identity.startsWith("employee_") ||
+             p.identity.startsWith("customer_") ||
+             p.identity.startsWith("user_"))
         );
-        if (remaining.length === 0) {
+        if (remainingHumans.length === 0) {
           get().endCall();
         }
       });
@@ -495,10 +511,27 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
               console.log("Ignoring participant disconnect during transfer/hold");
               return;
             }
-            const remaining = Array.from(room.remoteParticipants.values()).filter(
-              (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
+
+            // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+            const isHumanPeer =
+              participant.identity.startsWith("employee_") ||
+              participant.identity.startsWith("customer_") ||
+              participant.identity.startsWith("user_");
+
+            if (!isHumanPeer) {
+              console.log("Ignoring non-human participant disconnect:", participant.identity);
+              return;
+            }
+
+            console.log("Remote human participant disconnected:", participant.identity);
+            const remainingHumans = Array.from(room.remoteParticipants.values()).filter(
+              (p) =>
+                p.identity !== participant.identity &&
+                (p.identity.startsWith("employee_") ||
+                 p.identity.startsWith("customer_") ||
+                 p.identity.startsWith("user_"))
             );
-            if (remaining.length === 0) {
+            if (remainingHumans.length === 0) {
               get().endCall();
             }
           });
@@ -620,10 +653,27 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             console.log("Ignoring participant disconnect during transfer/hold");
             return;
           }
-          const remaining = Array.from(room.remoteParticipants.values()).filter(
-            (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
+
+          // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+          const isHumanPeer =
+            participant.identity.startsWith("employee_") ||
+            participant.identity.startsWith("customer_") ||
+            participant.identity.startsWith("user_");
+
+          if (!isHumanPeer) {
+            console.log("Ignoring non-human participant disconnect:", participant.identity);
+            return;
+          }
+
+          console.log("Remote human participant disconnected:", participant.identity);
+          const remainingHumans = Array.from(room.remoteParticipants.values()).filter(
+            (p) =>
+              p.identity !== participant.identity &&
+              (p.identity.startsWith("employee_") ||
+               p.identity.startsWith("customer_") ||
+               p.identity.startsWith("user_"))
           );
-          if (remaining.length === 0) {
+          if (remainingHumans.length === 0) {
             get().endCall();
           }
         });

@@ -1299,7 +1299,7 @@ async def main():
                     continue
 
                 # Defensive check: Do not dispatch AI agent for direct human-to-human calls
-                if room_name.startswith("call_ext_") or room_name.startswith("pstn_out_"):
+                if room_name.startswith("call_ext_") or room_name.startswith("call_tr_") or room_name.startswith("call_rst_") or room_name.startswith("pstn_out_"):
                     logger.info(f"Skipping direct human call room '{room_name}' in agent dispatcher.")
                     continue
 
