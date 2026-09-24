@@ -1,3 +1,4 @@
+import os
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -77,8 +78,8 @@ class AgentProfile(models.Model):
 
 class UserMCPServer(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mcp_servers')
-    name = models.CharField(max_length=100, default='خادم المتجر الرئيسي (FastMCP)')
-    server_url = models.CharField(max_length=500, default='http://mock-store:8002/sse')
+    name = models.CharField(max_length=100, default='خادم أدوات خارجي (FastMCP)')
+    server_url = models.CharField(max_length=500, blank=True, default='')
     auth_token = models.CharField(max_length=500, blank=True, default='')
     is_active = models.BooleanField(default=True)
     cached_tools = models.JSONField(default=list, blank=True)
@@ -106,3 +107,37 @@ class UserMCPServer(models.Model):
             "last_synced_at": self.last_synced_at.strftime("%Y-%m-%d %H:%M") if self.last_synced_at else None,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
         }
+
+
+class SystemSetting(models.Model):
+    gemini_api_key = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name="Google Gemini API Key",
+        help_text="المفتاح المركزي لخدمات Google Gemini Live ونظام الـ RAG الصوتي"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'voice_assistant_systemsetting'
+        verbose_name = "إعدادات النظام العامة"
+        verbose_name_plural = "إعدادات النظام العامة"
+
+    def __str__(self):
+        status = "مُفعّل" if (self.gemini_api_key and self.gemini_api_key.strip()) else "غير محدد"
+        return f"إعدادات النظام (Google Gemini API Key: {status})"
+
+    @classmethod
+    def get_settings(cls):
+        setting, _ = cls.objects.get_or_create(id=1)
+        return setting
+
+    @classmethod
+    def get_gemini_api_key(cls):
+        setting = cls.objects.filter(id=1).first()
+        if setting and setting.gemini_api_key and setting.gemini_api_key.strip():
+            return setting.gemini_api_key.strip()
+        from django.conf import settings
+        return getattr(settings, 'GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
+

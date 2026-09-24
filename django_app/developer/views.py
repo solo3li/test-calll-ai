@@ -17,7 +17,7 @@ from .models import UserApiKey
 from .decorators import user_api_key_required
 from .user_openapi_spec import get_user_openapi_spec
 
-from agents.models import AgentProfile, UserMCPServer
+from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
 from billing.models import UserWallet
 from call_center.models import EmployeeProfile, CallQueue
@@ -427,7 +427,7 @@ def api_user_documents(request):
             # Generate Gemini embedding & store chunk
             chunks_created = 0
             try:
-                client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
                 embed_res = client.models.embed_content(
                     model="gemini-embedding-001",
                     contents=content,
@@ -483,7 +483,7 @@ def api_user_rag_query(request):
         if not query:
             return JsonResponse({"status": "error", "message": "query is required"}, status=400)
 
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
         embed_res = client.models.embed_content(
             model="gemini-embedding-001",
             contents=query,

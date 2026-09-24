@@ -12,6 +12,7 @@ from pgvector.django import CosineDistance
 
 from .models import Document, DocumentChunk
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
+from agents.models import SystemSetting
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def upload_document(request):
         )
 
         # 4. Generate embeddings with Gemini
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
         embeddings = get_embeddings_batch(client, chunks, batch_size=50)
 
         # 5. Bulk create DocumentChunks in pgvector
@@ -144,11 +145,19 @@ def api_internal_rag_search(request):
         query = str(data.get('query', '')).strip()
         top_k = int(data.get('top_k', 3))
 
-        if not user_id or not query:
-            return JsonResponse({"status": "error", "message": "user_id and query are required"}, status=400)
+        if not query:
+            return JsonResponse({"status": "error", "message": "query is required"}, status=400)
+
+        api_key = SystemSetting.get_gemini_api_key()
+        if not api_key or api_key.startswith("your_"):
+            return JsonResponse({
+                "status": "success",
+                "text": "لم يتم ضبط مفتاح Google Gemini API في لوحة تحكم النظام بعد.",
+                "matches": []
+            })
 
         # 1. Generate query embedding with Gemini
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=api_key)
         embed_res = client.models.embed_content(
             model="gemini-embedding-001",
             contents=query,

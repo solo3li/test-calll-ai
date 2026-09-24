@@ -1,5 +1,23 @@
 from django.contrib import admin
-from .models import AgentProfile, UserMCPServer
+from .models import AgentProfile, UserMCPServer, SystemSetting
+
+@admin.register(SystemSetting)
+class SystemSettingAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'masked_api_key', 'updated_at')
+    readonly_fields = ('updated_at',)
+
+    def masked_api_key(self, obj):
+        key = (obj.gemini_api_key or "").strip()
+        if len(key) > 8:
+            return f"{key[:4]}...{key[-4:]}"
+        return "غير محدد" if not key else "******"
+    masked_api_key.short_description = "Google Gemini API Key"
+
+    def has_add_permission(self, request):
+        return not SystemSetting.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.register(AgentProfile)
 class AgentProfileAdmin(admin.ModelAdmin):

@@ -549,20 +549,21 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
     await room.local_participant.publish_track(audio_track, publish_options)
     logger.info(f"Published agent audio track to room '{room_name}'")
 
-    # 4. Prepare Gemini Live Client with User Actions & RAG Tools
-    if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("your_"):
-        err = "GEMINI_API_KEY is not configured properly in .env"
+    # 4. Fetch unified Bootstrap bundle ONCE (profile, mcp_servers, customer_memory, gemini_api_key)
+    bootstrap = {}
+    if user_id:
+        bootstrap = await asyncio.to_thread(fetch_agent_bootstrap_sync, user_id, caller_phone)
+
+    # 4.1 Resolve active Gemini API key: prioritize Django SystemSetting from bootstrap, fallback to .env
+    active_api_key = (bootstrap.get("gemini_api_key") or "").strip() or GEMINI_API_KEY
+    if not active_api_key or active_api_key.startswith("your_"):
+        err = "GEMINI_API_KEY is not configured in Django Admin (SystemSetting) or .env"
         logger.error(err)
         notify_centrifugo(channel_name, "agent_error", err)
         await room.disconnect()
         return
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
-    # 4. Fetch unified Bootstrap bundle ONCE (profile, mcp_servers, customer_memory)
-    bootstrap = {}
-    if user_id:
-        bootstrap = await asyncio.to_thread(fetch_agent_bootstrap_sync, user_id, caller_phone)
+    client = genai.Client(api_key=active_api_key)
 
     # 4.1 Parse MCP Tools dynamically from unified bootstrap
     mcp_servers_list = parse_mcp_servers_from_bootstrap(bootstrap) if user_id else []

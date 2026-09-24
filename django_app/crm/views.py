@@ -164,7 +164,9 @@ def api_internal_save_call_session_and_memory(request):
         if not user_id or not room_name:
             return JsonResponse({"status": "error", "message": "user_id and room_name are required"}, status=400)
 
-        user = User.objects.filter(id=user_id).first()
+        user = User.objects.filter(id=user_id).first() if user_id else None
+        if not user:
+            user = User.objects.first()
         if not user:
             return JsonResponse({"status": "error", "message": f"User {user_id} not found"}, status=404)
 

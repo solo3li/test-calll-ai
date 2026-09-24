@@ -10,7 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.utils import timezone
 
-from .models import AgentProfile, UserMCPServer
+from .models import AgentProfile, UserMCPServer, SystemSetting
 
 logger = logging.getLogger(__name__)
 
@@ -422,7 +422,9 @@ def api_internal_agent_bootstrap(request):
     try:
         data = json.loads(request.body.decode('utf-8')) if request.body else {}
         user_id = data.get('user_id')
-        user = User.objects.filter(id=user_id).first() if user_id else User.objects.first()
+        user = User.objects.filter(id=user_id).first() if user_id else None
+        if not user:
+            user = User.objects.first()
         if not user:
             return JsonResponse({"status": "error", "message": "No valid user found"}, status=404)
 
@@ -486,6 +488,7 @@ def api_internal_agent_bootstrap(request):
         return JsonResponse({
             "status": "success",
             "user_id": user.id,
+            "gemini_api_key": SystemSetting.get_gemini_api_key(),
             "profile": profile_data,
             "mcp_servers": mcp_list,
             "customer_memory": memory_data,

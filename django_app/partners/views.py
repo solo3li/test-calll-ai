@@ -17,7 +17,7 @@ from .models import PartnerProfile, PartnerClientRelationship
 from .decorators import partner_required, partner_client_access_required
 from .services.webhook import dispatch_partner_webhook
 from .openapi_spec import get_partner_openapi_spec
-from agents.models import AgentProfile, UserMCPServer
+from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
 from crm.models import CallSession, CustomerMemory
 from knowledge.models import Document, DocumentChunk
@@ -896,7 +896,7 @@ def api_partner_client_documents(request, client_id):
             )
 
             # Generate embeddings via Gemini
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
             embeddings = get_embeddings_batch(client, chunks, batch_size=50)
 
             chunk_objs = [
@@ -1464,7 +1464,7 @@ def api_partner_client_rag_query(request, client_id):
             return JsonResponse({"status": "error", "message": "query is required"}, status=400)
 
         # Generate query embedding via Gemini
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
         embed_res = client.models.embed_content(
             model="gemini-embedding-001",
             contents=query,
