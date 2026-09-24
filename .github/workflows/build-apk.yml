@@ -52,43 +52,18 @@ jobs:
       - name: 📦 Install EAS CLI
         run: npm install -g eas-cli
 
-      - name: 🔑 Configure EAS Session (solo3lihamed)
-        run: |
-          mkdir -p ~/.expo
-          cat << 'EOF' > ~/.expo/state.json
-          {
-            "uuid": "0ea0e5aa-b57a-49d7-8dc2-8f27219d3041",
-            "auth": {
-              "sessionSecret": "{\"id\":\"26a755af-6073-46b1-bf03-c20d86f5cd19\",\"version\":2}",
-              "userId": "33dc381d-eb6e-4180-9aa0-6647f7fe5a60",
-              "username": "solo3lihamed",
-              "currentConnection": "Username-Password-Authentication"
-            }
-          }
-          EOF
-          eas whoami || true
-
       - name: 📂 Install Project Dependencies
         working-directory: ./employee_expo57
         run: npm install
 
-      - name: 🔨 Build Android APK Locally
+      - name: 🔨 Build Android APK Locally with EAS
         working-directory: ./employee_expo57
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EAS_NO_VCS: '1'
         run: |
           mkdir -p build
-          if eas build --platform android --profile preview --local --output ./build/employee-softphone.apk --non-interactive; then
-            echo "EAS local build completed successfully!"
-          else
-            echo "Ensuring APK is built via native pipeline..."
-            if [ ! -f ./build/employee-softphone.apk ]; then
-              npx expo prebuild --platform android --no-install
-              cd android && ./gradlew assembleRelease --no-daemon && cd ..
-              cp android/app/build/outputs/apk/release/app-release.apk ./build/employee-softphone.apk
-            fi
-          fi
+          eas build --platform android --profile preview --local --output ./build/employee-softphone.apk --non-interactive
           ls -la ./build/employee-softphone.apk
 
       - name: 🏷️ Determine Release Tag & Title
