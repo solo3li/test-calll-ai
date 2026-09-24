@@ -25,4 +25,5 @@ urlpatterns = [
     path('calls/token/', views.api_get_call_token, name='api_get_call_token'),
     path('calls/hangup/', views.api_hangup_call, name='api_hangup_call'),
     path('calls/transfer/', views.api_transfer_call, name='api_transfer_call'),
+    path('calls/logs/', views.api_list_call_logs, name='api_list_call_logs'),
 ]

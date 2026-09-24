@@ -15,7 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from livekit import api
 
-from .models import EmployeeProfile, CallQueue, QueueMembership
+from .models import EmployeeProfile, CallQueue, QueueMembership, EmployeeCallLog
 
 logger = logging.getLogger(__name__)
 
@@ -531,6 +531,15 @@ def api_dial_call(request):
                 "call_type": "direct_internal"
             })
 
+            # ── Log outbound for caller ──
+            EmployeeCallLog.objects.create(
+                employee=caller,
+                other_party=callee.display_name,
+                extension=callee.extension,
+                room_name=room_name,
+                call_type='outbound',
+            )
+
             return JsonResponse({
                 "status": "success",
                 "call_type": "direct_internal",
@@ -637,6 +646,32 @@ def api_get_call_token(request):
             "accepted_by": employee.to_dict()
         })
 
+        # ── Determine caller info from room_name and log inbound for the answering employee ──
+        caller_name = "عميل / طابور"
+        caller_ext = ""
+        if room_name.startswith("call_ext_"):
+            parts = room_name.split("_")
+            if len(parts) >= 4:
+                caller_ext = parts[2]  # first extension in call_ext_{ext1}_{ext2}_{uuid}
+                caller_profile = EmployeeProfile.objects.filter(extension=caller_ext, is_active=True).first()
+                if caller_profile:
+                    caller_name = caller_profile.display_name
+        elif room_name.startswith("queue_"):
+            parts = room_name.split("_")
+            if len(parts) >= 2:
+                caller_ext = parts[1]
+                caller_name = f"طابور {caller_ext}"
+
+        # Only create inbound log if not already logged (avoid duplicate on re-answer)
+        if not EmployeeCallLog.objects.filter(employee=employee, room_name=room_name, call_type='inbound').exists():
+            EmployeeCallLog.objects.create(
+                employee=employee,
+                other_party=caller_name,
+                extension=caller_ext,
+                room_name=room_name,
+                call_type='inbound',
+            )
+
         return JsonResponse({
             "status": "success",
             "room_name": room_name,
@@ -712,8 +747,21 @@ def api_hangup_call(request):
             "ended_by": caller_name
         })
 
-        # 5. Clean up and delete room on LiveKit server
+        # 5. Clean up and delete room on LiveKit server + complete call logs
         if room_name:
+            # ── Complete all open call logs for this room ──
+            from django.utils import timezone
+            now = timezone.now()
+            open_logs = EmployeeCallLog.objects.filter(room_name=room_name, ended_at__isnull=True)
+            for log in open_logs:
+                elapsed = int((now - log.started_at).total_seconds())
+                log.ended_at = now
+                log.duration_secs = max(elapsed, 0)
+                # Mark missed if duration < 3 seconds (caller hung up before answer)
+                if log.duration_secs < 3 and log.call_type == 'inbound':
+                    log.call_type = 'missed'
+                log.save(update_fields=['ended_at', 'duration_secs', 'call_type'])
+
             import asyncio
             async def _delete_livekit_room():
                 try:
@@ -805,7 +853,72 @@ def api_transfer_call(request):
             "target_type": target_type
         })
 
+
     except Exception as e:
         logger.error(f"Error in api_transfer_call: {e}", exc_info=True)
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
+
+# ==================== Call Logs APIs ====================
+
+@csrf_exempt
+def api_list_call_logs(request):
+    """
+    GET /api/call-center/calls/logs/
+    Returns call history for the authenticated employee (most recent first).
+    Admins can pass ?employee_id=X to view any employee's logs.
+    """
+    employee = get_employee_from_token(request)
+
+    # Allow superuser/admin session auth as fallback
+    if not employee:
+        if not request.user.is_authenticated:
+            return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+        # Admin viewing a specific employee's logs
+        emp_id = request.GET.get("employee_id")
+        if emp_id:
+            target_emp = EmployeeProfile.objects.filter(id=emp_id).first()
+            if not target_emp:
+                return JsonResponse({"status": "error", "message": "الموظف غير موجود"}, status=404)
+            logs = EmployeeCallLog.objects.filter(employee=target_emp).order_by("-started_at")[:200]
+            return JsonResponse({
+                "status": "success",
+                "employee": target_emp.to_dict(),
+                "logs": [log.to_dict() for log in logs],
+                "count": len(logs)
+            })
+        # Admin listing all employees' recent logs
+        logs = EmployeeCallLog.objects.select_related('employee').order_by("-started_at")[:500]
+        return JsonResponse({
+            "status": "success",
+            "logs": [
+                {**log.to_dict(), "employee_name": log.employee.display_name, "employee_ext": log.employee.extension}
+                for log in logs
+            ],
+            "count": len(logs)
+        })
+
+    # Optionally allow admin employee to view another employee's log
+    emp_id = request.GET.get("employee_id")
+    if emp_id and request.user.is_staff:
+        target_emp = EmployeeProfile.objects.filter(id=emp_id).first()
+        if not target_emp:
+            return JsonResponse({"status": "error", "message": "الموظف غير موجود"}, status=404)
+        logs = EmployeeCallLog.objects.filter(employee=target_emp).order_by("-started_at")[:200]
+        return JsonResponse({
+            "status": "success",
+            "employee": target_emp.to_dict(),
+            "logs": [log.to_dict() for log in logs],
+            "count": len(logs)
+        })
+
+    # Normal employee — return their own logs
+    limit = min(int(request.GET.get("limit", 100)), 500)
+    logs = EmployeeCallLog.objects.filter(employee=employee).order_by("-started_at")[:limit]
+
+    return JsonResponse({
+        "status": "success",
+        "employee": employee.to_dict(),
+        "logs": [log.to_dict() for log in logs],
+        "count": len(logs)
+    })

@@ -114,3 +114,46 @@ class QueueMembership(models.Model):
             "order": self.order,
             "is_active": self.is_active,
         }
+
+
+class EmployeeCallLog(models.Model):
+    """Per-employee call history record. Each party in a call gets their own log entry."""
+
+    CALL_TYPE_CHOICES = [
+        ('inbound',   'مكالمة واردة'),
+        ('outbound',  'مكالمة صادرة'),
+        ('missed',    'مكالمة فائتة'),
+        ('transfer',  'مكالمة محولة'),
+    ]
+
+    employee       = models.ForeignKey(
+        EmployeeProfile, on_delete=models.CASCADE,
+        related_name='call_logs', db_index=True
+    )
+    other_party    = models.CharField(max_length=200, default='', help_text='اسم الطرف الثاني')
+    extension      = models.CharField(max_length=32,  default='', help_text='تحويلة أو كود الطابور')
+    room_name      = models.CharField(max_length=200, default='', db_index=True, help_text='اسم الغرفة للربط عند الإنهاء')
+    call_type      = models.CharField(max_length=20, choices=CALL_TYPE_CHOICES, default='outbound')
+    started_at     = models.DateTimeField(auto_now_add=True)
+    ended_at       = models.DateTimeField(null=True, blank=True)
+    duration_secs  = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'call_center_employeecalllog'
+        ordering = ['-started_at']
+
+    def __str__(self):
+        return f"[{self.call_type}] {self.employee.display_name} ↔ {self.other_party} ({self.duration_secs}s)"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "other_party": self.other_party,
+            "extension": self.extension,
+            "room_name": self.room_name,
+            "call_type": self.call_type,
+            "started_at": self.started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "ended_at": self.ended_at.strftime("%Y-%m-%d %H:%M:%S") if self.ended_at else None,
+            "duration_secs": self.duration_secs,
+        }
+
