@@ -259,10 +259,20 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             }
           });
 
-          // When the other person leaves or disconnects, end call immediately
+          // When the other person leaves or disconnects, end call immediately if no other callers remain
           room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
             console.log("Remote participant disconnected:", participant.identity);
-            get().endCall();
+            if (participant.identity === "queue-manager" || participant.identity.startsWith("queue-")) {
+              console.log("Queue manager disconnected (handoff complete), call continuing with caller.");
+              return;
+            }
+            const remaining = Array.from(room.remoteParticipants.values()).filter(
+              (p) => p.identity !== "queue-manager" && !p.identity.startsWith("queue-") && p.identity !== participant.identity
+            );
+            if (remaining.length === 0) {
+              console.log("All remote participants left. Ending call.");
+              get().endCall();
+            }
           });
 
           room.on(RoomEvent.Disconnected, () => {
@@ -361,10 +371,20 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           }
         });
 
-        // When the other person leaves or disconnects, end call immediately
+        // When the other person leaves or disconnects, end call immediately if no other callers remain
         room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
           console.log("Remote participant disconnected:", participant.identity);
-          get().endCall();
+          if (participant.identity === "queue-manager" || participant.identity.startsWith("queue-")) {
+            console.log("Queue manager disconnected (handoff complete), call continuing with caller.");
+            return;
+          }
+          const remaining = Array.from(room.remoteParticipants.values()).filter(
+            (p) => p.identity !== "queue-manager" && !p.identity.startsWith("queue-") && p.identity !== participant.identity
+          );
+          if (remaining.length === 0) {
+            console.log("All remote participants left. Ending call.");
+            get().endCall();
+          }
         });
 
         room.on(RoomEvent.Disconnected, () => {

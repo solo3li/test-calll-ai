@@ -5,10 +5,16 @@ import math
 import wave
 import struct
 import logging
+import inspect
 import redis
 from livekit import rtc, api
 
 logger = logging.getLogger("QueueManager")
+
+async def _redis_exec(coro):
+    if coro is not None and inspect.isawaitable(coro):
+        return await coro
+    return coro
 
 def generate_hold_chime_frames(sample_rate=24000, frame_duration_ms=20, total_duration_s=4.0):
     """
@@ -93,7 +99,7 @@ async def run_queue_session(
     # Register in Redis waiting list
     waiting_key = f"queue:{queue_code}:waiting"
     try:
-        redis_client.rpush(waiting_key, room_name)
+        await _redis_exec(redis_client.rpush(waiting_key, room_name))
     except Exception:
         pass
 
@@ -172,7 +178,7 @@ async def run_queue_session(
             # Check agent presence in Redis or status
             state = "AVAILABLE"
             try:
-                s = redis_client.get(f"agent_state:{extension}")
+                s = await _redis_exec(redis_client.get(f"agent_state:{extension}"))
                 if s:
                     state = s.decode() if isinstance(s, bytes) else str(s)
             except Exception:
@@ -185,7 +191,7 @@ async def run_queue_session(
 
             logger.info(f"[ROUND-ROBIN] Ringing employee '{agent_name}' ({extension}) via WebRTC for up to {ring_timeout}s...")
             try:
-                redis_client.set(f"agent_state:{extension}", "RINGING", ex=ring_timeout + 5)
+                await _redis_exec(redis_client.set(f"agent_state:{extension}", "RINGING", ex=ring_timeout + 5))
             except Exception:
                 pass
 
@@ -213,7 +219,7 @@ async def run_queue_session(
                     logger.info(f"Employee '{agent_name}' ({extension}) answered and joined room '{room_name}'!")
                     agent_answered = True
                     try:
-                        redis_client.set(f"agent_state:{extension}", "BUSY")
+                        await _redis_exec(redis_client.set(f"agent_state:{extension}", "BUSY"))
                     except Exception:
                         pass
                     notify_func(channel_name, "agent_connected", f"تم الرد بواسطة {agent_name}. المحادثة جارية الآن.")
@@ -232,7 +238,7 @@ async def run_queue_session(
                     {"room_name": room_name, "ended_by": "timeout"}
                 )
                 try:
-                    redis_client.set(f"agent_state:{extension}", "AVAILABLE")
+                    await _redis_exec(redis_client.set(f"agent_state:{extension}", "AVAILABLE"))
                 except Exception:
                     pass
 
@@ -244,7 +250,7 @@ async def run_queue_session(
         if hold_playback_task:
             hold_playback_task.cancel()
         try:
-            redis_client.lrem(waiting_key, 0, room_name)
+            await _redis_exec(redis_client.lrem(waiting_key, 0, room_name))
         except Exception:
             pass
         try:
