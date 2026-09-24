@@ -87,7 +87,7 @@ export const DialpadView: React.FC = () => {
           onPress={() => startCall()}
           activeOpacity={0.8}
         >
-          <Ionicons name="call" size={24} color={Colors.textWhite} />
+          <Ionicons name="call" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
     </View>
@@ -101,6 +101,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     justifyContent: "space-between",
     paddingBottom: 16,
+    backgroundColor: Colors.background,
   },
   displayRow: {
     flexDirection: "row",
@@ -115,7 +116,7 @@ const styles = StyleSheet.create({
   },
   numberInput: {
     flex: 1,
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 18,
     fontWeight: "bold",
     letterSpacing: 1,
@@ -129,15 +130,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   quickQueueChip: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.primaryBg,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
+    borderColor: Colors.primaryBorder,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 20,
   },
   quickQueueText: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontSize: 11,
     fontWeight: "600",
   },
@@ -158,7 +159,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   keyNumber: {
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 20,
     fontWeight: "bold",
   },
@@ -182,7 +183,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     shadowColor: Colors.liveGreen,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 4,
   },

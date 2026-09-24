@@ -27,14 +27,10 @@ export const ContactsView: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "ready":
-        return Colors.liveGreen;
-      case "break":
-        return Colors.holdAmber;
-      case "busy":
-        return Colors.endCallRed;
-      default:
-        return Colors.textSubtle;
+      case "ready":   return Colors.liveGreen;
+      case "break":   return Colors.holdAmber;
+      case "busy":    return Colors.endCallRed;
+      default:        return Colors.textSubtle;
     }
   };
 
@@ -56,12 +52,7 @@ export const ContactsView: React.FC = () => {
         <View style={styles.contactDetails}>
           <View style={styles.nameRow}>
             <Text style={styles.nameText}>{item.display_name}</Text>
-            <View
-              style={[
-                styles.statusIndicator,
-                { backgroundColor: getStatusColor(item.status) },
-              ]}
-            />
+            <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(item.status) }]} />
           </View>
           <Text style={styles.roleText}>
             {item.department} • تحويلة: {item.extension}
@@ -77,7 +68,7 @@ export const ContactsView: React.FC = () => {
           <Ionicons
             name="call"
             size={14}
-            color={isAvailable ? "#0d141e" : Colors.textSubtle}
+            color={isAvailable ? "#fff" : Colors.textSubtle}
           />
         </TouchableOpacity>
       </View>
@@ -86,7 +77,7 @@ export const ContactsView: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Search Contacts */}
+      {/* Search */}
       <View style={styles.searchBar}>
         <Feather name="search" size={16} color={Colors.textSubtle} style={{ marginRight: 8 }} />
         <TextInput
@@ -103,7 +94,7 @@ export const ContactsView: React.FC = () => {
         )}
       </View>
 
-      {/* Department Queues Section */}
+      {/* Department Queues */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>طوابير الأقسام (QUEUES)</Text>
       </View>
@@ -115,7 +106,7 @@ export const ContactsView: React.FC = () => {
               style={styles.queueCard}
               onPress={() => startCall(q.code, q.name)}
             >
-              <Ionicons name="headset-outline" size={18} color={Colors.primaryTeal} />
+              <Ionicons name="headset-outline" size={18} color={Colors.primary} />
               <Text style={styles.queueName} numberOfLines={1}>
                 {q.name.split(" ")[0]}
               </Text>
@@ -127,20 +118,20 @@ export const ContactsView: React.FC = () => {
             style={styles.queueCard}
             onPress={() => startCall("200", "طابور المبيعات")}
           >
-            <Ionicons name="headset-outline" size={18} color={Colors.primaryTeal} />
+            <Ionicons name="headset-outline" size={18} color={Colors.primary} />
             <Text style={styles.queueName}>المبيعات</Text>
             <Text style={styles.queueExt}>كود: 200</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Colleagues Section */}
+      {/* Colleagues */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>الموظفون والتحويلات الداخلية</Text>
       </View>
 
       {isLoading && employees.length === 0 ? (
-        <ActivityIndicator color={Colors.primaryTeal} style={{ marginTop: 20 }} />
+        <ActivityIndicator color={Colors.primary} style={{ marginTop: 20 }} />
       ) : (
         <FlatList
           data={filteredEmployees}
@@ -177,7 +168,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 13,
     textAlign: "right",
     outlineStyle: "none" as any,
@@ -186,7 +177,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sectionTitle: {
-    color: Colors.textMuted,
+    color: Colors.primary,
     fontSize: 11,
     fontWeight: "bold",
     letterSpacing: 0.8,
@@ -199,16 +190,16 @@ const styles = StyleSheet.create({
   },
   queueCard: {
     flex: 1,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.primaryBg,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
+    borderColor: Colors.primaryBorder,
     borderRadius: 10,
     padding: 10,
     alignItems: "center",
     gap: 4,
   },
   queueName: {
-    color: Colors.textWhite,
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -234,12 +225,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(0, 196, 180, 0.15)",
+    backgroundColor: Colors.primaryBg,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontWeight: "bold",
     fontSize: 13,
   },
@@ -252,7 +245,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   nameText: {
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -271,12 +264,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primaryTeal,
+    backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   callBtnDisabled: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: Colors.cardBorder,
   },
   emptyText: {
     color: Colors.textSubtle,

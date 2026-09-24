@@ -12,15 +12,13 @@ export const IncomingCallModal: React.FC = () => {
 
   if (!incomingModalVisible || !incomingCall) return null;
 
-  const isQueue = incomingCall.callType === "queue";
-
   return (
     <Modal visible={incomingModalVisible} transparent animationType="slide">
       <View style={styles.backdrop}>
         <View style={styles.alertCard}>
-          {/* Avatar & Pulse Indicator */}
+          {/* Avatar */}
           <View style={styles.avatarCircle}>
-            <Ionicons name="person" size={32} color={Colors.primaryTeal} />
+            <Ionicons name="person" size={32} color={Colors.primary} />
           </View>
 
           {/* Caller Name & Phone */}
@@ -42,11 +40,11 @@ export const IncomingCallModal: React.FC = () => {
             </Text>
           </View>
 
-          {/* AI / WebRTC Pre-Call Intent Box */}
+          {/* AI / WebRTC Pre-Call Info Box */}
           <View style={styles.aiSummaryBox}>
             <View style={styles.aiSummaryHeader}>
               <View style={styles.aiTitleGroup}>
-                <Ionicons name="sparkles" size={14} color={Colors.primaryTeal} />
+                <Ionicons name="sparkles" size={14} color={Colors.primary} />
                 <Text style={styles.aiSummaryTitle}>WebRTC Audio Stream</Text>
               </View>
               <View style={styles.sentimentBadge}>
@@ -57,15 +55,11 @@ export const IncomingCallModal: React.FC = () => {
             <View style={styles.bulletsList}>
               <View style={styles.bulletRow}>
                 <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>
-                  اتصال صوتي مباشر وفوري بدون وسطاء SIP
-                </Text>
+                <Text style={styles.bulletText}>اتصال صوتي مباشر وفوري بدون وسطاء SIP</Text>
               </View>
               <View style={styles.bulletRow}>
                 <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>
-                  جاهز للربط بغرفة LiveKit المشفرة
-                </Text>
+                <Text style={styles.bulletText}>جاهز للربط بغرفة LiveKit المشفرة</Text>
               </View>
             </View>
           </View>
@@ -73,28 +67,15 @@ export const IncomingCallModal: React.FC = () => {
           {/* Decline & Answer Buttons */}
           <View style={styles.actionsRow}>
             <View style={styles.actionBtnCol}>
-              <TouchableOpacity
-                style={[styles.callBtn, styles.declineBtn]}
-                onPress={declineCall}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="call"
-                  size={24}
-                  color={Colors.textWhite}
-                  style={{ transform: [{ rotate: "135deg" }] }}
-                />
+              <TouchableOpacity style={[styles.callBtn, styles.declineBtn]} onPress={declineCall} activeOpacity={0.8}>
+                <Ionicons name="call" size={24} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
               </TouchableOpacity>
               <Text style={styles.btnLabel}>رفض</Text>
             </View>
 
             <View style={styles.actionBtnCol}>
-              <TouchableOpacity
-                style={[styles.callBtn, styles.answerBtn]}
-                onPress={answerCall}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="call" size={24} color={Colors.textWhite} />
+              <TouchableOpacity style={[styles.callBtn, styles.answerBtn]} onPress={answerCall} activeOpacity={0.8}>
+                <Ionicons name="call" size={24} color="#fff" />
               </TouchableOpacity>
               <Text style={styles.btnLabel}>رد (قبول)</Text>
             </View>
@@ -108,7 +89,7 @@ export const IncomingCallModal: React.FC = () => {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.82)",
+    backgroundColor: "rgba(44, 10, 18, 0.70)",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -122,9 +103,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
     alignItems: "center",
     padding: 22,
-    shadowColor: "#000",
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.6,
+    shadowOpacity: 0.2,
     shadowRadius: 28,
     elevation: 14,
   },
@@ -132,15 +113,15 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: "rgba(0, 196, 180, 0.15)",
+    backgroundColor: Colors.primaryBg,
     borderWidth: 1.5,
-    borderColor: Colors.primaryTeal,
+    borderColor: Colors.primaryBorder,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
   },
   callerName: {
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 4,
@@ -152,23 +133,25 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   queueTag: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: Colors.primaryBg,
     paddingVertical: 4,
     paddingHorizontal: 12,
     borderRadius: 12,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
   },
   queueTagText: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: "500",
   },
   aiSummaryBox: {
     width: "100%",
-    backgroundColor: "rgba(0, 196, 180, 0.05)",
+    backgroundColor: Colors.primaryLight,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(0, 196, 180, 0.22)",
+    borderColor: Colors.primaryBorder,
     padding: 13,
     marginBottom: 24,
   },
@@ -184,12 +167,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   aiSummaryTitle: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: "bold",
   },
   sentimentBadge: {
-    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    backgroundColor: Colors.liveGreenBg,
     paddingHorizontal: 7,
     paddingVertical: 2.5,
     borderRadius: 6,
@@ -211,12 +194,12 @@ const styles = StyleSheet.create({
     width: 4.5,
     height: 4.5,
     borderRadius: 2.5,
-    backgroundColor: Colors.primaryTeal,
+    backgroundColor: Colors.primary,
     marginTop: 6,
   },
   bulletText: {
     flex: 1,
-    color: "#e2e8f0",
+    color: Colors.textPrimary,
     fontSize: 12,
     lineHeight: 17,
     textAlign: "right",
@@ -238,7 +221,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 5,
   },

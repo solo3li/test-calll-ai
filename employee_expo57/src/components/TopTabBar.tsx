@@ -8,8 +8,8 @@ export const TopTabBar: React.FC = () => {
   const { activeTab, setActiveTab } = useCall();
 
   const tabs: { key: TabKey; label: string; icon: any; badge?: number }[] = [
-    { key: "dialpad", label: "Dialpad", icon: "dialpad" },
-    { key: "history", label: "History", icon: "history", badge: 3 },
+    { key: "dialpad",  label: "Dialpad",  icon: "dialpad" },
+    { key: "history",  label: "History",  icon: "history", badge: 3 },
     { key: "contacts", label: "Contacts", icon: "contacts" },
   ];
 
@@ -29,21 +29,21 @@ export const TopTabBar: React.FC = () => {
                 <MaterialCommunityIcons
                   name="dialpad"
                   size={24}
-                  color={isActive ? Colors.textWhite : Colors.textMuted}
+                  color={isActive ? Colors.primary : Colors.textMuted}
                 />
               )}
               {tab.key === "history" && (
                 <Ionicons
                   name="time-outline"
                   size={24}
-                  color={isActive ? Colors.textWhite : Colors.textMuted}
+                  color={isActive ? Colors.primary : Colors.textMuted}
                 />
               )}
               {tab.key === "contacts" && (
                 <Ionicons
                   name="people-outline"
                   size={24}
-                  color={isActive ? Colors.textWhite : Colors.textMuted}
+                  color={isActive ? Colors.primary : Colors.textMuted}
                 />
               )}
 
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     height: 64,
     borderBottomWidth: 1,
     borderBottomColor: Colors.cardBorder,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.card,
   },
   tabItem: {
     flex: 1,
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   activeTabItem: {
-    backgroundColor: "rgba(0, 196, 180, 0.04)",
+    backgroundColor: Colors.primaryBg,
   },
   iconWrapper: {
     position: "relative",
@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: -4,
     right: -10,
-    backgroundColor: Colors.primaryTeal,
+    backgroundColor: Colors.primary,
     width: 17,
     height: 17,
     borderRadius: 9,
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeText: {
-    color: "#0d141e",
+    color: Colors.textWhite,
     fontSize: 10,
     fontWeight: "bold",
   },
@@ -113,7 +113,8 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   activeTabLabel: {
-    color: Colors.textWhite,
+    color: Colors.primary,
+    fontWeight: "700",
   },
   inactiveTabLabel: {
     color: Colors.textMuted,
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     height: 2.5,
-    backgroundColor: Colors.primaryTeal,
+    backgroundColor: Colors.primary,
     borderRadius: 2,
   },
 });

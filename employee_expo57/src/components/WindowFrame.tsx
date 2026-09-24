@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Platform, StatusBar, TouchableOpacity, Image } from "react-native";
+import { View, Text, StyleSheet, Platform, StatusBar, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useAuthStore } from "../stores/useAuthStore";
@@ -23,33 +23,25 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
 
   const getStatusColor = (status?: string) => {
     switch (status) {
-      case "ready":
-        return Colors.liveGreen;
-      case "break":
-        return Colors.holdAmber;
-      case "busy":
-        return Colors.endCallRed;
-      default:
-        return Colors.textSubtle;
+      case "ready":   return Colors.liveGreen;
+      case "break":   return Colors.holdAmber;
+      case "busy":    return Colors.endCallRed;
+      default:        return Colors.textSubtle;
     }
   };
 
   const getStatusLabel = (status?: string) => {
     switch (status) {
-      case "ready":
-        return "متاح";
-      case "break":
-        return "استراحة";
-      case "busy":
-        return "مشغول";
-      default:
-        return "غير متصل";
+      case "ready":   return "متاح";
+      case "break":   return "استراحة";
+      case "busy":    return "مشغول";
+      default:        return "غير متصل";
     }
   };
 
   return (
     <View style={styles.outerContainer}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
       <View style={[styles.windowContainer, isWeb && styles.webCardContainer]}>
         {/* Window title bar */}
         <View style={styles.windowHeader}>
@@ -69,12 +61,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
                 onPress={() => setStatusMenuOpen(!statusMenuOpen)}
                 activeOpacity={0.8}
               >
-                <View
-                  style={[
-                    styles.statusIndicatorDot,
-                    { backgroundColor: getStatusColor(employee.status) },
-                  ]}
-                />
+                <View style={[styles.statusIndicatorDot, { backgroundColor: getStatusColor(employee.status) }]} />
                 <Text style={styles.statusText}>{getStatusLabel(employee.status)}</Text>
                 <Ionicons name="chevron-down" size={12} color={Colors.textMuted} />
               </TouchableOpacity>
@@ -88,10 +75,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
               </View>
 
               {/* Logout Button */}
-              <TouchableOpacity
-                style={styles.logoutBtn}
-                onPress={handleLogout}
-              >
+              <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
                 <Ionicons name="log-out-outline" size={16} color={Colors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -100,38 +84,20 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
           )}
         </View>
 
-        {/* Status Dropdown Menu Modal */}
+        {/* Status Dropdown Menu */}
         {statusMenuOpen && (
           <View style={styles.statusDropdown}>
-            <TouchableOpacity
-              style={styles.dropdownOption}
-              onPress={() => {
-                updateStatus("ready");
-                setStatusMenuOpen(false);
-              }}
-            >
+            <TouchableOpacity style={styles.dropdownOption} onPress={() => { updateStatus("ready"); setStatusMenuOpen(false); }}>
               <View style={[styles.statusIndicatorDot, { backgroundColor: Colors.liveGreen }]} />
               <Text style={styles.dropdownOptionText}>🟢 متاح (جاهز لاستقبال المكالمات)</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.dropdownOption}
-              onPress={() => {
-                updateStatus("break");
-                setStatusMenuOpen(false);
-              }}
-            >
+            <TouchableOpacity style={styles.dropdownOption} onPress={() => { updateStatus("break"); setStatusMenuOpen(false); }}>
               <View style={[styles.statusIndicatorDot, { backgroundColor: Colors.holdAmber }]} />
               <Text style={styles.dropdownOptionText}>🟡 استراحة (إيقاف رنين الطابور)</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.dropdownOption}
-              onPress={() => {
-                updateStatus("busy");
-                setStatusMenuOpen(false);
-              }}
-            >
+            <TouchableOpacity style={styles.dropdownOption} onPress={() => { updateStatus("busy"); setStatusMenuOpen(false); }}>
               <View style={[styles.statusIndicatorDot, { backgroundColor: Colors.endCallRed }]} />
               <Text style={styles.dropdownOptionText}>🔴 مشغول (في اجتماع أو مكالمة)</Text>
             </TouchableOpacity>
@@ -148,7 +114,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
 const styles = StyleSheet.create({
   outerContainer: {
     flex: 1,
-    backgroundColor: "#080c14",
+    backgroundColor: "#d8cfc4",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -165,9 +131,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
-    shadowColor: "#000",
+    shadowColor: "#5c0016",
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.6,
+    shadowOpacity: 0.18,
     shadowRadius: 32,
     elevation: 20,
   },
@@ -220,29 +186,29 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 11,
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontWeight: "600",
   },
   employeeBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: Colors.primaryTealBg,
+    backgroundColor: Colors.primaryBg,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.primaryTealBorder,
+    borderColor: Colors.primaryBorder,
   },
   employeeName: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.textWhite,
+    color: Colors.primary,
     maxWidth: 90,
   },
   employeeExt: {
     fontSize: 10,
-    color: Colors.primaryTeal,
+    color: Colors.primaryDark,
     fontWeight: "600",
   },
   logoutBtn: {
@@ -259,9 +225,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
     borderRadius: 12,
     paddingVertical: 6,
-    shadowColor: "#000",
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.15,
     shadowRadius: 16,
     zIndex: 999,
     width: 250,
@@ -275,7 +241,7 @@ const styles = StyleSheet.create({
   },
   dropdownOptionText: {
     fontSize: 12,
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontWeight: "500",
   },
   contentArea: {

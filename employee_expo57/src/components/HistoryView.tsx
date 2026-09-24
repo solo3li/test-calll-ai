@@ -31,11 +31,7 @@ export const HistoryView: React.FC = () => {
   });
 
   const togglePlayAudio = (id: string) => {
-    if (playingAudioId === id) {
-      setPlayingAudioId(null);
-    } else {
-      setPlayingAudioId(id);
-    }
+    setPlayingAudioId(playingAudioId === id ? null : id);
   };
 
   const renderCallItem = ({ item }: { item: CallRecord }) => {
@@ -51,7 +47,7 @@ export const HistoryView: React.FC = () => {
               <Feather
                 name={isMissed ? "phone-missed" : item.type === "inbound" ? "phone-incoming" : "phone-outgoing"}
                 size={16}
-                color={isMissed ? Colors.endCallRed : Colors.primaryTeal}
+                color={isMissed ? Colors.endCallRed : Colors.primary}
               />
             </View>
             <View>
@@ -69,7 +65,7 @@ export const HistoryView: React.FC = () => {
           </View>
         </View>
 
-        {/* AI Summary Snippet Card */}
+        {/* AI Summary Snippet */}
         <View style={styles.aiSummarySnippet}>
           <Text style={styles.aiSnippetText}>{item.aiSummary}</Text>
 
@@ -83,9 +79,9 @@ export const HistoryView: React.FC = () => {
                 <Ionicons
                   name={isPlaying ? "pause" : "play"}
                   size={12}
-                  color={isPlaying ? Colors.primaryTeal : Colors.textWhite}
+                  color={isPlaying ? Colors.primary : Colors.textMuted}
                 />
-                <Text style={[styles.playButtonText, isPlaying && { color: Colors.primaryTeal }]}>
+                <Text style={[styles.playButtonText, isPlaying && { color: Colors.primary }]}>
                   {isPlaying ? "Playing..." : "Play"}
                 </Text>
               </TouchableOpacity>
@@ -96,7 +92,7 @@ export const HistoryView: React.FC = () => {
               onPress={() => startCall(item.phoneNumber, item.callerName)}
               activeOpacity={0.8}
             >
-              <Ionicons name="call" size={11} color="#0d141e" />
+              <Ionicons name="call" size={11} color="#fff" />
               <Text style={styles.callbackButtonText}>Callback</Text>
             </TouchableOpacity>
           </View>
@@ -124,24 +120,20 @@ export const HistoryView: React.FC = () => {
         )}
       </View>
 
-      {/* Segmented Filter (All vs Missed) */}
+      {/* Segmented Filter */}
       <View style={styles.filterRow}>
         <TouchableOpacity
           style={[styles.filterTab, historyFilter === "all" && styles.filterTabActive]}
           onPress={() => setHistoryFilter("all")}
         >
-          <Text style={[styles.filterText, historyFilter === "all" && styles.filterTextActive]}>
-            All
-          </Text>
+          <Text style={[styles.filterText, historyFilter === "all" && styles.filterTextActive]}>All</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.filterTab, historyFilter === "missed" && styles.filterTabActive]}
           onPress={() => setHistoryFilter("missed")}
         >
-          <Text style={[styles.filterText, historyFilter === "missed" && styles.filterTextActive]}>
-            Missed
-          </Text>
+          <Text style={[styles.filterText, historyFilter === "missed" && styles.filterTextActive]}>Missed</Text>
         </TouchableOpacity>
       </View>
 
@@ -177,7 +169,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 13,
   },
   filterRow: {
@@ -193,7 +185,7 @@ const styles = StyleSheet.create({
   },
   filterTabActive: {
     borderBottomWidth: 2,
-    borderBottomColor: Colors.primaryTeal,
+    borderBottomColor: Colors.primary,
   },
   filterText: {
     color: Colors.textMuted,
@@ -201,7 +193,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   filterTextActive: {
-    color: Colors.textWhite,
+    color: Colors.primary,
     fontWeight: "bold",
   },
   listContent: {
@@ -230,15 +222,15 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: "rgba(0, 196, 180, 0.12)",
+    backgroundColor: Colors.primaryBg,
     alignItems: "center",
     justifyContent: "center",
   },
   typeIconMissed: {
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    backgroundColor: Colors.endCallRedBg,
   },
   callerName: {
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: "bold",
   },
@@ -268,10 +260,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.04)",
+    borderColor: Colors.cardBorder,
   },
   aiSnippetText: {
-    color: "#cbd5e1",
+    color: Colors.textPrimary,
     fontSize: 12,
     lineHeight: 17,
     marginBottom: 8,
@@ -285,31 +277,33 @@ const styles = StyleSheet.create({
   playButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: Colors.cardBorder,
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 6,
     gap: 5,
   },
   playingButton: {
-    backgroundColor: "rgba(0, 196, 180, 0.18)",
+    backgroundColor: Colors.primaryBg,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
   },
   playButtonText: {
-    color: Colors.textWhite,
+    color: Colors.textMuted,
     fontSize: 11,
     fontWeight: "500",
   },
   callbackButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.primaryTeal,
+    backgroundColor: Colors.primary,
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 6,
     gap: 4,
   },
   callbackButtonText: {
-    color: "#0d141e",
+    color: "#fff",
     fontSize: 11,
     fontWeight: "bold",
   },

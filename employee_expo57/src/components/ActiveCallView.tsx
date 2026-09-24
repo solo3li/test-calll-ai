@@ -16,7 +16,6 @@ export const ActiveCallView: React.FC = () => {
     sendWhatsAppOrSms,
   } = useCall();
 
-  // Format seconds to mm:ss
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
@@ -40,27 +39,24 @@ export const ActiveCallView: React.FC = () => {
         <Text style={styles.callerPhone}>{activeCall.phoneNumber}</Text>
 
         <View style={styles.timerRow}>
-          <Ionicons name="time-outline" size={15} color={Colors.primaryTeal} />
+          <Ionicons name="time-outline" size={15} color={Colors.primary} />
           <Text style={styles.timerText}>{formatTime(activeCall.durationSeconds)}</Text>
         </View>
       </View>
 
-      {/* 3. Call Controls (Mute, Hold, Transfer, End Call) */}
+      {/* 3. Call Controls */}
       <View style={styles.controlsRow}>
-        {/* Mute Button */}
+        {/* Mute */}
         <View style={styles.controlCol}>
           <TouchableOpacity
-            style={[
-              styles.roundButton,
-              isMuted && styles.roundButtonActiveMute,
-            ]}
+            style={[styles.roundButton, isMuted && styles.roundButtonActiveMute]}
             onPress={toggleMute}
             activeOpacity={0.7}
           >
             <Ionicons
               name={isMuted ? "mic-off" : "mic"}
               size={24}
-              color={isMuted ? Colors.endCallRed : Colors.primaryTeal}
+              color={isMuted ? Colors.endCallRed : Colors.primary}
             />
           </TouchableOpacity>
           <Text style={[styles.controlLabel, isMuted && { color: Colors.endCallRed }]}>
@@ -68,20 +64,17 @@ export const ActiveCallView: React.FC = () => {
           </Text>
         </View>
 
-        {/* Hold Button */}
+        {/* Hold */}
         <View style={styles.controlCol}>
           <TouchableOpacity
-            style={[
-              styles.roundButton,
-              isOnHold && styles.roundButtonActiveHold,
-            ]}
+            style={[styles.roundButton, isOnHold && styles.roundButtonActiveHold]}
             onPress={toggleHold}
             activeOpacity={0.7}
           >
             <Ionicons
               name={isOnHold ? "play" : "pause"}
               size={24}
-              color={isOnHold ? Colors.holdAmber : Colors.primaryTeal}
+              color={isOnHold ? Colors.holdAmber : Colors.primary}
             />
           </TouchableOpacity>
           <Text style={[styles.controlLabel, isOnHold && { color: Colors.holdAmber }]}>
@@ -89,28 +82,24 @@ export const ActiveCallView: React.FC = () => {
           </Text>
         </View>
 
-        {/* Transfer Button */}
+        {/* Transfer */}
         <View style={styles.controlCol}>
           <TouchableOpacity
             style={styles.roundButton}
             onPress={() => setTransferModalVisible(true)}
             activeOpacity={0.7}
           >
-            <Ionicons name="shuffle-outline" size={24} color={Colors.primaryTeal} />
+            <Ionicons name="shuffle-outline" size={24} color={Colors.primary} />
           </TouchableOpacity>
           <Text style={styles.controlLabel}>Transfer</Text>
         </View>
 
-        {/* End Call Button */}
+        {/* End Call */}
         <View style={styles.controlCol}>
-          <TouchableOpacity
-            style={styles.endCallButton}
-            onPress={endCall}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="call" size={24} color={Colors.textWhite} style={{ transform: [{ rotate: "135deg" }] }} />
+          <TouchableOpacity style={styles.endCallButton} onPress={endCall} activeOpacity={0.7}>
+            <Ionicons name="call" size={24} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
           </TouchableOpacity>
-          <Text style={[styles.controlLabel, { color: Colors.textWhite }]}>End Call</Text>
+          <Text style={[styles.controlLabel, { color: Colors.endCallRed }]}>End Call</Text>
         </View>
       </View>
 
@@ -133,15 +122,11 @@ export const ActiveCallView: React.FC = () => {
         </View>
       </View>
 
-      {/* 5. Bottom Action: WhatsApp / SMS button */}
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={sendWhatsAppOrSms}
-        activeOpacity={0.8}
-      >
+      {/* 5. WhatsApp / SMS Action Button */}
+      <TouchableOpacity style={styles.actionButton} onPress={sendWhatsAppOrSms} activeOpacity={0.8}>
         <View style={styles.actionIconGroup}>
-          <FontAwesome5 name="whatsapp" size={20} color={Colors.textWhite} style={styles.actionIcon} />
-          <Ionicons name="chatbubble-ellipses" size={19} color={Colors.textWhite} />
+          <FontAwesome5 name="whatsapp" size={20} color="#fff" style={styles.actionIcon} />
+          <Ionicons name="chatbubble-ellipses" size={19} color="#fff" />
         </View>
         <Text style={styles.actionButtonText}>Send Summary via WhatsApp/SMS</Text>
       </TouchableOpacity>
@@ -176,12 +161,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   liveDot: {
-    color: Colors.primaryTeal,
+    color: Colors.endCallRed,
     fontSize: 12,
     fontWeight: "bold",
   },
   liveText: {
-    color: Colors.primaryTeal,
+    color: Colors.endCallRed,
     fontSize: 13,
     fontWeight: "bold",
   },
@@ -189,7 +174,7 @@ const styles = StyleSheet.create({
     marginBottom: 26,
   },
   callerName: {
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 25,
     fontWeight: "bold",
     letterSpacing: 0.3,
@@ -206,7 +191,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   timerText: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -225,18 +210,18 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 29,
     borderWidth: 1.5,
-    borderColor: Colors.primaryTeal,
-    backgroundColor: "rgba(0, 196, 180, 0.08)",
+    borderColor: Colors.primaryBorder,
+    backgroundColor: Colors.primaryBg,
     alignItems: "center",
     justifyContent: "center",
   },
   roundButtonActiveMute: {
     borderColor: Colors.endCallRed,
-    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    backgroundColor: Colors.endCallRedBg,
   },
   roundButtonActiveHold: {
     borderColor: Colors.holdAmber,
-    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    backgroundColor: Colors.holdAmberBg,
   },
   endCallButton: {
     width: 58,
@@ -247,12 +232,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     shadowColor: Colors.endCallRed,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
   controlLabel: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: "500",
   },
@@ -271,12 +256,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   summaryTitle: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontSize: 15,
     fontWeight: "600",
   },
   sentimentBadge: {
-    backgroundColor: "rgba(16, 185, 129, 0.16)",
+    backgroundColor: Colors.liveGreenBg,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -298,26 +283,26 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: Colors.textMuted,
+    backgroundColor: Colors.primaryBorder,
     marginTop: 7,
   },
   bulletText: {
     flex: 1,
-    color: "#e2e8f0",
+    color: Colors.textPrimary,
     fontSize: 13.5,
     lineHeight: 19,
   },
   actionButton: {
-    backgroundColor: Colors.actionTeal,
+    backgroundColor: Colors.primary,
     borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 14,
     gap: 10,
-    shadowColor: Colors.actionTeal,
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 3,
   },
@@ -330,7 +315,7 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   actionButtonText: {
-    color: Colors.textWhite,
+    color: "#fff",
     fontSize: 13.5,
     fontWeight: "600",
   },

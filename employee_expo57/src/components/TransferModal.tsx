@@ -19,13 +19,10 @@ export const TransferModal: React.FC = () => {
           {/* Modal Header */}
           <View style={styles.modalHeader}>
             <View style={styles.headerLeft}>
-              <Ionicons name="shuffle-outline" size={20} color={Colors.primaryTeal} />
+              <Ionicons name="shuffle-outline" size={20} color={Colors.primary} />
               <Text style={styles.modalTitle}>Transfer Call</Text>
             </View>
-            <TouchableOpacity
-              onPress={() => setTransferModalVisible(false)}
-              style={styles.closeBtn}
-            >
+            <TouchableOpacity onPress={() => setTransferModalVisible(false)} style={styles.closeBtn}>
               <Ionicons name="close" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
           </View>
@@ -92,11 +89,7 @@ export const TransferModal: React.FC = () => {
                     <View
                       style={[
                         styles.statusDot,
-                        {
-                          backgroundColor: isAvailable
-                            ? Colors.liveGreen
-                            : Colors.holdAmber,
-                        },
+                        { backgroundColor: isAvailable ? Colors.liveGreen : Colors.holdAmber },
                       ]}
                     />
                     <Text style={styles.statusLabel}>
@@ -124,7 +117,7 @@ export const TransferModal: React.FC = () => {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backgroundColor: "rgba(44, 10, 18, 0.65)",
     alignItems: "center",
     justifyContent: "center",
     padding: 20,
@@ -137,9 +130,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.cardBorder,
     padding: 18,
-    shadowColor: "#000",
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.18,
     shadowRadius: 20,
     elevation: 10,
   },
@@ -155,7 +148,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   modalTitle: {
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 16,
     fontWeight: "bold",
   },
@@ -175,15 +168,15 @@ const styles = StyleSheet.create({
   },
   queueBtn: {
     flex: 1,
-    backgroundColor: "rgba(0, 196, 180, 0.12)",
+    backgroundColor: Colors.primaryBg,
     borderWidth: 1,
-    borderColor: Colors.primaryTealBorder,
+    borderColor: Colors.primaryBorder,
     paddingVertical: 8,
     borderRadius: 8,
     alignItems: "center",
   },
   queueBtnText: {
-    color: Colors.primaryTeal,
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -197,7 +190,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.05)",
+    borderBottomColor: Colors.cardBorder,
   },
   agentRowDisabled: {
     opacity: 0.4,
@@ -206,7 +199,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   agentName: {
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -230,14 +223,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   cancelButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: Colors.primaryBg,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: "center",
   },
   cancelText: {
-    color: Colors.textWhite,
+    color: Colors.primary,
     fontSize: 13,
-    fontWeight: "500",
+    fontWeight: "600",
   },
 });
