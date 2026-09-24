@@ -15,9 +15,6 @@ export const ActiveCallView: React.FC = () => {
     endCall,
     setTransferModalVisible,
     sendWhatsAppOrSms,
-    transferTargetName,
-    transferDurationSeconds,
-    cancelTransfer,
   } = useCall();
 
   const formatTime = (totalSeconds: number) => {
@@ -26,48 +23,7 @@ export const ActiveCallView: React.FC = () => {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // ── Render 1: TRANSFERRING Screen (Shown to Employee 2 after initiating transfer) ──
-  if (callState === "TRANSFERRING") {
-    return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} bounces={false}>
-        <View style={styles.topStatusRow}>
-          <Text style={styles.activeCallLabel}>تحويل المكالمة</Text>
-          <View style={[styles.liveBadge, { backgroundColor: "rgba(217, 119, 6, 0.12)" }]}>
-            <Text style={[styles.liveDot, { color: Colors.holdAmber }]}>((•))</Text>
-            <Text style={[styles.liveText, { color: Colors.holdAmber }]}>جاري التحويل</Text>
-          </View>
-        </View>
-
-        <View style={styles.specialCard}>
-          <View style={styles.specialIconCircle}>
-            <Ionicons name="shuffle" size={36} color={Colors.primary} />
-          </View>
-
-          <Text style={styles.specialTitle}>{transferTargetName || "الوجهة المحددة"}</Text>
-          <Text style={styles.specialSubtitle}>جاري الرنين على الموظفين في الطابور بالتناوب...</Text>
-
-          <View style={styles.timerRow}>
-            <Ionicons name="time-outline" size={16} color={Colors.primary} />
-            <Text style={styles.timerText}>{formatTime(transferDurationSeconds)}</Text>
-          </View>
-
-          <View style={styles.infoNoteBox}>
-            <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
-            <Text style={styles.infoNoteText}>
-              الطرف المتصل الآن في وضع الانتظار ويستمع لنغمة التحويل. ستعود تلقائياً بمجرد إتمام الرد.
-            </Text>
-          </View>
-
-          <TouchableOpacity style={styles.cancelTransferBtn} onPress={cancelTransfer} activeOpacity={0.8}>
-            <Ionicons name="close-circle-outline" size={20} color="#fff" />
-            <Text style={styles.cancelTransferBtnText}>إلغاء التحويل واستعادة المكالمة</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    );
-  }
-
-  // ── Render 2: HOLD Screen (Shown to Caller / Employee 1 while waiting for transfer) ──
+  // ── Render 1: HOLD Screen (Shown to Caller / Employee 1 while waiting for transfer) ──
   if (callState === "HOLD") {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} bounces={false}>

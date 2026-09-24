@@ -366,15 +366,9 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
             publish_to_centrifugo(f"employee:{caller_id}", {
                 "event": "transfer_failed",
                 "transfer_id": transfer_id,
-                "message": "عذراً، لم يتسنَّ للموظفين الرد على المكالمة حالياً."
-            })
-            publish_to_centrifugo(f"employee:{from_emp_id}", {
-                "event": "transfer_failed",
-                "transfer_id": transfer_id,
-                "message": "لم يتم الرد على التحويل من قبل الموظفين."
+                "message": "عذراً، لم يتسنَّ للموظفين الرد على المكالمة حالياً وتم إنهاء المكالمة."
             })
             await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(caller_id, "ready")
-            await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(from_emp_id, "ready")
             r_check.set(f"transfer:{transfer_id}:state", "failed", ex=300)
             return {"status": "failed", "reason": "all_candidates_exhausted"}
 

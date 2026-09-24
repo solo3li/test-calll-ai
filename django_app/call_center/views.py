@@ -952,6 +952,14 @@ def api_transfer_call(request):
             my_log.duration_secs = max(elapsed, 0)
             my_log.save(update_fields=['ended_at', 'duration_secs'])
 
+        # Detach transferring employee immediately: set status to 'ready'
+        employee.status = "ready"
+        employee.save(update_fields=['status'])
+        publish_to_centrifugo("employees:presence", {
+            "event": "status_change",
+            "employee": employee.to_dict()
+        })
+
         # 4. Generate transfer_id and store state in Redis
         transfer_id = f"tr_{uuid.uuid4().hex[:8]}"
         r = redis.Redis.from_url(settings.REDIS_URL)

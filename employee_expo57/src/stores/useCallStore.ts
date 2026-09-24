@@ -262,22 +262,14 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             payload.partner_name || "الطرف الآخر"
           );
         } else if (payload.event === "transfer_success") {
-          // Transferrer notified of success
-          isTransferring = false;
-          stopHoldAudio();
-          if (callTimerInterval) {
-            clearInterval(callTimerInterval);
-            callTimerInterval = null;
-          }
-          set({
-            callState: "IDLE",
-            transferId: null,
-            livekitRoom: null,
-            activeCall: INITIAL_CALL_DATA,
-          });
-          alert(`✅ تم تحويل المكالمة بنجاح إلى: ${payload.transferred_to}`);
+          // Transferrer already detached; log confirmation
+          console.log("Transfer succeeded:", payload);
         } else if (payload.event === "transfer_cancelled") {
-          // Transfer cancelled, reconnecting parties
+          // If employee is IDLE, ignore cancellation/reconnection
+          if (get().callState === "IDLE") {
+            console.log("Ignoring transfer_cancelled because employee is IDLE");
+            return;
+          }
           isTransferring = false;
           stopHoldAudio();
           alert("تم إلغاء التحويل واستعادة المكالمة");
@@ -288,9 +280,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             payload.partner_name || "الزميل"
           );
         } else if (payload.event === "transfer_failed") {
-          // Guard: If employee is already in an active connected call, ignore delayed/stray transfer_failed!
-          if (get().callState === "CONNECTED" && !isTransferring && !get().transferId) {
-            console.log("Suppressing stray transfer_failed because call is actively connected in room:", get().activeCall.roomName);
+          // If employee is already IDLE (detached) or in an active call, ignore!
+          if (get().callState === "IDLE" || (get().callState === "CONNECTED" && !isTransferring && !get().transferId)) {
+            console.log("Suppressing stray transfer_failed because employee is not on hold/transferring");
             return;
           }
           isTransferring = false;
@@ -850,8 +842,43 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     const { activeCall, livekitRoom } = get();
     if (!token || !activeCall.roomName) return;
 
-    // Immediately flag transfer so disconnect handlers do NOT fire endCall
-    isTransferring = true;
+    // Immediately stop audio & disconnect transferring employee
+    if (livekitRoom) {
+      try { livekitRoom.disconnect(); } catch (e) {}
+    }
+    if (callTimerInterval) {
+      clearInterval(callTimerInterval);
+      callTimerInterval = null;
+    }
+    stopHoldAudio();
+
+    // Reset call state immediately to IDLE so employee is freed and out of the loop
+    isTransferring = false;
+    set({
+      callState: "IDLE",
+      isMuted: false,
+      isOnHold: false,
+      livekitRoom: null,
+      activeCall: INITIAL_CALL_DATA,
+      incomingModalVisible: false,
+      incomingCall: null,
+      transferModalVisible: false,
+      transferId: null,
+      transferTargetName: "",
+      transferDurationSeconds: 0,
+    });
+
+    // Optimistically update local employee status to ready in useAuthStore
+    const currentEmp = useAuthStore.getState().employee;
+    if (currentEmp) {
+      useAuthStore.setState({
+        employee: {
+          ...currentEmp,
+          status: "ready",
+          status_display: "متاح (Ready)",
+        },
+      });
+    }
 
     try {
       const res = await apiRequest<{
@@ -868,48 +895,14 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         }),
       }, token);
 
-      if (livekitRoom) {
-        try { livekitRoom.disconnect(); } catch (e) {}
-      }
-
-      if (callTimerInterval) {
-        clearInterval(callTimerInterval);
-        callTimerInterval = null;
-      }
-
-      set({
-        transferModalVisible: false,
-        livekitRoom: null,
-        callState: "TRANSFERRING",
-        transferId: res.transfer_id,
-        transferTargetName: res.target_name || targetName || targetExtension,
-        transferDurationSeconds: 0,
-      });
-
-      callTimerInterval = setInterval(() => {
-        set((state) => ({
-          transferDurationSeconds: state.transferDurationSeconds + 1,
-        }));
-      }, 1000);
+      alert(`✅ تم تحويل المكالمة بنجاح إلى: ${res.target_name || targetName || targetExtension}\nأنت الآن متاح لاستقبال مكالمات جديدة.`);
     } catch (err: any) {
-      isTransferring = false;
       alert(`فشل التحويل: ${err.message}`);
     }
   },
 
   cancelTransfer: async () => {
-    const token = useAuthStore.getState().token;
-    const { transferId } = get();
-    if (!token || !transferId) return;
-
-    try {
-      await apiRequest("/api/call-center/calls/transfer/cancel/", {
-        method: "POST",
-        body: JSON.stringify({ transfer_id: transferId }),
-      }, token);
-    } catch (err: any) {
-      alert(`فشل إلغاء التحويل: ${err.message}`);
-    }
+    // Blind transfer is immediate; cancel is not applicable
   },
 
   simulateIncomingCall: () => {
