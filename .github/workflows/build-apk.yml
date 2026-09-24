@@ -34,7 +34,13 @@ jobs:
           java-version: '17'
 
       - name: 🤖 Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: 📝 Accept Android SDK Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: 🟩 Setup Node.js 20
         uses: actions/setup-node@v4
@@ -54,6 +60,7 @@ jobs:
         working-directory: ./employee_expo57
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_NO_VCS: '1'
         run: |
           mkdir -p build
           eas build --platform android --profile preview --local --output ./build/employee-softphone.apk --non-interactive
