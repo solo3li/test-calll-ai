@@ -71,6 +71,7 @@ interface CallStoreState {
   answerCall: () => Promise<void>;
   declineCall: () => void;
   endCall: () => void;
+  forceEndCall: () => void;
   toggleMute: () => void;
   toggleHold: () => void;
   transferCall: (targetExtension: string, targetName?: string) => Promise<void>;
@@ -87,13 +88,17 @@ const playHoldAudio = () => {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     try {
       if (holdAudioInstance) {
-        holdAudioInstance.pause();
-        holdAudioInstance.currentTime = 0;
+        return; // Audio is already created / playing
       }
       const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3");
       audio.loop = true;
-      audio.play().catch((e) => console.log("Hold audio autoplay blocked/note:", e));
       holdAudioInstance = audio;
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((e) => {
+          console.log("Hold audio autoplay info:", e?.name || e);
+        });
+      }
     } catch (e) {
       console.warn("Hold audio creation error:", e);
     }
@@ -102,11 +107,12 @@ const playHoldAudio = () => {
 
 const stopHoldAudio = () => {
   if (holdAudioInstance) {
-    try {
-      holdAudioInstance.pause();
-      holdAudioInstance.currentTime = 0;
-    } catch (e) {}
+    const audio = holdAudioInstance;
     holdAudioInstance = null;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch (e) {}
   }
 };
 
@@ -191,8 +197,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         } else if (payload.event === "transfer_hold") {
           // Caller is put on local hold
           isTransferring = true;
-          if (get().livekitRoom) {
-            try { get().livekitRoom?.disconnect(); } catch (e) {}
+          const currentRoom = get().livekitRoom;
+          if (currentRoom) {
+            try { currentRoom.disconnect(); } catch (e) {}
           }
           if (callTimerInterval) {
             clearInterval(callTimerInterval);
@@ -202,6 +209,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           set((state) => ({
             callState: "HOLD",
             transferId: payload.transfer_id,
+            livekitRoom: null,
             activeCall: {
               ...state.activeCall,
               callerName: payload.target_name ? `تحويل إلى: ${payload.target_name}` : "جاري التحويل...",
@@ -221,6 +229,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           }, 1000);
         } else if (payload.event === "transfer_room_ready") {
           // New LiveKit room is ready
+          isTransferring = false;
           stopHoldAudio();
           get().connectLiveKitRoom(
             payload.livekit_url,
@@ -230,6 +239,8 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           );
         } else if (payload.event === "transfer_success") {
           // Transferrer notified of success
+          isTransferring = false;
+          stopHoldAudio();
           if (callTimerInterval) {
             clearInterval(callTimerInterval);
             callTimerInterval = null;
@@ -237,11 +248,13 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           set({
             callState: "IDLE",
             transferId: null,
+            livekitRoom: null,
             activeCall: INITIAL_CALL_DATA,
           });
           alert(`✅ تم تحويل المكالمة بنجاح إلى: ${payload.transferred_to}`);
         } else if (payload.event === "transfer_cancelled") {
           // Transfer cancelled, reconnecting parties
+          isTransferring = false;
           stopHoldAudio();
           alert("تم إلغاء التحويل واستعادة المكالمة");
           get().connectLiveKitRoom(
@@ -251,12 +264,17 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             payload.partner_name || "الزميل"
           );
         } else if (payload.event === "transfer_failed") {
+          isTransferring = false;
           stopHoldAudio();
           alert(`فشل التحويل: ${payload.message || "لم يرد أحد على المكالمة"}`);
-          get().endCall();
+          get().forceEndCall();
         } else if (payload.event === "call_ended") {
+          if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+            console.log("Suppressing call_ended because call is currently in transfer/hold state:", payload);
+            return;
+          }
           stopHoldAudio();
-          get().endCall();
+          get().forceEndCall();
         }
       });
       empSub.subscribe();
@@ -348,6 +366,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       });
 
       room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+        if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+          console.log("Ignoring participant disconnect during transfer/hold");
+          return;
+        }
         console.log("Remote participant disconnected:", participant.identity);
         const remaining = Array.from(room.remoteParticipants.values()).filter(
           (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
@@ -358,8 +380,8 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       });
 
       room.on(RoomEvent.Disconnected, () => {
-        if (isTransferring) {
-          isTransferring = false;
+        if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+          console.log("Ignoring room disconnect during transfer/hold");
           return;
         }
         get().endCall();
@@ -469,6 +491,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           });
 
           room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+            if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+              console.log("Ignoring participant disconnect during transfer/hold");
+              return;
+            }
             const remaining = Array.from(room.remoteParticipants.values()).filter(
               (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
             );
@@ -478,8 +504,8 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           });
 
           room.on(RoomEvent.Disconnected, () => {
-            if (isTransferring) {
-              isTransferring = false;
+            if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+              console.log("Ignoring room disconnect during transfer/hold");
               return;
             }
             get().endCall();
@@ -590,6 +616,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         });
 
         room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+          if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+            console.log("Ignoring participant disconnect during transfer/hold");
+            return;
+          }
           const remaining = Array.from(room.remoteParticipants.values()).filter(
             (p) => !p.identity.startsWith("queue-") && !p.identity.startsWith("transfer-") && p.identity !== participant.identity
           );
@@ -599,8 +629,8 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         });
 
         room.on(RoomEvent.Disconnected, () => {
-          if (isTransferring) {
-            isTransferring = false;
+          if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+            console.log("Ignoring room disconnect during transfer/hold");
             return;
           }
           get().endCall();
@@ -655,13 +685,22 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   endCall: () => {
+    if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
+      console.log("endCall suppressed because call is currently in transfer/hold state");
+      return;
+    }
+    get().forceEndCall();
+  },
+
+  forceEndCall: () => {
+    isTransferring = false;
     stopHoldAudio();
     if (callTimerInterval) {
       clearInterval(callTimerInterval);
       callTimerInterval = null;
     }
 
-    const { livekitRoom, activeCall, incomingCall } = get();
+    const { livekitRoom, activeCall, incomingCall, transferId } = get();
     const roomNameToHangup = activeCall.roomName || incomingCall?.roomName;
 
     if (livekitRoom) {
@@ -671,11 +710,19 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     }
 
     const token = useAuthStore.getState().token;
-    if (roomNameToHangup && token) {
-      apiRequest("/api/call-center/calls/hangup/", {
-        method: "POST",
-        body: JSON.stringify({ room_name: roomNameToHangup }),
-      }, token).catch((err) => console.log("Hangup API error:", err));
+    if (token) {
+      if (transferId) {
+        apiRequest("/api/call-center/calls/transfer/cancel/", {
+          method: "POST",
+          body: JSON.stringify({ transfer_id: transferId }),
+        }, token).catch((err) => console.log("Cancel transfer error on hangup:", err));
+      }
+      if (roomNameToHangup) {
+        apiRequest("/api/call-center/calls/hangup/", {
+          method: "POST",
+          body: JSON.stringify({ room_name: roomNameToHangup }),
+        }, token).catch((err) => console.log("Hangup API error:", err));
+      }
     }
 
     set({
@@ -716,6 +763,9 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     const { activeCall, livekitRoom } = get();
     if (!token || !activeCall.roomName) return;
 
+    // Immediately flag transfer so disconnect handlers do NOT fire endCall
+    isTransferring = true;
+
     try {
       const res = await apiRequest<{
         status: string;
@@ -731,7 +781,6 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         }),
       }, token);
 
-      isTransferring = true;
       if (livekitRoom) {
         try { livekitRoom.disconnect(); } catch (e) {}
       }

@@ -97,7 +97,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     toggleMute: store.toggleMute,
     toggleHold: store.toggleHold,
-    endCall: store.endCall,
+    endCall: store.forceEndCall,
     startCall: store.startCall,
     answerCall: store.answerCall,
     declineCall: store.declineCall,

@@ -199,9 +199,10 @@ def run_tests():
     # ─────────────────────────────────────────────────────────────
     print("\n[TEST 4] Testing Hangup & Auto Status Restoration...")
     EmployeeProfile.objects.filter(id=emp1.id).update(status='busy')
+    room_test = f"call_ext_{emp1.extension}_{emp2.extension}_norm"
     hang_res = client.post(
         "/api/call-center/calls/hangup/",
-        data=json.dumps({"room_name": room_2}),
+        data=json.dumps({"room_name": room_test}),
         content_type="application/json",
         **auth1
     )

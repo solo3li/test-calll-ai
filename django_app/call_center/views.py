@@ -733,6 +733,12 @@ def api_hangup_call(request):
         room_name = data.get('room_name')
         target_employee_id = data.get('target_employee_id')
 
+        # If room is actively undergoing transfer, suppress hangup broadcast
+        r = redis.Redis.from_url(settings.REDIS_URL)
+        if room_name and r.get(f"room:{room_name}:is_transferring"):
+            logger.info(f"Room {room_name} is currently transferring. Suppressing hangup broadcast.")
+            return JsonResponse({"status": "success", "message": "Room is being transferred"})
+
         # 1. Direct peer employee channel notification if explicitly provided
         if target_employee_id:
             publish_to_centrifugo(f"employee:{target_employee_id}", {
@@ -952,22 +958,9 @@ def api_transfer_call(request):
         r.set(f"transfer:{transfer_id}:caller_id", caller_id or "", ex=300)
         r.set(f"transfer:{transfer_id}:from_id", employee.id, ex=300)
         r.set(f"transfer:{transfer_id}:state", "ringing", ex=300)
+        r.set(f"room:{room_name}:is_transferring", "true", ex=120)
 
-        # 5. Delete old LiveKit room cleanly
-        import asyncio
-        async def _delete_old_room():
-            try:
-                lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
-                await lk.room.delete_room(api.DeleteRoomRequest(room=room_name))
-                await lk.aclose()
-            except Exception as lk_err:
-                logger.debug(f"LiveKit room deletion note: {lk_err}")
-        try:
-            asyncio.run(_delete_old_room())
-        except Exception as e:
-            logger.warning(f"Failed to delete old room {room_name}: {e}")
-
-        # 6. Notify Caller (Employee 1) on HOLD
+        # 5. Notify Caller (Employee 1) on HOLD FIRST so their client is in HOLD state
         if caller_id:
             publish_to_centrifugo(f"employee:{caller_id}", {
                 "event": "transfer_hold",
@@ -978,6 +971,21 @@ def api_transfer_call(request):
                 "hold_audio_url": "https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3",
                 "timestamp": time.time()
             })
+
+        # 6. Delete old LiveKit room cleanly
+        import asyncio
+        async def _delete_old_room():
+            await asyncio.sleep(0.3)
+            try:
+                lk = api.LiveKitAPI(settings.LIVEKIT_INTERNAL_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+                await lk.room.delete_room(api.DeleteRoomRequest(room=room_name))
+                await lk.aclose()
+            except Exception as lk_err:
+                logger.debug(f"LiveKit room deletion note: {lk_err}")
+        try:
+            asyncio.run(_delete_old_room())
+        except Exception as e:
+            logger.warning(f"Failed to delete old room {room_name}: {e}")
 
         # 7. Dispatch Inngest event
         ring_timeout = queue.ring_timeout_seconds if queue else 15

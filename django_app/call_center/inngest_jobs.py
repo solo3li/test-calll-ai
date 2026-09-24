@@ -130,20 +130,6 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
 
     await ctx.step.run("close-old-room", step_close_old_room)
 
-    # Step 2: Put Caller on hold locally with hold music and waiting state
-    async def step_notify_caller_hold():
-        hold_payload = {
-            "event": "transfer_hold",
-            "transfer_id": transfer_id,
-            "message": "جاري تحويل مكالمتك، يرجى الانتظار...",
-            "hold_audio_url": "https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3",
-            "timestamp": time.time()
-        }
-        publish_to_centrifugo(f"employee:{caller_id}", hold_payload)
-        return {"status": "caller_notified_hold"}
-
-    await ctx.step.run("notify-caller-hold", step_notify_caller_hold)
-
     r = _get_redis()
     r.set(f"transfer:{transfer_id}:state", "ringing", ex=total_timeout_seconds + 30)
 
