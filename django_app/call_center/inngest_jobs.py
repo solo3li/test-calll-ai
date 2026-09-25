@@ -294,6 +294,12 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
 
                 r.set(f"transfer:{transfer_id}:state", "completed", ex=300)
                 r.set(f"transfer:{transfer_id}:answered_by", cand.id, ex=300)
+                if old_room_name:
+                    r.delete(f"room:{old_room_name}:is_transferring")
+                    r.delete(f"room:{old_room_name}:transfer_id")
+                if new_room:
+                    r.delete(f"room:{new_room}:is_transferring")
+                    r.delete(f"room:{new_room}:transfer_id")
                 return {"status": "completed", "room": new_room, "answered_by": cand.id}
 
             res = await ctx.step.run(f"complete-transfer-{cand_id}", step_complete_transfer)
@@ -311,37 +317,43 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                     "reason": "cancelled"
                 })
 
-                # Reconnect Caller and Transferrer in a restored room
-                restored_room = f"call_ext_{caller_ext}_{from_emp_ext}_rst_{uuid.uuid4().hex[:6]}"
-                caller_token = generate_livekit_token(
-                    restored_room,
-                    f"employee_{caller_id}_{caller_ext}",
-                    caller_name,
-                    {"role": "caller", "employee_id": caller_id}
-                )
-                from_token = generate_livekit_token(
-                    restored_room,
-                    f"employee_{from_emp_id}_{from_emp_ext}",
-                    from_emp_name,
-                    {"role": "transferrer", "employee_id": from_emp_id}
-                )
+                # Reconnect Caller and Transferrer only if both are employees
+                restored_room = None
+                if caller_id and from_emp_id:
+                    restored_room = f"call_ext_{caller_ext}_{from_emp_ext}_rst_{uuid.uuid4().hex[:6]}"
+                    caller_token = generate_livekit_token(
+                        restored_room,
+                        f"employee_{caller_id}_{caller_ext}",
+                        caller_name,
+                        {"role": "caller", "employee_id": caller_id}
+                    )
+                    from_token = generate_livekit_token(
+                        restored_room,
+                        f"employee_{from_emp_id}_{from_emp_ext}",
+                        from_emp_name,
+                        {"role": "transferrer", "employee_id": from_emp_id}
+                    )
 
-                publish_to_centrifugo(f"employee:{caller_id}", {
-                    "event": "transfer_cancelled",
-                    "transfer_id": transfer_id,
-                    "room_name": restored_room,
-                    "livekit_url": settings.LIVEKIT_URL,
-                    "livekit_token": caller_token,
-                    "partner_name": from_emp_name
-                })
-                publish_to_centrifugo(f"employee:{from_emp_id}", {
-                    "event": "transfer_cancelled",
-                    "transfer_id": transfer_id,
-                    "room_name": restored_room,
-                    "livekit_url": settings.LIVEKIT_URL,
-                    "livekit_token": from_token,
-                    "partner_name": caller_name
-                })
+                    publish_to_centrifugo(f"employee:{caller_id}", {
+                        "event": "transfer_cancelled",
+                        "transfer_id": transfer_id,
+                        "room_name": restored_room,
+                        "livekit_url": settings.LIVEKIT_URL,
+                        "livekit_token": caller_token,
+                        "partner_name": from_emp_name
+                    })
+                    publish_to_centrifugo(f"employee:{from_emp_id}", {
+                        "event": "transfer_cancelled",
+                        "transfer_id": transfer_id,
+                        "room_name": restored_room,
+                        "livekit_url": settings.LIVEKIT_URL,
+                        "livekit_token": from_token,
+                        "partner_name": caller_name
+                    })
+
+                if old_room_name:
+                    r.delete(f"room:{old_room_name}:is_transferring")
+                    r.delete(f"room:{old_room_name}:transfer_id")
 
                 r.set(f"transfer:{transfer_id}:state", "cancelled", ex=300)
                 return {"status": "cancelled", "restored_room": restored_room}
@@ -392,6 +404,8 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                     "transfer_id": transfer_id,
                     "message": "عذراً، لم يتسنَّ للموظفين الرد على المكالمة حالياً وتم إنهاء المكالمة."
                 })
+                r_check.delete(f"room:{old_room_name}:is_transferring")
+                r_check.delete(f"room:{old_room_name}:transfer_id")
             r_check.set(f"transfer:{transfer_id}:state", "failed", ex=300)
             return {"status": "failed", "reason": "all_candidates_exhausted"}
 

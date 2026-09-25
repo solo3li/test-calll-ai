@@ -760,9 +760,9 @@ def api_hangup_call(request):
     caller_name = "المشرف"
     if not employee:
         if request.user.is_authenticated:
-            caller_name = request.user.get_full_name() or request.user.username or "المشرف (لوحة التحكم)"
+            caller_name = request.user.get_full_name() or request.user.username or "العميل"
         else:
-            return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+            caller_name = "العميل"
     else:
         caller_name = employee.display_name
 
@@ -771,11 +771,46 @@ def api_hangup_call(request):
         room_name = data.get('room_name')
         target_employee_id = data.get('target_employee_id')
 
-        # If room is actively undergoing transfer, suppress hangup broadcast
+        if not room_name and not target_employee_id:
+            return JsonResponse({"status": "error", "message": "room_name or target_employee_id is required"}, status=400)
+
         r = redis.Redis.from_url(settings.REDIS_URL)
-        if room_name and r.get(f"room:{room_name}:is_transferring"):
-            logger.info(f"Room {room_name} is currently transferring. Suppressing hangup broadcast.")
-            return JsonResponse({"status": "success", "message": "Room is being transferred"})
+
+        # 0. Check if this room is in the middle of a transfer / queue ringing
+        active_transfer_id = r.get(f"room:{room_name}:transfer_id") if room_name else None
+        if active_transfer_id:
+            if isinstance(active_transfer_id, bytes):
+                active_transfer_id = active_transfer_id.decode('utf-8')
+            logger.info(f"Hangup called while transfer {active_transfer_id} is active for room {room_name}. Cancelling transfer.")
+            r.set(f"transfer:{active_transfer_id}:state", "cancelled", ex=300)
+            current_cand = r.get(f"transfer:{active_transfer_id}:current_candidate")
+            if current_cand:
+                if isinstance(current_cand, bytes):
+                    current_cand = current_cand.decode('utf-8')
+                publish_to_centrifugo(f"employee:{current_cand}", {
+                    "event": "call_ended",
+                    "transfer_id": active_transfer_id,
+                    "room_name": room_name,
+                    "reason": "cancelled"
+                })
+            try:
+                async_to_sync(inngest_client.send)(
+                    inngest.Event(
+                        name="call_center/transfer.action",
+                        data={
+                            "transfer_id": active_transfer_id,
+                            "action": "cancel",
+                            "reason": "caller_hungup"
+                        }
+                    )
+                )
+            except Exception as inngest_err:
+                logger.warning(f"Error cancelling Inngest transfer: {inngest_err}")
+
+        # Always clear transferring keys when hangup is requested
+        if room_name:
+            r.delete(f"room:{room_name}:is_transferring")
+            r.delete(f"room:{room_name}:transfer_id")
 
         # 1. Direct peer employee channel notification if explicitly provided
         if target_employee_id:
@@ -813,19 +848,26 @@ def api_hangup_call(request):
                                 "ended_by": caller_name
                             })
 
-        # 4. Broadcast on global queues channel
+        # 4. Notify customer via room channel (rooms:{room_name})
+        if room_name:
+            publish_to_centrifugo(f"rooms:{room_name}", {
+                "event": "call_ended",
+                "room_name": room_name,
+                "ended_by": caller_name
+            })
+
+        # 5. Broadcast on global queues channel
         publish_to_centrifugo("queues:broadcast", {
             "event": "call_ended",
             "room_name": room_name,
             "ended_by": caller_name
         })
 
-        # 5. Clean up and delete room on LiveKit server + complete call logs
+        # 6. Complete all open call logs for this room and notify employees + reset status
         if room_name:
-            # ── Complete all open call logs for this room ──
             from django.utils import timezone
             now = timezone.now()
-            open_logs = EmployeeCallLog.objects.filter(room_name=room_name, ended_at__isnull=True)
+            open_logs = EmployeeCallLog.objects.filter(room_name=room_name, ended_at__isnull=True).select_related('employee')
             for log in open_logs:
                 elapsed = int((now - log.started_at).total_seconds())
                 log.ended_at = now
@@ -835,6 +877,22 @@ def api_hangup_call(request):
                     log.call_type = 'missed'
                 log.save(update_fields=['ended_at', 'duration_secs', 'call_type'])
 
+                if log.employee:
+                    publish_to_centrifugo(f"employee:{log.employee.id}", {
+                        "event": "call_ended",
+                        "room_name": room_name,
+                        "ended_by": caller_name
+                    })
+                    if log.employee.status == 'busy':
+                        log.employee.status = 'ready'
+                        log.employee.save(update_fields=['status'])
+                        publish_to_centrifugo("employees:presence", {
+                            "event": "status_change",
+                            "employee": log.employee.to_dict()
+                        })
+
+        # 7. Clean up and delete room on LiveKit server
+        if room_name:
             import asyncio
             async def _delete_livekit_room():
                 try:
@@ -849,7 +907,7 @@ def api_hangup_call(request):
             except Exception as e:
                 logger.warning(f"Failed to delete LiveKit room {room_name}: {e}")
 
-        # Restore calling employee status to ready
+        # 8. Restore calling employee status to ready if caller is employee
         if employee and employee.status == 'busy':
             employee.status = 'ready'
             employee.save(update_fields=['status'])
@@ -858,7 +916,7 @@ def api_hangup_call(request):
                 "employee": employee.to_dict()
             })
 
-        # Restore peer employees to ready if internal call
+        # 9. Restore peer employees to ready if internal call
         if room_name and room_name.startswith("call_ext_"):
             parts = room_name.split("_")
             if len(parts) >= 4:
@@ -1005,6 +1063,7 @@ def api_transfer_call(request):
         r.set(f"transfer:{transfer_id}:from_id", employee.id, ex=300)
         r.set(f"transfer:{transfer_id}:state", "ringing", ex=300)
         r.set(f"room:{room_name}:is_transferring", "true", ex=120)
+        r.set(f"room:{room_name}:transfer_id", transfer_id, ex=300)
 
         # 5. Notify Caller (Employee 1) on HOLD FIRST so their client is in HOLD state
         if caller_id:
@@ -1264,6 +1323,7 @@ def api_internal_ai_transfer(request):
         r.set(f"transfer:{transfer_id}:caller_phone", caller_phone, ex=300)
         r.set(f"transfer:{transfer_id}:state", "ringing", ex=300)
         r.set(f"room:{room_name}:is_transferring", "true", ex=120)
+        r.set(f"room:{room_name}:transfer_id", transfer_id, ex=300)
 
         # 3. Notify room on Centrifugo
         publish_to_centrifugo(f"rooms:{room_name}", {

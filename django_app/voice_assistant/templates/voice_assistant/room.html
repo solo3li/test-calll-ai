@@ -3353,6 +3353,7 @@
     let livekitRoom = null;
     let centrifugeClient = null;
     let currentSubscription = null;
+    let currentVoiceRoomName = null;
     let isMuted = false;
     let audioContext = null;
     let micAnalyser = null;
@@ -3501,6 +3502,7 @@
           throw new Error(data.message || 'فشل جلب رموز الاتصال من الخادم');
         }
 
+        currentVoiceRoomName = data.room_name;
         callStatus.innerText = 'جاري الاتصال بـ LiveKit...';
 
         // 2. Connect to Centrifugo (App WebSockets)
@@ -3551,6 +3553,23 @@
           }
         });
 
+        livekitRoom.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+          console.log('[LiveKit] Participant disconnected:', participant.identity);
+          const rem = Array.from(livekitRoom.remoteParticipants.values());
+          const remHumans = rem.filter(p => 
+            p.identity !== participant.identity && 
+            !p.identity.startsWith('pipecat-') && 
+            !p.identity.startsWith('transfer-') && 
+            !p.identity.startsWith('queue-')
+          );
+          if (participant.identity.startsWith('employee_') || participant.identity.startsWith('user_')) {
+            if (remHumans.length === 0) {
+              console.log('[LiveKit] Remote human left room, ending call...');
+              endCall();
+            }
+          }
+        });
+
         livekitRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
           console.log('[LiveKit] Subscribed to track:', track.kind, participant.identity);
           if (track.kind === LivekitClient.Track.Kind.Audio) {
@@ -3592,7 +3611,25 @@
     }
 
     function handleAgentEvent(data) {
-      if (data.event === 'agent_queued') {
+      if (data.event === 'call_ended') {
+        callStatus.innerText = 'تم إنهاء المكالمة من قِبل ' + (data.ended_by || 'الطرف الآخر');
+        subStatus.innerText = 'انتهت المكالمة الحالية';
+        appendTranscript('system', `📴 تم إنهاء المكالمة من قِبل ${data.ended_by || 'الطرف الآخر'}`);
+        cleanupCall();
+      } else if (data.event === 'transfer_hold') {
+        callStatus.innerText = data.target_name ? `جاري تحويل المكالمة إلى: ${data.target_name}` : 'جاري تحويل المكالمة...';
+        subStatus.innerText = data.message || 'يرجى الانتظار حتى قبول الموظف للمكالمة...';
+        appendTranscript('system', `📞 ${data.message || 'جاري تحويل المكالمة...'}`);
+      } else if (data.event === 'transfer_room_ready') {
+        callStatus.innerText = `تم الاتصال بالموظف: ${data.partner_name || 'موظف خدمة العملاء'}`;
+        subStatus.innerText = 'المكالمة متصلة الآن مع الموظف';
+        appendTranscript('system', `👤 تم تحويل المكالمة وبدء التحدث مع: ${data.partner_name || 'موظف خدمة العملاء'}`);
+      } else if (data.event === 'transfer_failed') {
+        callStatus.innerText = 'فشل التحويل';
+        subStatus.innerText = data.message || 'لم يتم الرد، تم إنهاء المكالمة';
+        appendTranscript('system', `⚠️ ${data.message || 'لم يتسن للموظفين الرد على المكالمة حالياً'}`);
+        cleanupCall();
+      } else if (data.event === 'agent_queued') {
         callStatus.innerText = data.message;
       } else if (data.event === 'agent_connected' || data.event === 'agent_ready' || data.event === 'agent_listening') {
         callStatus.innerText = 'المساعد متصل ويستمع إليك الآن';
@@ -3627,17 +3664,33 @@
     }
 
     async function endCall() {
+      const roomToClose = currentVoiceRoomName;
       cleanupCall();
+      if (roomToClose) {
+        try {
+          await fetch('/api/call-center/calls/hangup/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ room_name: roomToClose })
+          });
+        } catch (e) {
+          console.error('Hangup API error:', e);
+        }
+      }
     }
 
     function cleanupCall() {
+      currentVoiceRoomName = null;
       stopMicVisualizer();
       if (livekitRoom) {
-        livekitRoom.disconnect();
+        try { livekitRoom.disconnect(); } catch (e) {}
         livekitRoom = null;
       }
       if (centrifugeClient) {
-        centrifugeClient.disconnect();
+        try { centrifugeClient.disconnect(); } catch (e) {}
         centrifugeClient = null;
       }
       orb.classList.remove('agent-active');
