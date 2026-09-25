@@ -37,7 +37,7 @@ from google import genai
 from google.genai import types
 from pgvector.django import CosineDistance
 
-from rest_framework.decorators import api_view, parser_classes
+from rest_framework.decorators import api_view, parser_classes, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.views import SpectacularAPIView
@@ -256,6 +256,7 @@ api_user_openapi_spec = UserSpectacularSchemaView.as_view()
     tags=["1. الحساب والرصيد (Account & Balance)"]
 )
 @api_view(['GET'])
+@authentication_classes([])
 @user_api_key_required
 def api_user_account(request):
     """
@@ -571,6 +572,7 @@ def api_user_memory_detail(request, memory_id):
     tags=["4. قواعد المعرفة والاستعلام الدلالي (RAG)"]
 )
 @api_view(['GET', 'POST', 'DELETE'])
+@authentication_classes([])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 @user_api_key_required
 def api_user_documents(request):
@@ -1367,6 +1369,7 @@ def api_user_queue_members(request, queue_id):
     tags=["9. بدء مكالمة WebRTC"]
 )
 @api_view(['POST'])
+@authentication_classes([])
 @parser_classes([JSONParser, FormParser, MultiPartParser])
 @user_api_key_required
 def api_user_token(request):
@@ -1615,6 +1618,7 @@ def api_user_call_dial(request):
     tags=["10. حملات الاتصال والعملاء (Campaigns)"]
 )
 @api_view(['GET', 'POST'])
+@authentication_classes([])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 @user_api_key_required
 def api_user_campaigns(request):
@@ -1786,6 +1790,7 @@ def api_user_campaigns(request):
     tags=["10. حملات الاتصال والعملاء (Campaigns)"]
 )
 @api_view(['GET', 'DELETE'])
+@authentication_classes([])
 @user_api_key_required
 def api_user_campaign_detail(request, campaign_id):
     """
@@ -1819,6 +1824,7 @@ def api_user_campaign_detail(request, campaign_id):
     tags=["10. حملات الاتصال والعملاء (Campaigns)"]
 )
 @api_view(['POST'])
+@authentication_classes([])
 @user_api_key_required
 def api_user_campaign_start(request, campaign_id):
     """
@@ -1877,6 +1883,7 @@ def api_user_campaign_start(request, campaign_id):
     tags=["10. حملات الاتصال والعملاء (Campaigns)"]
 )
 @api_view(['POST'])
+@authentication_classes([])
 @user_api_key_required
 def api_user_campaign_pause(request, campaign_id):
     """

@@ -35,7 +35,7 @@ from django.db.models import Q
 from django.core.paginator import Paginator
 from livekit import api
 
-from rest_framework.decorators import api_view, parser_classes
+from rest_framework.decorators import api_view, parser_classes, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.views import SpectacularAPIView
@@ -980,6 +980,7 @@ def api_partner_client_memory_detail(request, client_id, memory_id):
     tags=["5. قواعد معرفة العملاء (Client RAG & Docs)"]
 )
 @api_view(['GET', 'POST', 'DELETE'])
+@authentication_classes([])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 @partner_client_access_required
 def api_partner_client_documents(request, client_id):
@@ -2215,6 +2216,7 @@ def api_partner_docs_scalar(request):
     tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['GET', 'POST'])
+@authentication_classes([])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 @partner_client_access_required
 def api_partner_client_campaigns(request, client_id):
@@ -2387,6 +2389,7 @@ def api_partner_client_campaigns(request, client_id):
     tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['GET', 'DELETE'])
+@authentication_classes([])
 @partner_client_access_required
 def api_partner_client_campaign_detail(request, client_id, campaign_id):
     """
@@ -2421,6 +2424,7 @@ def api_partner_client_campaign_detail(request, client_id, campaign_id):
     tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['POST'])
+@authentication_classes([])
 @partner_client_access_required
 def api_partner_client_campaign_start(request, client_id, campaign_id):
     """
@@ -2481,6 +2485,7 @@ def api_partner_client_campaign_start(request, client_id, campaign_id):
     tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['POST'])
+@authentication_classes([])
 @partner_client_access_required
 def api_partner_client_campaign_pause(request, client_id, campaign_id):
     """

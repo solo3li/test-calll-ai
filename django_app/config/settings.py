@@ -157,6 +157,7 @@ MINIO_BUCKET_NAME = os.getenv('MINIO_BUCKET_NAME', 'call-recordings')
 # Django REST Framework & OpenAPI Documentation (drf-spectacular + Scalar)
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
 }
 
 SPECTACULAR_SETTINGS = {
