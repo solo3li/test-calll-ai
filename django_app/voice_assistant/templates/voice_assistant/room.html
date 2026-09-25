@@ -2713,6 +2713,19 @@
               </div>
             </div>
 
+            <!-- Call Recording Audio Player -->
+            <div id="cdm-recording-section" class="p-3.5 rounded-2xl bg-[#FAF0F2] border border-[#E8CCD2] space-y-2 hidden">
+              <div class="flex items-center justify-between">
+                <h5 class="font-bold text-[#680E23] text-xs flex items-center gap-1.5">
+                  <span>🎙️</span> <span>تسجيل المكالمة الصوتي (Audio Recording):</span>
+                </h5>
+                <a id="cdm-download-btn" href="#" target="_blank" download class="px-2.5 py-1 rounded-lg bg-[#680E23] hover:bg-[#520B1C] text-white text-[11px] font-semibold transition inline-flex items-center gap-1 shadow-sm">
+                  <span>⬇️</span> <span>تحميل MP3</span>
+                </a>
+              </div>
+              <audio id="cdm-audio-player" controls preload="none" class="w-full h-8 rounded-lg outline-none"></audio>
+            </div>
+
             <!-- Call Summary -->
             <div class="p-4 rounded-2xl bg-[#FAF7F2] border border-[#EAE3D9] space-y-1.5">
               <h5 class="font-bold text-[#680E23] text-xs flex items-center gap-1.5">
@@ -6164,6 +6177,11 @@
               <button type="button" onclick="openCallDetailModal(${c.id})" class="px-2.5 py-1 rounded-lg bg-[#FAF7F2] hover:bg-[#F5EFE6] border border-[#DDD5C7] text-[#680E23] text-xs font-semibold transition inline-flex items-center gap-1 shadow-sm">
                 <span>👁️ التفاصيل</span>
               </button>
+              ${c.recording_url ? `
+                <a href="${c.recording_url}" target="_blank" class="ms-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold transition inline-flex items-center gap-1 shadow-sm" title="استماع للتسجيل">
+                  <span>▶️</span> <span>تسجيل</span>
+                </a>
+              ` : ''}
             </td>
           </tr>
         `;
@@ -6225,9 +6243,23 @@
 
       const mBox = document.getElementById('call-detail-modal');
       if (mBox) mBox.classList.remove('hidden');
+
+      const recSec = document.getElementById('cdm-recording-section');
+      const audioEl = document.getElementById('cdm-audio-player');
+      const dlBtn = document.getElementById('cdm-download-btn');
+      if (call.recording_url) {
+        if (audioEl) audioEl.src = call.recording_url;
+        if (dlBtn) dlBtn.href = call.recording_url;
+        if (recSec) recSec.classList.remove('hidden');
+      } else {
+        if (audioEl) { audioEl.pause(); audioEl.src = ''; }
+        if (recSec) recSec.classList.add('hidden');
+      }
     }
 
     function closeCallDetailModal() {
+      const audioEl = document.getElementById('cdm-audio-player');
+      if (audioEl) { audioEl.pause(); }
       const mBox = document.getElementById('call-detail-modal');
       if (mBox) mBox.classList.add('hidden');
     }

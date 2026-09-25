@@ -276,15 +276,24 @@ def livekit_webhook(request):
             })
             return HttpResponse("ok")
 
-        # Skip internal helper bots (transfer hold bot, queue bots, etc.)
+        # Skip internal helper bots (transfer hold bot, queue bots, egress recorder, etc.)
         if (
             str(participant_identity).startswith("transfer-")
             or str(participant_identity).startswith("queue-")
             or str(participant_identity).startswith("bot_")
+            or str(participant_identity).startswith("EG_")
+            or str(participant_identity).startswith("egress")
             or participant_identity == "transfer-bot"
         ):
-            logger.info(f"Internal helper bot '{participant_identity}' joined room {room_name}. Skipping AI agent dispatch.")
+            logger.info(f"Internal helper/egress participant '{participant_identity}' joined room {room_name}. Skipping agent dispatch.")
             return HttpResponse("ok")
+
+        # Automatically start room composite recording via LiveKit Egress & MinIO
+        try:
+            from .egress_service import start_room_recording
+            start_room_recording(room_name)
+        except Exception as eg_err:
+            logger.warning(f"Could not trigger egress recording for room {room_name}: {eg_err}")
 
         # Skip direct human-to-human calls (employee to employee or employee to external PSTN)
         if room_name.startswith("call_ext_") or room_name.startswith("call_tr_") or room_name.startswith("call_rst_") or room_name.startswith("pstn_out_") or str(participant_identity).startswith("employee_"):
@@ -466,4 +475,96 @@ def livekit_webhook(request):
     elif event_type == "room_finished":
         logger.info(f"Room {room_name} finished.")
 
+    elif event_type == "egress_ended":
+        egress_info = getattr(event, 'egress_info', None)
+        if egress_info:
+            r_name = getattr(egress_info, 'room_name', '')
+            egress_id = getattr(egress_info, 'egress_id', '')
+            status = str(getattr(egress_info, 'status', ''))
+            logger.info(f"LiveKit Egress Ended: id={egress_id}, room={r_name}, status={status}")
+
+            file_results = getattr(egress_info, 'file_results', [])
+            rec_url = ""
+            duration_sec = 0
+            file_size = 0
+
+            if file_results:
+                f0 = file_results[0]
+                fname = getattr(f0, 'filename', '')
+                loc = getattr(f0, 'location', '')
+                file_size = getattr(f0, 'size', 0)
+                dur_ns = getattr(f0, 'duration', 0)
+                if dur_ns:
+                    duration_sec = int(dur_ns / 1_000_000_000)
+
+                # Store internal proxy URL for seamless cross-network streaming
+                if fname:
+                    clean_f = fname.lstrip('/')
+                    rec_url = f"/api/calls/recordings/{clean_f}"
+                elif loc:
+                    rec_url = loc
+
+            if r_name and rec_url:
+                try:
+                    from crm.models import CallSession
+                    updated = CallSession.objects.filter(room_name=r_name).update(
+                        recording_url=rec_url
+                    )
+                    logger.info(f"Updated CallSession recording_url for room '{r_name}' ({updated} records updated): {rec_url}")
+                except Exception as db_err:
+                    logger.error(f"Error updating CallSession for room '{r_name}': {db_err}")
+
+                try:
+                    r = redis.Redis.from_url(settings.REDIS_URL)
+                    r.set(f"recording_url:{r_name}", rec_url, ex=86400)
+                except Exception as red_err:
+                    logger.warning(f"Error caching recording_url in Redis: {red_err}")
+
+                publish_to_centrifugo(f"rooms:{r_name}", {
+                    "event": "recording_ready",
+                    "recording_url": rec_url,
+                    "duration_seconds": duration_sec,
+                    "file_size": file_size,
+                    "timestamp": time.time()
+                })
+
     return HttpResponse("ok")
+
+
+@csrf_exempt
+def stream_call_recording(request, filename):
+    """
+    Stream call recording from internal MinIO storage to browser/client.
+    Supports range headers for smooth scrubbing in audio players.
+    """
+    import requests
+    from django.http import StreamingHttpResponse, Http404
+
+    minio_endpoint = getattr(settings, 'MINIO_ENDPOINT', 'http://minio:9000')
+    bucket = getattr(settings, 'MINIO_BUCKET_NAME', 'call-recordings')
+    clean_filename = filename.lstrip('/')
+    minio_url = f"{minio_endpoint}/{bucket}/{clean_filename}"
+
+    try:
+        headers = {}
+        if 'HTTP_RANGE' in request.META:
+            headers['Range'] = request.META['HTTP_RANGE']
+
+        upstream_resp = requests.get(minio_url, headers=headers, stream=True, timeout=10)
+        if upstream_resp.status_code in [200, 206]:
+            response = StreamingHttpResponse(
+                upstream_resp.iter_content(chunk_size=8192),
+                status=upstream_resp.status_code,
+                content_type=upstream_resp.headers.get('Content-Type', 'audio/mpeg')
+            )
+            for h in ['Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified']:
+                if h in upstream_resp.headers:
+                    response[h] = upstream_resp.headers[h]
+            return response
+        elif upstream_resp.status_code == 404:
+            return HttpResponse("Recording not found", status=404)
+        else:
+            return HttpResponse("Error fetching recording", status=upstream_resp.status_code)
+    except Exception as e:
+        logger.error(f"Error streaming recording {filename}: {e}")
+        return HttpResponse(f"Error streaming recording: {e}", status=500)

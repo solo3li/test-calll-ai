@@ -40,6 +40,14 @@ http:
       tls:
         certResolver: "letsencrypt"
 
+    minio-router:
+      rule: "Host(`minio.169.58.32.179.nip.io`)"
+      entryPoints:
+        - "websecure"
+      service: "minio-service"
+      tls:
+        certResolver: "letsencrypt"
+
   services:
     django-service:
       loadBalancer:
@@ -65,3 +73,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://172.17.0.1:8081"
+
+    minio-service:
+      loadBalancer:
+        servers:
+          - url: "http://minio:9000"

@@ -187,6 +187,18 @@ def api_internal_save_call_session_and_memory(request):
             if extracted_phone and caller_phone in ['web_dashboard', 'anonymous', 'unknown', '']:
                 caller_phone = extracted_phone
 
+        # Check if recording_url is available from request or Redis cache
+        req_recording_url = str(data.get('recording_url') or '').strip()
+        if not req_recording_url:
+            try:
+                import redis
+                r = redis.Redis.from_url(settings.REDIS_URL)
+                cached_rec = r.get(f"recording_url:{room_name}")
+                if cached_rec:
+                    req_recording_url = cached_rec.decode() if isinstance(cached_rec, bytes) else str(cached_rec)
+            except Exception:
+                pass
+
         # 1. Update existing CallSession (e.g. created by outbound dialer) or create a new record
         session = CallSession.objects.filter(room_name=room_name).first()
         if session:
@@ -198,7 +210,11 @@ def api_internal_save_call_session_and_memory(request):
                 session.caller_phone = caller_phone
             if destination_phone:
                 session.destination_phone = destination_phone
-            session.save(update_fields=['ended_at', 'duration_seconds', 'transcript_text', 'summary', 'caller_phone', 'destination_phone'])
+            update_fields = ['ended_at', 'duration_seconds', 'transcript_text', 'summary', 'caller_phone', 'destination_phone']
+            if req_recording_url and not session.recording_url:
+                session.recording_url = req_recording_url
+                update_fields.append('recording_url')
+            session.save(update_fields=update_fields)
         else:
             session = CallSession.objects.create(
                 user=user,
@@ -210,7 +226,8 @@ def api_internal_save_call_session_and_memory(request):
                 ended_at=now_dt,
                 duration_seconds=duration_seconds,
                 transcript_text=transcript_text,
-                summary=summary
+                summary=summary,
+                recording_url=req_recording_url
             )
 
         # 1.1 Calculate billing with strict ceiling rounding and deduct from wallet (Partner or User)

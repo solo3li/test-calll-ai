@@ -97,6 +97,7 @@ services:
       - redis
       - centrifugo
       - livekit
+      - minio
     networks:
       - voice_net
 
@@ -146,11 +147,54 @@ services:
     networks:
       - voice_net
 
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    container_name: voice_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - voice_net
+
+  egress:
+    image: livekit/egress:latest
+    container_name: voice_egress
+    restart: unless-stopped
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: devkey
+        api_secret: secretkey1234567890abcdef
+        ws_url: ws://livekit:7880
+        redis:
+          address: redis:6379
+        s3:
+          endpoint: http://minio:9000
+          access_key: minioadmin
+          secret: minioadmin123
+          bucket: call-recordings
+          region: us-east-1
+          force_path_style: true
+        logging:
+          level: info
+    depends_on:
+      - livekit
+      - redis
+      - minio
+    networks:
+      - voice_net
 
 volumes:
   pgdata:
   media_data:
   traefik_acme:
+  minio_data:
 
 networks:
   voice_net:

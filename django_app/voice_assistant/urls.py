@@ -67,6 +67,7 @@ urlpatterns = [
     path('api/calls/dial/', views.api_dial_call, name='api_dial_call'),
     path('api/calls/token/', views.api_get_call_token, name='api_get_call_token'),
     path('api/calls/hangup/', views.api_hangup_call, name='api_hangup_call'),
+    path('api/calls/recordings/<path:filename>', views.stream_call_recording, name='stream_call_recording'),
 ]
 
 
