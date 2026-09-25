@@ -28,4 +28,6 @@ async def close_http_session():
     if _session and not _session.closed:
         await _session.close()
         _session = None
+        # Allow underlying TCP transport connections to finish closing
+        await asyncio.sleep(0.25)
         logger.info("Shared aiohttp.ClientSession closed cleanly.")

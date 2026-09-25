@@ -331,3 +331,31 @@ def save_call_session_and_update_memory_sync(user_id: int, room_name: str, start
             logger.error(f"Error saving CallSession via CRM API ({res.status_code}): {res.text}")
     except Exception as e:
         logger.error(f"Failed to save call session via Django API: {e}", exc_info=True)
+
+
+def fetch_user_active_profile_sync(user_id: int, bootstrap: dict = None) -> dict:
+    """Fetch active agent profile for user via Django API."""
+    if bootstrap is not None:
+        return parse_active_profile_from_bootstrap(bootstrap)
+    if not user_id:
+        return parse_active_profile_from_bootstrap({})
+    try:
+        b = fetch_agent_bootstrap_sync(user_id)
+        return parse_active_profile_from_bootstrap(b)
+    except Exception as e:
+        logger.error(f"Error fetching active profile for user {user_id}: {e}")
+        return parse_active_profile_from_bootstrap({})
+
+
+def fetch_customer_memory_sync(user_id: int, caller_phone: str = "web_dashboard", bootstrap: dict = None) -> dict:
+    """Fetch customer memory (permanent profile + immediate summary) for a specific phone number via Django API."""
+    if bootstrap is not None:
+        return parse_customer_memory_from_bootstrap(bootstrap, caller_phone)
+    if not user_id:
+        return parse_customer_memory_from_bootstrap({}, caller_phone)
+    try:
+        b = fetch_agent_bootstrap_sync(user_id, caller_phone)
+        return parse_customer_memory_from_bootstrap(b, caller_phone)
+    except Exception as e:
+        logger.error(f"Error fetching customer memory for user {user_id} ({caller_phone}): {e}")
+        return {"phone_number": caller_phone, "permanent_profile": {}, "last_interaction_summary": "", "card_text": "", "total_calls_count": 0}
