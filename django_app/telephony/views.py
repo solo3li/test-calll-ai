@@ -172,11 +172,10 @@ def save_outbound_trunk(request):
 
         # Find existing default trunk or create new
         existing_trunk = OutboundSIPTrunk.objects.filter(user=request.user).first()
-        existing_trunk_id = existing_trunk.livekit_outbound_trunk_id if existing_trunk else None
-
         # If user didn't enter password on update, keep existing password
-        if not auth_password and existing_trunk and existing_trunk.auth_password:
-            auth_password = existing_trunk.auth_password
+        plain_password_for_lk = auth_password
+        if not auth_password and existing_trunk:
+            plain_password_for_lk = existing_trunk.get_auth_password()
 
         lk_trunk_id = asyncio.run(_async_create_or_update_outbound_trunk(
             name=name,
@@ -184,7 +183,7 @@ def save_outbound_trunk(request):
             port=sip_port,
             transport_str=transport,
             auth_username=auth_username,
-            auth_password=auth_password,
+            auth_password=plain_password_for_lk,
             caller_id=caller_id,
             existing_trunk_id=existing_trunk_id
         ))
@@ -195,7 +194,8 @@ def save_outbound_trunk(request):
             existing_trunk.sip_port = sip_port
             existing_trunk.transport = transport
             existing_trunk.auth_username = auth_username
-            existing_trunk.auth_password = auth_password
+            if auth_password:
+                existing_trunk.set_auth_password(auth_password)
             existing_trunk.caller_id = caller_id
             existing_trunk.livekit_outbound_trunk_id = lk_trunk_id
             existing_trunk.is_active = True
@@ -203,19 +203,20 @@ def save_outbound_trunk(request):
             existing_trunk.save()
             trunk_obj = existing_trunk
         else:
-            trunk_obj = OutboundSIPTrunk.objects.create(
+            trunk_obj = OutboundSIPTrunk(
                 user=request.user,
                 name=name,
                 sip_host=sip_host,
                 sip_port=sip_port,
                 transport=transport,
                 auth_username=auth_username,
-                auth_password=auth_password,
                 caller_id=caller_id,
                 livekit_outbound_trunk_id=lk_trunk_id,
                 is_active=True,
                 is_default=True
             )
+            trunk_obj.set_auth_password(auth_password)
+            trunk_obj.save()
 
         # Cache default outbound trunk in Redis for fast access by sip_proxy and workers
         try:
@@ -546,7 +547,7 @@ def save_pbx_trunk(request):
             trunk.pbx_ip = pbx_ip
             trunk.auth_username = auth_username
             if auth_password:
-                trunk.auth_password = auth_password
+                trunk.set_auth_password(auth_password)
             trunk.inbound_numbers = inbound_numbers
             trunk.destination_type = destination_type
             trunk.target_queue = target_queue
@@ -561,13 +562,12 @@ def save_pbx_trunk(request):
             if auth_mode == 'credentials' and not auth_password:
                 auth_password = uuid.uuid4().hex[:12]
 
-            trunk = InboundPBXTrunk.objects.create(
+            trunk = InboundPBXTrunk(
                 user=request.user,
                 name=name,
                 auth_mode=auth_mode,
                 pbx_ip=pbx_ip,
                 auth_username=auth_username,
-                auth_password=auth_password,
                 inbound_numbers=inbound_numbers,
                 destination_type=destination_type,
                 target_queue=target_queue,
@@ -578,6 +578,8 @@ def save_pbx_trunk(request):
                 is_default_outbound=is_default_outbound,
                 is_active=is_active
             )
+            trunk.set_auth_password(auth_password)
+            trunk.save()
 
         target_queue_code = target_queue.code if target_queue else None
         livekit_trunk_id, livekit_rule_id, livekit_outbound_trunk_id = asyncio.run(_async_create_pbx_inbound_trunk_and_rule(

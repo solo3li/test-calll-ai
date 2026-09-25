@@ -103,17 +103,7 @@ LANGUAGE_DIALECTS_MAP = {
         {'id': 'chinese_zh', 'label': '普通话 (Mandarin Chinese)'},
     ],
 }
-
-def verify_internal_api_key(request) -> bool:
-    """Validate internal request from AI agent service."""
-    expected_key = getattr(settings, 'INTERNAL_API_KEY', 'default-internal-secret-key-12345')
-    auth_header = request.headers.get('X-Internal-API-Key') or request.headers.get('Authorization', '')
-    if auth_header.startswith('Bearer '):
-        token = auth_header.split(' ', 1)[1].strip()
-    else:
-        token = auth_header.strip()
-    user = getattr(request, 'user', None)
-    return token == expected_key or (user is not None and user.is_authenticated)
+from common.auth import verify_internal_api_key
 
 # ==================== Agent Profiles Management ====================
 

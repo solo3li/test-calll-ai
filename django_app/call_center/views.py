@@ -25,23 +25,7 @@ logger = logging.getLogger(__name__)
 
 JWT_SECRET = getattr(settings, 'SECRET_KEY', 'default_secret_key')
 
-def publish_to_centrifugo(channel: str, data: dict):
-    """Publish real-time notification to Centrifugo channel."""
-    try:
-        url = f"{settings.CENTRIFUGO_HTTP_API_URL}/publish"
-        headers = {
-            "Authorization": f"apikey {settings.CENTRIFUGO_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "channel": channel,
-            "data": data,
-        }
-        res = requests.post(url, json=payload, headers=headers, timeout=2)
-        if res.status_code != 200:
-            logger.error(f"Centrifugo publish error ({res.status_code}): {res.text}")
-    except Exception as e:
-        logger.error(f"Failed to publish to Centrifugo: {e}")
+from common.centrifugo import publish_to_centrifugo
 
 def generate_employee_jwt(employee: EmployeeProfile):
     payload = {
@@ -98,12 +82,18 @@ def api_employee_login(request):
         if not identifier or not password:
             return JsonResponse({"status": "error", "message": "يرجى إدخال اسم المستخدم أو التحويلة وكلمة المرور"}, status=400)
 
-        # 1. Try to find user by extension first
-        emp = EmployeeProfile.objects.select_related('user').filter(extension=identifier).first()
-        username = emp.user.username if emp else identifier
+        # 1. Try direct authentication by username first
+        user = authenticate(request, username=identifier, password=password)
+        if not user:
+            # 2. If not matched directly by username, identifier may be an extension shared across employers
+            # Find all matching active employee profiles and check password against their respective user account
+            candidate_employees = list(EmployeeProfile.objects.select_related('user').filter(extension=identifier, is_active=True))
+            for candidate in candidate_employees:
+                matched_user = authenticate(request, username=candidate.user.username, password=password)
+                if matched_user:
+                    user = matched_user
+                    break
 
-        # 2. Authenticate
-        user = authenticate(request, username=username, password=password)
         if not user:
             return JsonResponse({"status": "error", "message": "بيانات الدخول غير صحيحة (اسم المستخدم/التحويلة أو كلمة المرور خطأ)"}, status=401)
 

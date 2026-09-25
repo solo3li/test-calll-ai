@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from common.crypto import encrypt_secret, decrypt_secret
 
 class OutboundSIPTrunk(models.Model):
     TRANSPORT_CHOICES = [
@@ -14,7 +15,7 @@ class OutboundSIPTrunk(models.Model):
     sip_port = models.PositiveIntegerField(default=5060)
     transport = models.CharField(max_length=10, choices=TRANSPORT_CHOICES, default='UDP')
     auth_username = models.CharField(max_length=128, blank=True, null=True, help_text='اسم المستخدم للمصادقة في المزود')
-    auth_password = models.CharField(max_length=128, blank=True, null=True, help_text='كلمة المرور في المزود')
+    auth_password = models.CharField(max_length=255, blank=True, null=True, help_text='كلمة المرور المشفرة للمزود')
     caller_id = models.CharField(max_length=64, blank=True, null=True, help_text='الرقم المعتمد الذي يظهر للمتصل به بصيغة E.164')
     livekit_outbound_trunk_id = models.CharField(max_length=128, blank=True, default='', help_text='معرف الجذع الصادر في LiveKit (ST_...)')
     is_active = models.BooleanField(default=True)
@@ -25,6 +26,14 @@ class OutboundSIPTrunk(models.Model):
     class Meta:
         db_table = 'voice_assistant_outboundsiptrunk'
         ordering = ['-is_default', '-created_at']
+
+    def set_auth_password(self, raw_password: str):
+        """Encrypt and store plain password."""
+        self.auth_password = encrypt_secret(raw_password) if raw_password else ""
+
+    def get_auth_password(self) -> str:
+        """Decrypt and return plain password for LiveKit connection."""
+        return decrypt_secret(self.auth_password or "")
 
     def __str__(self):
         status = " [نشط]" if self.is_active else " [معطل]"
@@ -64,7 +73,7 @@ class InboundPBXTrunk(models.Model):
     auth_mode = models.CharField(max_length=20, choices=AUTH_MODE_CHOICES, default='ip')
     pbx_ip = models.CharField(max_length=255, blank=True, null=True, help_text='عنوان IP العام أو المحلي لسنترال Issabel')
     auth_username = models.CharField(max_length=128, blank=True, null=True, help_text='اسم المستخدم الذي يسجل به سنترال Issabel لدينا')
-    auth_password = models.CharField(max_length=128, blank=True, null=True, help_text='كلمة المرور لسنترال Issabel')
+    auth_password = models.CharField(max_length=255, blank=True, null=True, help_text='كلمة المرور المشفرة لسنترال Issabel')
     inbound_numbers = models.CharField(max_length=255, blank=True, default='', help_text='أرقام الاستقبال/DIDs المسموحة مفصولة بفواصل (اختياري)')
     destination_type = models.CharField(max_length=32, choices=DESTINATION_CHOICES, default='ai_assistant')
     target_queue = models.ForeignKey('call_center.CallQueue', on_delete=models.SET_NULL, null=True, blank=True, related_name='pbx_trunks')
@@ -83,6 +92,14 @@ class InboundPBXTrunk(models.Model):
     class Meta:
         db_table = 'voice_assistant_inboundpbxtrunk'
         ordering = ['-created_at']
+
+    def set_auth_password(self, raw_password: str):
+        """Encrypt and store plain password for PBX trunk."""
+        self.auth_password = encrypt_secret(raw_password) if raw_password else ""
+
+    def get_auth_password(self) -> str:
+        """Decrypt and return plain password for PBX connection."""
+        return decrypt_secret(self.auth_password or "")
 
     def __str__(self):
         status = " [نشط]" if self.is_active else " [معطل]"

@@ -89,27 +89,37 @@ def topup_wallet(request):
         if amount <= 0:
             return JsonResponse({"status": "error", "message": "يجب أن يكون مبلغ الشحن أكبر من الصفر"}, status=400)
 
-        wallet, config = _get_or_create_user_wallet(request.user)
+        # In non-staff mode, restrict instant simulated deposits above reasonable sandbox threshold
+        if not (request.user.is_staff or request.user.is_superuser) and amount > Decimal('500.00'):
+            return JsonResponse({
+                "status": "error",
+                "message": "عمليات الشحن المباشرة التي تتجاوز 500$ تتطلب ربط بوابة دفع معتمدة أو موافقة المسؤول."
+            }, status=403)
 
-        # Update wallet balances
-        wallet.balance += amount
-        wallet.total_deposited += amount
-        wallet.save(update_fields=['balance', 'total_deposited', 'updated_at'])
+        from django.db import transaction
+        with transaction.atomic():
+            wallet, config = _get_or_create_user_wallet(request.user)
+            locked_wallet = UserWallet.objects.select_for_update().get(id=wallet.id)
 
-        # Document transaction in ledger
-        tx = BillingTransaction.objects.create(
-            wallet=wallet,
-            transaction_type='topup',
-            amount=amount,
-            balance_after=wallet.balance,
-            currency=wallet.currency,
-            description=f"شحن رصيد فوري ({amount:.2f} {wallet.get_currency_symbol()})"
-        )
+            # Update wallet balances atomically
+            locked_wallet.balance += amount
+            locked_wallet.total_deposited += amount
+            locked_wallet.save(update_fields=['balance', 'total_deposited', 'updated_at'])
+
+            # Document transaction in ledger
+            tx = BillingTransaction.objects.create(
+                wallet=locked_wallet,
+                transaction_type='topup',
+                amount=amount,
+                balance_after=locked_wallet.balance,
+                currency=locked_wallet.currency,
+                description=f"شحن رصيد ({amount:.2f} {locked_wallet.get_currency_symbol()})"
+            )
 
         return JsonResponse({
             "status": "success",
-            "message": f"تم شحن رصيدك بنجاح بمبلغ {amount:.2f} {wallet.get_currency_symbol()}.",
-            "wallet": wallet.to_dict(),
+            "message": f"تم شحن رصيدك بنجاح بمبلغ {amount:.2f} {locked_wallet.get_currency_symbol()}.",
+            "wallet": locked_wallet.to_dict(),
             "transaction": tx.to_dict()
         })
 

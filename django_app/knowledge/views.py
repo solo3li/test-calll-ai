@@ -13,18 +13,9 @@ from pgvector.django import CosineDistance
 from .models import Document, DocumentChunk
 from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 from agents.models import SystemSetting
+from common.auth import verify_internal_api_key
 
 logger = logging.getLogger(__name__)
-
-def verify_internal_api_key(request) -> bool:
-    """Validate internal request from AI agent service."""
-    expected_key = getattr(settings, 'INTERNAL_API_KEY', 'default-internal-secret-key-12345')
-    auth_header = request.headers.get('X-Internal-API-Key') or request.headers.get('Authorization', '')
-    if auth_header.startswith('Bearer '):
-        token = auth_header.split(' ', 1)[1].strip()
-    else:
-        token = auth_header.strip()
-    return token == expected_key or request.user.is_authenticated
 
 @login_required(login_url='/login/')
 def list_documents(request):

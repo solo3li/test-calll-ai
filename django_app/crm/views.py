@@ -1,20 +1,18 @@
 import json
 import logging
 import datetime
+from decimal import Decimal
 from django.conf import settings
 from django.http import JsonResponse
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
 
 from .models import CustomerMemory, CallSession
+from common.auth import verify_internal_api_key
 
 logger = logging.getLogger(__name__)
-
-def verify_internal_api_key(request) -> bool:
-    api_key = request.headers.get('X-Internal-API-Key') or request.headers.get('Authorization', '').replace('Bearer ', '').strip()
-    expected_key = getattr(settings, 'INTERNAL_API_KEY', 'voice-internal-secret-token-key-12345')
-    return bool(api_key and api_key == expected_key)
 
 
 @login_required(login_url='/login/')
@@ -166,9 +164,7 @@ def api_internal_save_call_session_and_memory(request):
 
         user = User.objects.filter(id=user_id).first() if user_id else None
         if not user:
-            user = User.objects.first()
-        if not user:
-            return JsonResponse({"status": "error", "message": f"User {user_id} not found"}, status=404)
+            return JsonResponse({"status": "error", "message": f"User with id '{user_id}' not found."}, status=404)
 
         duration_seconds = int(data.get('duration_seconds', 0))
         direction = data.get('direction', 'inbound')
@@ -221,7 +217,6 @@ def api_internal_save_call_session_and_memory(request):
         billed_minutes = 0
         call_cost = 0.0
         try:
-            from decimal import Decimal
             from billing.models import BillingConfig, UserWallet, BillingTransaction
             config = BillingConfig.get_config()
             b_mins, cost_dec = config.calculate_cost(duration_seconds)
@@ -245,38 +240,39 @@ def api_internal_save_call_session_and_memory(request):
                 cost_dec = round(Decimal(str(billed_minutes)) * rate, 4)
                 call_cost = float(cost_dec)
 
-                # Deduct from Partner's pooled wallet
+                # Deduct from Partner's pooled wallet with atomic row lock
                 target_user = partner.user
-                wallet, _ = UserWallet.objects.get_or_create(
-                    user=target_user,
-                    defaults={
-                        'balance': config.initial_welcome_credit,
-                        'currency': partner.currency,
-                        'total_deposited': config.initial_welcome_credit,
-                        'total_spent': Decimal('0.0000'),
-                    }
-                )
-                wallet.balance -= cost_dec
-                wallet.total_spent += cost_dec
-                wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
+                with transaction.atomic():
+                    wallet = UserWallet.objects.select_for_update().filter(user=target_user).first()
+                    if not wallet:
+                        wallet = UserWallet.objects.create(
+                            user=target_user,
+                            balance=config.initial_welcome_credit,
+                            currency=partner.currency,
+                            total_deposited=config.initial_welcome_credit,
+                            total_spent=Decimal('0.0000'),
+                        )
+                    wallet.balance -= cost_dec
+                    wallet.total_spent += cost_dec
+                    wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
 
-                # Track sub-client stats
-                partner_rel.total_spent += cost_dec
-                partner_rel.total_minutes += billed_minutes
-                partner_rel.save(update_fields=['total_spent', 'total_minutes', 'updated_at'])
+                    # Track sub-client stats atomically
+                    partner_rel.total_spent += cost_dec
+                    partner_rel.total_minutes += billed_minutes
+                    partner_rel.save(update_fields=['total_spent', 'total_minutes', 'updated_at'])
 
-                BillingTransaction.objects.create(
-                    wallet=wallet,
-                    call_session=session,
-                    transaction_type='call_deduction',
-                    amount=-cost_dec,
-                    balance_after=wallet.balance,
-                    currency=wallet.currency,
-                    actual_seconds=duration_seconds,
-                    billed_minutes=billed_minutes,
-                    rate_applied=rate,
-                    description=f"مكالمة عميل الساس '{user.first_name or user.username}' ({billed_minutes} دقيقة - بسعر الشريك المخصص {rate}$)"
-                )
+                    BillingTransaction.objects.create(
+                        wallet=wallet,
+                        call_session=session,
+                        transaction_type='call_deduction',
+                        amount=-cost_dec,
+                        balance_after=wallet.balance,
+                        currency=wallet.currency,
+                        actual_seconds=duration_seconds,
+                        billed_minutes=billed_minutes,
+                        rate_applied=rate,
+                        description=f"مكالمة عميل الساس '{user.first_name or user.username}' ({billed_minutes} دقيقة - بسعر الشريك المخصص {rate}$)"
+                    )
 
                 # Dispatch Webhook to partner's SaaS backend
                 try:
@@ -296,31 +292,32 @@ def api_internal_save_call_session_and_memory(request):
                 except Exception as wh_e:
                     logger.warning(f"Error triggering partner webhook: {wh_e}")
             else:
-                wallet, _ = UserWallet.objects.get_or_create(
-                    user=user,
-                    defaults={
-                        'balance': config.initial_welcome_credit,
-                        'currency': config.currency,
-                        'total_deposited': config.initial_welcome_credit,
-                        'total_spent': Decimal('0.0000'),
-                    }
-                )
-                wallet.balance -= cost_dec
-                wallet.total_spent += cost_dec
-                wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
+                with transaction.atomic():
+                    wallet = UserWallet.objects.select_for_update().filter(user=user).first()
+                    if not wallet:
+                        wallet = UserWallet.objects.create(
+                            user=user,
+                            balance=config.initial_welcome_credit,
+                            currency=config.currency,
+                            total_deposited=config.initial_welcome_credit,
+                            total_spent=Decimal('0.0000'),
+                        )
+                    wallet.balance -= cost_dec
+                    wallet.total_spent += cost_dec
+                    wallet.save(update_fields=['balance', 'total_spent', 'updated_at'])
 
-                BillingTransaction.objects.create(
-                    wallet=wallet,
-                    call_session=session,
-                    transaction_type='call_deduction',
-                    amount=-cost_dec,
-                    balance_after=wallet.balance,
-                    currency=wallet.currency,
-                    actual_seconds=duration_seconds,
-                    billed_minutes=billed_minutes,
-                    rate_applied=config.cost_per_minute,
-                    description=f"مكالمة {session.get_direction_display()} ({billed_minutes} دقيقة تقريب لأعلى - {duration_seconds} ثانية)"
-                )
+                    BillingTransaction.objects.create(
+                        wallet=wallet,
+                        call_session=session,
+                        transaction_type='call_deduction',
+                        amount=-cost_dec,
+                        balance_after=wallet.balance,
+                        currency=wallet.currency,
+                        actual_seconds=duration_seconds,
+                        billed_minutes=billed_minutes,
+                        rate_applied=config.cost_per_minute,
+                        description=f"مكالمة {session.get_direction_display()} ({billed_minutes} دقيقة تقريب لأعلى - {duration_seconds} ثانية)"
+                    )
 
             session.billed_minutes = billed_minutes
             session.cost = cost_dec
