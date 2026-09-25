@@ -39,11 +39,10 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "6. السنترالات والخطوط والأرقام", "description": "ربط سنترالات PBX (Issabel)، خطوط SIP الصادرة، وربط أرقام الـ DIDs."},
         {"name": "7. دليل الموظفين والتحويلات", "description": "إدارة الموظفين والتحويلات الداخلية للعميل وحالات التوفر (Ready, Busy, Offline)."},
         {"name": "8. طوابير الانتظار والأعضاء", "description": "طوابير الكول سنتر واستراتيجيات التوزيع (Round Robin) وإدارة الأعضاء."},
-        {"name": "9. بدء مكالمة WebRTC", "description": "إصدار توكنات LiveKit المشفرة لبدء المكالمة الصوتية الفورية في المتصفح أو التطبيق."},
-        {"name": "10. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
-        {"name": "11. الويبهوك والتوقيع المشفر", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من توقيع HMAC-SHA256."},
-        {"name": "12. إدارة خوادم FastMCP للعملاء", "description": "ربط خوادم FastMCP الخارجية لعميل محدد عبر بروتوكول SSE ومزامنة أدوات الذكاء الاصطناعي الحية."},
-        {"name": "13. حملات اتصال العملاء (Client Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي وجدولة الاتصال المتوازي لعملاء الشريك عبر Inngest."}
+        {"name": "9. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
+        {"name": "10. الويبهوك والتوقيع المشفر", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من توقيع HMAC-SHA256."},
+        {"name": "11. إدارة خوادم FastMCP للعملاء", "description": "ربط خوادم FastMCP الخارجية لعميل محدد عبر بروتوكول SSE ومزامنة أدوات الذكاء الاصطناعي الحية."},
+        {"name": "12. حملات اتصال العملاء (Client Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي وجدولة الاتصال المتوازي لعملاء الشريك عبر Inngest."}
     ]
 
     tags_en = [
@@ -55,11 +54,10 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "6. Telephony, PBX & DIDs", "description": "PBX trunks (Issabel), outbound SIP endpoints, and DID phone number mapping."},
         {"name": "7. Employee Directory & Extensions", "description": "Staff directory, internal SIP extensions, call transfers, and agent availability status."},
         {"name": "8. Call Queues & Routing", "description": "Call center queues, routing strategies (Round Robin), and queue membership."},
-        {"name": "9. WebRTC Voice Sessions", "description": "Issuing encrypted LiveKit access tokens for instant browser and mobile voice sessions."},
-        {"name": "10. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
-        {"name": "11. Webhooks & HMAC Signatures", "description": "Real-time call completion webhook notifications and HMAC-SHA256 signature verification."},
-        {"name": "12. Client FastMCP Management", "description": "Manage external FastMCP SSE tool servers per sub-client and synchronize live tool schemas."},
-        {"name": "13. Client Outbound Campaigns", "description": "Create and execute outbound calling campaigns for sub-clients via Inngest."}
+        {"name": "9. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
+        {"name": "10. Webhooks & HMAC Signatures", "description": "Real-time call completion webhook notifications and HMAC-SHA256 signature verification."},
+        {"name": "11. Client FastMCP Management", "description": "Manage external FastMCP SSE tool servers per sub-client and synchronize live tool schemas."},
+        {"name": "12. Client Outbound Campaigns", "description": "Create and execute outbound calling campaigns for sub-clients via Inngest."}
     ]
 
     tags = tags_ar if is_ar else tags_en
@@ -72,11 +70,10 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         "tag_telephony": tags[5]["name"],
         "tag_employees": tags[6]["name"],
         "tag_queues": tags[7]["name"],
-        "tag_token": tags[8]["name"],
-        "tag_cdr": tags[9]["name"],
-        "tag_webhooks": tags[10]["name"],
-        "tag_mcp": tags[11]["name"],
-        "tag_campaigns": tags[12]["name"],
+        "tag_cdr": tags[8]["name"],
+        "tag_webhooks": tags[9]["name"],
+        "tag_mcp": tags[10]["name"],
+        "tag_campaigns": tags[11]["name"],
     }
 
     # 3. Path Operations
@@ -467,43 +464,19 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
             },
             "post": {
                 "tags": [tag_map["tag_rag"]],
-                "summary": "رفع مستند أو رابط وفهرسته بالمتجهات (Upload Document)" if is_ar else "Upload & Index Knowledge Document",
-                "description": "فهرسة مستند حقيقي (PDF, DOCX, CSV, TXT, MD, JSON) عبر ملف مباشر، رابط خارجي (file_url)، أو نص مباشر ليتم استخراج النصوص وفهرستها دلالياً بالمتجهات عبر Gemini." if is_ar else "Upload a document file (PDF, DOCX, CSV, TXT, MD, JSON), pass a direct file_url, or raw text for semantic vector chunking & indexing.",
+                "summary": "إضافة مستند للعميل عبر رابط خارجي أو نص وفهرسته بالمتجهات" if is_ar else "Index Client Document via file_url or Content",
+                "description": "فهرسة مستند دلالياً بالمتجهات عبر تزويد رابط خارجي مباشر (file_url) مثل PDF, DOCX, CSV, TXT, MD أو إرسال نص مباشر (content)." if is_ar else "Index sub-client knowledge document semantically via public file_url (PDF, DOCX, CSV, TXT, MD) or raw content text.",
                 "parameters": [{"$ref": "#/components/parameters/ClientId"}],
                 "requestBody": {
                     "required": True,
                     "content": {
-                        "multipart/form-data": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "file": {
-                                        "type": "string",
-                                        "format": "binary",
-                                        "description": "ملف المستند المراد رفعه وفهرسته للعميل (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Document file for sub-client (PDF, DOCX, CSV, TXT, MD, JSON)"
-                                    },
-                                    "file_url": {
-                                        "type": "string",
-                                        "description": "رابط مباشر لمستند خارجي (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Direct public URL to document"
-                                    },
-                                    "title": {
-                                        "type": "string",
-                                        "description": "عنوان المستند (اختياري - يتم استخدام اسم الملف تلقائياً)" if is_ar else "Document title (optional - defaults to filename)"
-                                    },
-                                    "content": {
-                                        "type": "string",
-                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف أو رابط" if is_ar else "Raw text content as an alternative to file upload"
-                                    }
-                                }
-                            }
-                        },
                         "application/json": {
                             "schema": {
                                 "type": "object",
                                 "properties": {
                                     "title": {"type": "string", "example": "سياسة الاسترجاع والشحن" if is_ar else "Return & Shipping Policy"},
-                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الاستلام بشرط حالتها الأصلية." if is_ar else "Products can be returned within 14 days of receipt."},
-                                    "file_url": {"type": "string", "example": "https://example.com/company_policy.pdf"}
+                                    "file_url": {"type": "string", "example": "https://example.com/company_policy.pdf", "description": "رابط مباشر لمستند خارجي بصيغة PDF, DOCX, CSV, TXT, MD" if is_ar else "Direct public URL to document"},
+                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الشراء بحالتها الأصلية." if is_ar else "Products can be returned within 14 days of purchase.", "description": "نص مباشر كبديل في حال عدم تزويد رابط" if is_ar else "Raw text content alternative"}
                                 }
                             }
                         }
@@ -756,61 +729,6 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     }
                 },
                 "responses": {"201": {"description": "تمت إضافة الموظف للطابور" if is_ar else "Member added to queue"}}
-            }
-        },
-        "/clients/{client_id}/token/": {
-            "post": {
-                "tags": [tag_map["tag_token"]],
-                "summary": "إصدار توكن اتصال WebRTC فوري (Generate Voice Token)" if is_ar else "Generate WebRTC Voice Session Token",
-                "description": (
-                    "ينشئ غرفة LiveKit وتوكن وصول JWT مشفر ليتصل المتصفح أو التطبيق مباشرة بالمساعد الذكي للعميل مع روابط خادم LiveKit ورابط Centrifugo WebSocket.\n\n"
-                    "**طريقة الاتصال المباشر (LiveKit SDK Quickstart):**\n"
-                    "```javascript\n"
-                    "import { Room } from 'livekit-client';\n\n"
-                    "const room = new Room();\n"
-                    "await room.connect(response.livekit_url, response.token);\n"
-                    "await room.localParticipant.setMicrophoneEnabled(true);\n"
-                    "```"
-                    if is_ar else
-                    "Generates an ephemeral JWT token and WebSocket connection URLs for connecting browser or mobile client to a LiveKit voice room."
-                ),
-                "parameters": [
-                    {"$ref": "#/components/parameters/ClientId"}
-                ],
-                "requestBody": {
-                    "required": False,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "participant_name": {"type": "string", "example": "متسوق المتجر" if is_ar else "Online Shopper"},
-                                    "caller_phone": {"type": "string", "example": "+966551122334"}
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "تم إصدار التوكن والروابط بنجاح" if is_ar else "LiveKit token & URLs generated successfully",
-                        "content": {
-                            "application/json": {
-                                "example": {
-                                    "status": "success",
-                                    "room_name": "partner_1_19_a8b7c6",
-                                    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "livekit_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "livekit_url": "wss://livekit.169.58.32.179.nip.io",
-                                    "centrifugo_ws_url": "wss://centrifugo.169.58.32.179.nip.io/connection/websocket",
-                                    "centrifugo_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "channel": "partner_1_19_a8b7c6",
-                                    "client_id": 19
-                                }
-                            }
-                        }
-                    }
-                }
             }
         },
         "/clients/{client_id}/calls/": {
@@ -1130,6 +1048,74 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                         }
                     }
                 }
+            }
+        },
+        "/clients/{client_id}/campaigns/": {
+            "get": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "استعراض حملات الاتصال الصادرة للعميل (List Client Campaigns)" if is_ar else "List Client Outbound Campaigns",
+                "description": "يعيد قائمة بجميع حملات الاتصال الآلي الصادرة التابعة لهذا العميل وحالاتها ومؤشرات الإنجاز." if is_ar else "Returns a list of all outbound campaigns for this sub-client.",
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"}
+                ],
+                "responses": {"200": {"description": "قائمة الحملات" if is_ar else "Campaigns list"}}
+            },
+            "post": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "إنشاء حملة اتصال آلي جديدة للعميل (Create Client Campaign)" if is_ar else "Create Sub-Client Outbound Campaign",
+                "description": (
+                    "إنشاء حملة جديدة لعميل محدد مع تزويد رابط خارجي لملف جهات الاتصال (file_url) بصيغة Excel أو CSV، أو تمرير مصفوفة جهات الاتصال (contacts) مباشرة بصيغة JSON."
+                    if is_ar else
+                    "Creates an automated campaign for sub-client by passing a public file_url (Excel/CSV) or direct JSON contacts array."
+                ),
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["name"],
+                                "properties": {
+                                    "name": {"type": "string", "example": "حملة تأكيد حجوزات رمضان" if is_ar else "Ramadan Booking Campaign"},
+                                    "file_url": {"type": "string", "example": "https://example.com/leads.xlsx", "description": "رابط مباشر لملف Excel/CSV يحتوي على أرقام جهات الاتصال" if is_ar else "Direct URL to Excel/CSV contacts file"},
+                                    "contacts": {
+                                        "type": "array",
+                                        "description": "مصفوفة جهات اتصال كبديل في حال عدم تزويد file_url" if is_ar else "JSON contacts array alternative",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "phone_number": {"type": "string", "example": "+966551234567"},
+                                                "name": {"type": "string", "example": "أحمد الشمري"},
+                                                "attributes": {"type": "object", "example": {"city": "الرياض", "order_id": 1042}}
+                                            }
+                                        }
+                                    },
+                                    "call_prompt": {"type": "string", "example": "تأكيد موعد الحجز وتفاصيل الوصول" if is_ar else "Confirm booking and arrival details"},
+                                    "agent_profile_id": {"type": "integer", "example": 1},
+                                    "max_retries": {"type": "integer", "default": 1},
+                                    "retry_delay_minutes": {"type": "integer", "default": 15},
+                                    "gateway_type": {"type": "string", "default": "auto"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "تم إنشاء الحملة بنجاح" if is_ar else "Campaign created successfully"}}
+            }
+        },
+        "/clients/{client_id}/campaigns/{campaign_id}/start/": {
+            "post": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "بدء تشغيل حملة الاتصال الصادرة (Start Client Campaign)" if is_ar else "Start Client Outbound Campaign",
+                "description": "يبدأ جدولة الاتصال التلقائي بالاعتماد على Inngest وحدود التزامن المسموحة لحساب العميل." if is_ar else "Launches parallel dial execution via Inngest respecting concurrency limits.",
+                "parameters": [
+                    {"$ref": "#/components/parameters/ClientId"},
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}, "description": "معرف الحملة" if is_ar else "Campaign ID"}
+                ],
+                "responses": {"200": {"description": "تم بدء تشغيل الحملة بنجاح" if is_ar else "Campaign started successfully"}}
             }
         }
     }

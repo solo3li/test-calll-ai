@@ -39,7 +39,6 @@ urlpatterns = [
     path('clients/<int:client_id>/mcp/', views.api_partner_client_mcp, name='api_partner_client_mcp'),
     path('clients/<int:client_id>/mcp/<int:mcp_id>/', views.api_partner_client_mcp_detail, name='api_partner_client_mcp_detail'),
     path('clients/<int:client_id>/mcp/<int:mcp_id>/sync/', views.api_partner_client_mcp_sync, name='api_partner_client_mcp_sync'),
-    path('clients/<int:client_id>/token/', views.api_partner_client_token, name='api_partner_client_token'),
 
     # Managed Client Campaigns (Inngest Powered)
     path('clients/<int:client_id>/campaigns/', views.api_partner_client_campaigns, name='api_partner_client_campaigns'),

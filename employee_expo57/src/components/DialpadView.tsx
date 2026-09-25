@@ -49,6 +49,17 @@ export const DialpadView: React.FC = () => {
         )}
       </View>
 
+      {/* Quick AI Test Call Button */}
+      <TouchableOpacity
+        style={styles.aiTestButton}
+        onPress={() => startCall("000", "المساعد الذكي (تجربة)")}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="sparkles" size={16} color="#10b981" style={{ marginRight: 6 }} />
+        <Text style={styles.aiTestButtonText}>🤖 تجربة المساعد الذكي (AI Test Call)</Text>
+        <Ionicons name="call" size={14} color="#10b981" style={{ marginLeft: 6 }} />
+      </TouchableOpacity>
+
       {/* Speed Dial Queues */}
       <View style={styles.quickQueuesRow}>
         <TouchableOpacity
@@ -123,6 +134,23 @@ const styles = StyleSheet.create({
   },
   backspaceBtn: {
     padding: 4,
+  },
+  aiTestButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.35)",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  aiTestButtonText: {
+    color: "#10b981",
+    fontSize: 13,
+    fontWeight: "bold",
   },
   quickQueuesRow: {
     flexDirection: "row",

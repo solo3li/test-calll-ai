@@ -37,10 +37,9 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         {"name": "6. السنترالات والخطوط والأرقام", "description": "ربط سنترالات PBX (Issabel)، خطوط SIP الصادرة، وربط أرقام الـ DIDs."},
         {"name": "7. دليل الموظفين والتحويلات", "description": "إدارة الموظفين والتحويلات الداخلية للعميل وحالات التوفر (Ready, Busy, Offline)."},
         {"name": "8. طوابير الانتظار والكول سنتر", "description": "طوابير الكول سنتر واستراتيجيات التوزيع (Round Robin) وإدارة الأعضاء."},
-        {"name": "9. بدء مكالمة WebRTC", "description": "إصدار توكنات LiveKit المشفرة لبدء المكالمة الصوتية الفورية في المتصفح أو التطبيق."},
-        {"name": "10. حملات الاتصال والعملاء (Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي الصادرة وجدولة الاتصال المتوازي عبر Inngest."},
-        {"name": "11. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
-        {"name": "12. إشعارات الويبهوك", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من الأحداث الموقعة."}
+        {"name": "9. حملات الاتصال والعملاء (Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي الصادرة وجدولة الاتصال المتوازي عبر Inngest."},
+        {"name": "10. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
+        {"name": "11. إشعارات الويبهوك", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من الأحداث الموقعة."}
     ]
 
     tags_en = [
@@ -52,10 +51,9 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         {"name": "6. Telephony, PBX & DIDs", "description": "PBX trunks (Issabel), outbound SIP endpoints, and DID phone number mapping."},
         {"name": "7. Employee Directory & Extensions", "description": "Staff directory, internal SIP extensions, call transfers, and agent availability status."},
         {"name": "8. Call Queues & Routing", "description": "Call center queues, routing strategies (Round Robin), and queue membership."},
-        {"name": "9. WebRTC Voice Sessions", "description": "Issuing encrypted LiveKit access tokens for instant browser and mobile voice sessions."},
-        {"name": "10. Outbound Campaigns", "description": "Create and manage automated outbound calling campaigns and dial execution via Inngest."},
-        {"name": "11. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
-        {"name": "12. Webhooks & Events", "description": "Configure webhook endpoints for call.completed notifications and event payloads."}
+        {"name": "9. Outbound Campaigns", "description": "Create and manage automated outbound calling campaigns and dial execution via Inngest."},
+        {"name": "10. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
+        {"name": "11. Webhooks & Events", "description": "Configure webhook endpoints for call.completed notifications and event payloads."}
     ]
 
     tags = tags_ar if is_ar else tags_en
@@ -68,10 +66,9 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         "tag_telephony": tags[5]["name"],
         "tag_employees": tags[6]["name"],
         "tag_queues": tags[7]["name"],
-        "tag_token": tags[8]["name"],
-        "tag_campaigns": tags[9]["name"],
-        "tag_cdr": tags[10]["name"],
-        "tag_webhooks": tags[11]["name"],
+        "tag_campaigns": tags[8]["name"],
+        "tag_cdr": tags[9]["name"],
+        "tag_webhooks": tags[10]["name"],
     }
 
     paths = {
@@ -233,42 +230,18 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
             },
             "post": {
                 "tags": [tag_map["tag_rag"]],
-                "summary": "رفع مستند أو رابط وفهرسته بالمتجهات (Upload Document)" if is_ar else "Upload & Index Knowledge Document",
-                "description": "فهرسة مستند حقيقي (PDF, DOCX, CSV, TXT, MD, JSON) عبر رفع ملف مباشر، رابط خارجي (file_url)، أو نص مباشر ليتم استخراج النصوص وفهرستها دلالياً بالمتجهات عبر Gemini." if is_ar else "Upload a document file (PDF, DOCX, CSV, TXT, MD, JSON), pass a direct file_url, or raw text for semantic vector chunking & indexing.",
+                "summary": "إضافة مستند عبر رابط خارجي أو نص وفهرسته بالمتجهات" if is_ar else "Index Document via file_url or Content",
+                "description": "فهرسة مستند دلالياً بالمتجهات عبر تزويد رابط خارجي مباشر (file_url) مثل PDF, DOCX, CSV, TXT, MD أو إرسال نص مباشر (content)." if is_ar else "Index knowledge document semantically via public file_url (PDF, DOCX, CSV, TXT, MD) or raw content text.",
                 "requestBody": {
                     "required": True,
                     "content": {
-                        "multipart/form-data": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "file": {
-                                        "type": "string",
-                                        "format": "binary",
-                                        "description": "ملف المستند المراد رفعه وفهرسته (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Document file (PDF, DOCX, CSV, TXT, MD, JSON)"
-                                    },
-                                    "file_url": {
-                                        "type": "string",
-                                        "description": "رابط خارجي مباشر للمستند (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Direct public URL to document"
-                                    },
-                                    "title": {
-                                        "type": "string",
-                                        "description": "عنوان المستند (اختياري - يتم استخدام اسم الملف تلقائياً)" if is_ar else "Document title (optional - defaults to filename)"
-                                    },
-                                    "content": {
-                                        "type": "string",
-                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف أو رابط" if is_ar else "Raw text content as an alternative"
-                                    }
-                                }
-                            }
-                        },
                         "application/json": {
                             "schema": {
                                 "type": "object",
                                 "properties": {
                                     "title": {"type": "string", "example": "سياسة الاسترجاع والشحن" if is_ar else "Return & Shipping Policy"},
-                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الشراء بحالتها الأصلية." if is_ar else "Products can be returned within 14 days of purchase."},
-                                    "file_url": {"type": "string", "example": "https://example.com/company_policy.pdf"}
+                                    "file_url": {"type": "string", "example": "https://example.com/company_policy.pdf", "description": "رابط مباشر لمستند خارجي بصيغة PDF, DOCX, CSV, TXT, MD" if is_ar else "Direct public URL to document"},
+                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الشراء بحالتها الأصلية." if is_ar else "Products can be returned within 14 days of purchase.", "description": "نص مباشر كبديل في حال عدم تزويد رابط" if is_ar else "Raw text content alternative"}
                                 }
                             }
                         }
@@ -530,58 +503,6 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 "responses": {"200": {"description": "تمت الإزالة بنجاح" if is_ar else "Member removed successfully"}}
             }
         },
-        "/token/": {
-            "post": {
-                "tags": [tag_map["tag_token"]],
-                "summary": "إصدار توكن اتصال WebRTC فوري (Generate Voice Token)" if is_ar else "Generate WebRTC Voice Session Token",
-                "description": (
-                    "ينشئ غرفة LiveKit وتوكن JWT مشفر مع روابط خادم LiveKit ورابط Centrifugo WebSocket لبدء الاتصال الصوتي المباشر واستقبال نصوص المحادثة الحية في المتصفح أو التطبيق.\n\n"
-                    "**طريقة الاتصال المباشر (LiveKit SDK Quickstart):**\n"
-                    "```javascript\n"
-                    "import { Room } from 'livekit-client';\n\n"
-                    "const room = new Room();\n"
-                    "await room.connect(response.livekit_url, response.token);\n"
-                    "await room.localParticipant.setMicrophoneEnabled(true);\n"
-                    "```"
-                    if is_ar else
-                    "Issues an ephemeral LiveKit JWT token and WebSocket connection URLs for embedding direct real-time voice calls into web/mobile apps."
-                ),
-                "requestBody": {
-                    "required": False,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "participant_name": {"type": "string", "example": "زائر الموقع" if is_ar else "Web Visitor"}
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "تم إصدار التوكن والروابط بنجاح" if is_ar else "LiveKit token & URLs generated successfully",
-                        "content": {
-                            "application/json": {
-                                "example": {
-                                    "status": "success",
-                                    "room_name": "user_1_8f9e",
-                                    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "livekit_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "livekit_url": "wss://livekit.169.58.32.179.nip.io",
-                                    "centrifugo_ws_url": "wss://centrifugo.169.58.32.179.nip.io/connection/websocket",
-                                    "centrifugo_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "channel": "user_1_8f9e",
-                                    "user_id": 1
-                                }
-                            }
-                        }
-                    },
-                    "402": {"description": "رصيد المحفظة غير كافٍ" if is_ar else "Insufficient wallet balance"}
-                }
-            }
-        },
         "/calls/": {
             "get": {
                 "tags": [tag_map["tag_cdr"]],
@@ -718,6 +639,67 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                     }
                 },
                 "responses": {"200": {"description": "تم الحفظ بنجاح" if is_ar else "Webhook saved successfully"}}
+            }
+        },
+        "/campaigns/": {
+            "get": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "استعراض حملات الاتصال الصادرة (List Campaigns)" if is_ar else "List Outbound Calling Campaigns",
+                "description": "يعيد قائمة بجميع حملات الاتصال الآلي الصادرة وحالاتها ومؤشرات الإنجاز وتصنيف العملاء." if is_ar else "Returns a list of all outbound campaigns, their progress, and lead classifications.",
+                "responses": {"200": {"description": "قائمة الحملات" if is_ar else "Campaigns list"}}
+            },
+            "post": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "إنشاء حملة اتصال آلي جديدة مع جهات الاتصال (Create Campaign)" if is_ar else "Create Outbound Calling Campaign",
+                "description": (
+                    "إنشاء حملة جديدة مع تزويد رابط خارجي لملف جهات الاتصال (file_url) بصيغة Excel أو CSV، أو تمرير مصفوفة جهات الاتصال (contacts) مباشرة بصيغة JSON."
+                    if is_ar else
+                    "Creates an automated campaign by passing a public file_url (Excel/CSV) or direct JSON contacts array."
+                ),
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["name"],
+                                "properties": {
+                                    "name": {"type": "string", "example": "حملة تأكيد حجوزات رمضان" if is_ar else "Ramadan Booking Campaign"},
+                                    "file_url": {"type": "string", "example": "https://example.com/leads.xlsx", "description": "رابط مباشر لملف Excel/CSV يحتوي على أرقام جهات الاتصال" if is_ar else "Direct URL to Excel/CSV contacts file"},
+                                    "contacts": {
+                                        "type": "array",
+                                        "description": "مصفوفة جهات اتصال كبديل في حال عدم تزويد file_url" if is_ar else "JSON contacts array alternative",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "phone_number": {"type": "string", "example": "+966551234567"},
+                                                "name": {"type": "string", "example": "أحمد الشمري"},
+                                                "attributes": {"type": "object", "example": {"city": "الرياض", "order_id": 1042}}
+                                            }
+                                        }
+                                    },
+                                    "call_prompt": {"type": "string", "example": "تأكيد موعد الحجز وتفاصيل الوصول" if is_ar else "Confirm booking and arrival details"},
+                                    "agent_profile_id": {"type": "integer", "example": 1},
+                                    "max_retries": {"type": "integer", "default": 1},
+                                    "retry_delay_minutes": {"type": "integer", "default": 15},
+                                    "gateway_type": {"type": "string", "default": "auto"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "تم إنشاء الحملة بنجاح" if is_ar else "Campaign created successfully"}}
+            }
+        },
+        "/campaigns/{campaign_id}/start/": {
+            "post": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "بدء أو استئناف إطلاق الحملة آلياً (Start Campaign)" if is_ar else "Start or Resume Outbound Campaign",
+                "description": "يبدأ جدولة الاتصال التلقائي بالاعتماد على Inngest وحدود التزامن المسموحة لحساب المستخدم." if is_ar else "Launches parallel dial execution via Inngest respecting concurrency limits.",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تم بدء تشغيل الحملة بنجاح" if is_ar else "Campaign started successfully"}}
             }
         }
     }

@@ -1010,38 +1010,28 @@ def api_partner_client_documents(request, client_id):
         })
     elif request.method == 'POST':
         data = request.data if hasattr(request, 'data') and request.data else {}
-        file_obj = request.FILES.get('file')
+        if request.FILES:
+            return JsonResponse({
+                "status": "error",
+                "code": "direct_file_upload_disabled",
+                "message": "تم إلغاء رفع الملفات الثنائية المباشرة من الـ API. يرجى تزويد رابط خارجي مباشر عبر 'file_url' أو إرسال النص مباشرة عبر 'content'."
+            }, status=400)
+
         file_url = str(data.get('file_url') or '').strip()
         title = str(data.get('title') or '').strip()
         raw_text = str(data.get('content') or data.get('text') or '').strip()
 
-        if not file_obj and not file_url and not raw_text:
+        if not file_url and not raw_text:
             return JsonResponse({
                 "status": "error",
                 "code": "missing_payload",
-                "message": "يجب إرفاق ملف مستند (file)، أو تزويد رابط مباشر (file_url)، أو إرسال نص مباشر (content)."
+                "message": "يجب تزويد رابط مباشر للمستند (file_url) أو إرسال نص المحتوى مباشرة (content)."
             }, status=400)
 
         try:
             allowed_exts = ['.pdf', '.docx', '.doc', '.txt', '.md', '.csv', '.json']
 
-            if file_obj:
-                filename = file_obj.name
-                ext = os.path.splitext(filename)[1].lower()
-                if ext not in allowed_exts:
-                    return JsonResponse({
-                        "status": "error",
-                        "code": "unsupported_file_type",
-                        "message": f"صيغة الملف '{ext}' غير مدعومة. الصيغ المدعومة هي: PDF, DOCX, TXT, MD, CSV, JSON"
-                    }, status=400)
-
-                title = title or filename
-                text = extract_text_from_file(file_obj, filename)
-                file_size = file_obj.size
-                file_type = ext.lstrip('.')
-                saved_file = file_obj
-
-            elif file_url:
+            if file_url:
                 try:
                     parsed_url = urlparse(file_url)
                     url_path = unquote(parsed_url.path)
@@ -1626,80 +1616,15 @@ def api_partner_client_queue_members(request, client_id, queue_id):
 @partner_client_access_required
 def api_partner_client_token(request, client_id):
     """
-    POST /api/partner/v1/clients/<int:client_id>/token/
-    Generates LiveKit token for the sub-client to start a live voice session.
-    Verifies partner wallet balance & client caps beforehand.
+    Deprecated: POST /api/partner/v1/clients/<int:client_id>/token/
+    WebRTC token issuing endpoint has been removed from partner API.
+    To test AI calls, please use the employee app (employee_expo57) by dialing extension 000 or clicking the AI test button.
     """
-    if request.method != 'POST':
-        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
-
-    # 1. Guard client caps
-    from billing.models import UserWallet
-    partner_wallet, _ = UserWallet.objects.get_or_create(user=request.partner.user)
-    next_cost = request.partner.custom_rate_per_minute
-
-    if request.client_rel.is_cap_exceeded(next_cost):
-        return JsonResponse({
-            "status": "error",
-            "code": "CAP_EXCEEDED",
-            "message": "Client has reached their assigned spending or minute quota."
-        }, status=403)
-
-    if partner_wallet.balance < next_cost:
-        return JsonResponse({
-            "status": "error",
-            "code": "PARTNER_BALANCE_LOW",
-            "message": "Partner balance is insufficient to start a new voice session."
-        }, status=402)
-
-    # Generate token
-    room_name = f"partner_{request.partner.id}_{client_id}_{secrets.token_hex(4)}"
-    identity = f"client_{client_id}_{secrets.token_hex(2)}"
-
-    token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
-        .with_identity(identity) \
-        .with_name(request.client_user.first_name or request.client_user.username) \
-        .with_grants(api.VideoGrants(
-            room_join=True,
-            room=room_name,
-            can_publish=True,
-            can_subscribe=True,
-        ))
-
-    jwt_token = token.to_jwt()
-
-    centrifugo_jwt = ""
-    channel_name = room_name
-    try:
-        centrifugo_payload = {
-            "sub": identity,
-            "exp": int(time.time()) + (24 * 3600),
-            "subs": {
-                channel_name: {}
-            }
-        }
-        centrifugo_jwt = jwt.encode(
-            centrifugo_payload,
-            getattr(settings, 'CENTRIFUGO_SECRET', 'centrifugo_secret_key_1234567890'),
-            algorithm="HS256"
-        )
-    except Exception as e:
-        logger.warning(f"Could not generate Centrifugo token for client {client_id}: {e}")
-
-    livekit_url = getattr(settings, 'LIVEKIT_URL', 'wss://livekit.169.58.32.179.nip.io')
-    centrifugo_ws_url = getattr(settings, 'CENTRIFUGO_WS_URL', 'wss://centrifugo.169.58.32.179.nip.io/connection/websocket')
-
     return JsonResponse({
-        "status": "success",
-        "client_id": client_id,
-        "room_name": room_name,
-        "token": jwt_token,
-        "livekit_token": jwt_token,
-        "livekit_url": livekit_url,
-        "centrifugo_ws_url": centrifugo_ws_url,
-        "centrifugo_token": centrifugo_jwt,
-        "channel": channel_name,
-    })
+        "status": "error",
+        "code": "endpoint_removed",
+        "message": "تم إزالة مسار التوكن من الـ API. لتجربة المساعد الصوتي يرجى استخدام تطبيق الموظف (employee_expo57) بالاتصال بالتحويلة 000 أو الضغط على زر تجربة المساعد الذكي."
+    }, status=404)
 
 
 # =========================================================================
@@ -2241,26 +2166,18 @@ def api_partner_client_campaigns(request, client_id):
             except Exception:
                 pass
 
+        if request.FILES:
+            return JsonResponse({
+                "status": "error",
+                "code": "direct_file_upload_disabled",
+                "message": "تم إلغاء رفع الملفات المباشرة للحملات من الـ API. يرجى تزويد رابط خارجي مباشر لملف Excel/CSV عبر 'file_url' أو إرسال مصفوفة جهات الاتصال عبر 'contacts'."
+            }, status=400)
+
         name = str(data.get('name') or '').strip()
-        file_obj = request.FILES.get('file')
         file_url = str(data.get('file_url') or '').strip()
         contacts_to_create = []
 
-        if file_obj:
-            file_bytes = file_obj.read()
-            parse_res = parse_leads_file(file_bytes, file_obj.name)
-            if parse_res.get("status") != "success":
-                return JsonResponse({"status": "error", "message": parse_res.get("message", "فشل تحليل الملف")}, status=400)
-            valid_contacts = parse_res.get("valid_contacts", [])
-            if not valid_contacts:
-                return JsonResponse({
-                    "status": "error",
-                    "message": "لم يتم العثور على أي أرقام هواتف صالحة داخل الملف المرفوع. يرجى التأكد من محتوى الملف."
-                }, status=400)
-            contacts_to_create = valid_contacts
-            if not name:
-                name = f"حملة {file_obj.name} - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
-        elif file_url:
+        if file_url:
             try:
                 parsed_url = urlparse(file_url)
                 url_path = unquote(parsed_url.path)
@@ -2315,7 +2232,7 @@ def api_partner_client_campaigns(request, client_id):
         if not contacts_to_create:
             return JsonResponse({
                 "status": "error",
-                "message": "يجب تزويد ملف جهات الاتصال (file)، أو رابط مباشر (file_url)، أو مصفوفة جهات الاتصال (contacts) تحتوي على أرقام هواتف صالحة."
+                "message": "يجب تزويد رابط مباشر لملف جهات الاتصال (file_url) بصيغة Excel/CSV، أو مصفوفة جهات الاتصال (contacts) تحتوي على أرقام هواتف صالحة."
             }, status=400)
 
         if not name:

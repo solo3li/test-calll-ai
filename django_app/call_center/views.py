@@ -506,6 +506,69 @@ def api_dial_call(request):
         if not target:
             return JsonResponse({"status": "error", "message": "يرجى تحديد رقم التحويلة أو كود الطابور للاتصال"}, status=400)
 
+        # 0. Check if target is AI Assistant Test
+        if target.lower() in ['000', 'ai', 'assistant', 'bot', 'test_ai']:
+            from agents.models import AgentProfile
+            tenant_user = caller.employer or caller.user
+            active_profile = AgentProfile.objects.filter(user=tenant_user, is_active=True).first()
+            if not active_profile:
+                active_profile = AgentProfile.objects.filter(user=tenant_user).first()
+            profile_dict = active_profile.to_dict() if active_profile else None
+            ai_name = active_profile.name if active_profile else "المساعد الصوتي الذكي"
+
+            room_name = f"ai_test_{caller.id}_{uuid.uuid4().hex[:6]}"
+
+            token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
+                .with_identity(f"employee_{caller.id}_{caller.extension}") \
+                .with_name(caller.display_name) \
+                .with_metadata(json.dumps({"role": "caller", "employee_id": caller.id})) \
+                .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
+            caller_jwt = token.to_jwt()
+
+            # Dispatch AI agent job to Redis
+            try:
+                r = redis.Redis.from_url(settings.REDIS_URL)
+                job_payload = json.dumps({
+                    "room_name": room_name,
+                    "user_id": tenant_user.id,
+                    "caller_phone": f"ext_{caller.extension}",
+                    "profile": profile_dict,
+                    "is_queue": False,
+                    "participant_identity": f"employee_{caller.id}_{caller.extension}"
+                })
+                r.rpush("agent_jobs", job_payload)
+                logger.info(f"Dispatched AI test call room '{room_name}' to Redis for employee {caller.display_name}")
+            except Exception as ex:
+                logger.error(f"Failed to dispatch AI test call room '{room_name}' to Redis: {ex}")
+
+            # Log outbound call for employee
+            EmployeeCallLog.objects.create(
+                employee=caller,
+                other_party=f"تجربة المساعد الذكي ({ai_name})",
+                extension="000",
+                room_name=room_name,
+                call_type='outbound',
+            )
+
+            # Update caller status to busy
+            if caller.status != 'busy':
+                caller.status = 'busy'
+                caller.save(update_fields=['status'])
+                publish_to_centrifugo("employees:presence", {
+                    "event": "status_change",
+                    "employee": caller.to_dict()
+                })
+
+            return JsonResponse({
+                "status": "success",
+                "call_type": "ai_test",
+                "room_name": room_name,
+                "target_name": f"🤖 {ai_name}",
+                "target_number": "000",
+                "livekit_url": settings.LIVEKIT_URL,
+                "livekit_token": caller_jwt
+            })
+
         # 1. Check if target is a CallQueue
         queue = CallQueue.objects.filter(code=target, is_active=True).first()
         if queue:
