@@ -4,13 +4,8 @@
 {% block title %}متجر وأدوات MCP - المساعد الصوتي الذكي{% endblock %}
 
 {% block content %}
-<div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
-  <!-- Header -->
-  {% include 'voice_assistant/components/header.html' with page_title="متجر وخوادم أدوات MCP (FastMCP Store)" page_subtitle="ربط عدة خوادم أدوات خارجية عبر بروتوكول SSE لتمكين الذكاء الاصطناعي من استدعائها أثناء المكالمات" page_icon="🛍️" %}
-
-  <main class="flex-1 p-4 md:p-8 space-y-6 max-w-7xl w-full mx-auto">
-    <!-- Store & MCP Section -->
-    <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-6">
+<!-- Store & MCP Section -->
+<section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-6">
       <!-- Section Header with Stats & New Server Action -->
       <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-[#EAE3D9]">
         <div>
@@ -85,8 +80,6 @@
         </div>
       </div>
     </section>
-  </main>
-</div>
 {% endblock %}
 
 {% block modals %}

@@ -4,13 +4,8 @@
 {% block title %}الشخصيات واللهجات وأصوات AI - المساعد الصوتي الذكي{% endblock %}
 
 {% block content %}
-<div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
-  <!-- Header -->
-  {% include 'voice_assistant/components/header.html' with page_title="الشخصيات واللهجات وأصوات الذكاء الاصطناعي" page_subtitle="استوديو التحكم في الخامات الصوتية الرسمية، اللهجات الإقليمية، وسرعة الرد والنبرة" page_icon="🎭" %}
-
-  <main class="flex-1 p-4 md:p-8 space-y-6 max-w-7xl w-full mx-auto">
-    <!-- Header & Action Bar -->
-    <div class="bg-white p-6 rounded-3xl border border-[#EAE3D9] shadow-sm flex flex-wrap justify-between items-center gap-4">
+<!-- Header & Action Bar -->
+<div class="bg-white p-6 rounded-3xl border border-[#EAE3D9] shadow-sm flex flex-wrap justify-between items-center gap-4">
       <div class="flex items-center gap-3">
         <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#680E23] to-[#8C1633] flex items-center justify-center text-2xl text-white shadow-md shadow-[#680E23]/20">
           🎭
@@ -167,8 +162,6 @@
         </div>
       </div>
     </div>
-  </main>
-</div>
 {% endblock %}
 
 {% block modals %}

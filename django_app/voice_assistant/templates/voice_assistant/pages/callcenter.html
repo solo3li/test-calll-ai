@@ -9,149 +9,142 @@
 {% endblock %}
 
 {% block content %}
-<div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
-  <!-- Header -->
-  {% include 'voice_assistant/components/header.html' with page_title="المركز الهاتفي وطوابير الانتظار (Call Center & Queues)" page_subtitle="إدارة تحويلات الموظفين، طوابير الانتظار، الرنين المتناوب، وإجراء المكالمات المباشرة عبر WebRTC" page_icon="🎧" %}
+<!-- Call Center Subtabs Navigation Bar -->
+<div class="bg-white p-4 rounded-3xl border border-[#EAE3D9] shadow-sm flex flex-wrap items-center justify-between gap-3">
+  <div class="flex items-center gap-2 p-1.5 bg-[#F5EFE6] border border-[#E8E0D5] rounded-2xl text-xs font-bold">
+    <button type="button" onclick="switchCallcenterSubtab('employees')" id="subtab-btn-employees" class="subtab-btn px-4 py-2 rounded-xl transition-all flex items-center gap-2 bg-[#680E23] text-white shadow-sm">
+      <span>👤</span>
+      <span>دليل الموظفين والتحويلات</span>
+    </button>
+    <button type="button" onclick="switchCallcenterSubtab('queues')" id="subtab-btn-queues" class="subtab-btn px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-[#6E645D] hover:text-[#1C1917]">
+      <span>👥</span>
+      <span>طوابير الانتظار ومجموعات العمل</span>
+    </button>
+  </div>
+  
+  <div class="text-xs text-[#8C827A] flex items-center gap-2">
+    <span>🎧 نظام الاتصال الهاتفي وسوفت فون WebRTC المباشر</span>
+  </div>
+</div>
 
-  <main class="flex-1 p-4 md:p-8 space-y-6 max-w-7xl w-full mx-auto">
-    <!-- Call Center Subtabs Navigation Bar -->
-    <div class="bg-white p-4 rounded-3xl border border-[#EAE3D9] shadow-sm flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-2 p-1.5 bg-[#F5EFE6] border border-[#E8E0D5] rounded-2xl text-xs font-bold">
-        <button type="button" onclick="switchCallcenterSubtab('employees')" id="subtab-btn-employees" class="subtab-btn px-4 py-2 rounded-xl transition-all flex items-center gap-2 bg-[#680E23] text-white shadow-sm">
-          <span>👤</span>
-          <span>دليل الموظفين والتحويلات</span>
-        </button>
-        <button type="button" onclick="switchCallcenterSubtab('queues')" id="subtab-btn-queues" class="subtab-btn px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-[#6E645D] hover:text-[#1C1917]">
-          <span>👥</span>
-          <span>طوابير الانتظار ومجموعات العمل</span>
+<!-- Subtab 1: Employees Directory & Softphone -->
+<div id="subtab-content-employees" class="callcenter-subtab-panel space-y-6">
+  <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-4">
+    <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-[#EAE3D9]">
+      <div>
+        <h2 class="text-lg font-bold text-[#1C1917] flex items-center gap-2">
+          <span class="text-[#680E23] text-xl">🎧</span>
+          دليل تحويلات الموظفين ومنظومة الاتصال الداخلي (WebRTC Softphone)
+        </h2>
+        <p class="text-xs text-[#6E645D] mt-1">
+          أضف موظفين جدد وتحويلات داخلية، واتصل مباشرة بأي موظف أو طابور عبر <span class="text-[#680E23] font-semibold">WebRTC المباشر</span> من المتصفح دون الحاجة لأي برامج خارجية.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button 
+          type="button" 
+          onclick="openNewEmployeeModal()" 
+          class="px-4 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-[#680E23]/20"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          <span>➕ موظف جديد</span>
         </button>
       </div>
-      
-      <div class="text-xs text-[#8C827A] flex items-center gap-2">
-        <span>🎧 نظام الاتصال الهاتفي وسوفت فون WebRTC المباشر</span>
+    </div>
+
+    <!-- Active Call Control Banner -->
+    <div id="dashboard-active-call-banner" class="hidden p-4 rounded-2xl bg-gradient-to-r from-[#FAF0F2] to-white border-2 border-[#680E23] shadow-md shadow-lg flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span class="w-3.5 h-3.5 rounded-full bg-[#680E23] animate-ping"></span>
+        <div>
+          <div id="dashboard-call-title" class="text-sm font-bold text-[#680E23]">جاري الاتصال...</div>
+          <div id="dashboard-call-sub" class="text-xs text-[#6E645D] font-mono">يتم الاتصال والمزامنة عبر WebRTC...</div>
+        </div>
+      </div>
+      <button 
+        type="button" 
+        onclick="endDashboardCall()" 
+        class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 shadow-rose-600/30"
+      >
+        <span>إنهاء المكالمة 🔴</span>
+      </button>
+    </div>
+
+    <!-- Employees Directory Table -->
+    <div class="mt-4 overflow-x-auto">
+      <table class="w-full text-right text-xs">
+        <thead>
+          <tr class="text-[#6E645D] border-b border-[#EAE3D9]">
+            <th class="py-2.5 px-3">الموظف</th>
+            <th class="py-2.5 px-3 text-center text-[#680E23] font-bold">التحويلة الداخلية</th>
+            <th class="py-2.5 px-3">القسم</th>
+            <th class="py-2.5 px-3 text-center">حالة التواجد</th>
+            <th class="py-2.5 px-3">بروتوكول الصوت</th>
+            <th class="py-2.5 px-3 text-center">إجراءات</th>
+          </tr>
+        </thead>
+        <tbody id="employees-tbody" class="divide-y divide-[#EAE3D9]">
+          <tr>
+            <td colspan="6" class="text-center py-6 text-[#8C827A]">جاري تحميل دليل الموظفين...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- Subtab 2: Call Queues & Routing -->
+<div id="subtab-content-queues" class="callcenter-subtab-panel space-y-6 hidden">
+  <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-6">
+    <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-[#EAE3D9]">
+      <div>
+        <h2 class="text-lg font-bold text-[#1C1917] flex items-center gap-2">
+          <span class="text-[#680E23] text-xl">👥</span>
+          طوابير الانتظار ومجموعات الاتصال (Call Queues &amp; Routing)
+        </h2>
+        <p class="text-xs text-[#6E645D] mt-1">
+          أنشئ طوابير فرق العمل (كود المبيعات 200، كود الدعم 300) مع نظام الرنين بالتناوب (Round-Robin)، موسيقى انتظار مخصصة، والتحويل التلقائي للذكاء الاصطناعي (Gemini Live) في حال عدم الرد.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button 
+          type="button" 
+          onclick="openNewQueueModal()" 
+          class="px-4 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-[#680E23]/20"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          <span>طابور جديد</span>
+        </button>
       </div>
     </div>
 
-    <!-- Subtab 1: Employees Directory & Softphone -->
-    <div id="subtab-content-employees" class="callcenter-subtab-panel space-y-6">
-      <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-4">
-        <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-[#EAE3D9]">
-          <div>
-            <h2 class="text-lg font-bold text-[#1C1917] flex items-center gap-2">
-              <span class="text-[#680E23] text-xl">🎧</span>
-              دليل تحويلات الموظفين ومنظومة الاتصال الداخلي (WebRTC Softphone)
-            </h2>
-            <p class="text-xs text-[#6E645D] mt-1">
-              أضف موظفين جدد وتحويلات داخلية، واتصل مباشرة بأي موظف أو طابور عبر <span class="text-[#680E23] font-semibold">WebRTC المباشر</span> من المتصفح دون الحاجة لأي برامج خارجية.
-            </p>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button 
-              type="button" 
-              onclick="openNewEmployeeModal()" 
-              class="px-4 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-[#680E23]/20"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-              </svg>
-              <span>➕ موظف جديد</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Active Call Control Banner -->
-        <div id="dashboard-active-call-banner" class="hidden p-4 rounded-2xl bg-gradient-to-r from-[#FAF0F2] to-white border-2 border-[#680E23] shadow-md shadow-lg flex items-center justify-between gap-4">
-          <div class="flex items-center gap-3">
-            <span class="w-3.5 h-3.5 rounded-full bg-[#680E23] animate-ping"></span>
-            <div>
-              <div id="dashboard-call-title" class="text-sm font-bold text-[#680E23]">جاري الاتصال...</div>
-              <div id="dashboard-call-sub" class="text-xs text-[#6E645D] font-mono">يتم الاتصال والمزامنة عبر WebRTC...</div>
-            </div>
-          </div>
-          <button 
-            type="button" 
-            onclick="endDashboardCall()" 
-            class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 shadow-rose-600/30"
-          >
-            <span>إنهاء المكالمة 🔴</span>
-          </button>
-        </div>
-
-        <!-- Employees Directory Table -->
-        <div class="mt-4 overflow-x-auto">
-          <table class="w-full text-right text-xs">
-            <thead>
-              <tr class="text-[#6E645D] border-b border-[#EAE3D9]">
-                <th class="py-2.5 px-3">الموظف</th>
-                <th class="py-2.5 px-3 text-center text-[#680E23] font-bold">التحويلة الداخلية</th>
-                <th class="py-2.5 px-3">القسم</th>
-                <th class="py-2.5 px-3 text-center">حالة التواجد</th>
-                <th class="py-2.5 px-3">بروتوكول الصوت</th>
-                <th class="py-2.5 px-3 text-center">إجراءات</th>
-              </tr>
-            </thead>
-            <tbody id="employees-tbody" class="divide-y divide-[#EAE3D9]">
-              <tr>
-                <td colspan="6" class="text-center py-6 text-[#8C827A]">جاري تحميل دليل الموظفين...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+    <!-- Call Queues Table -->
+    <div class="mt-4 overflow-x-auto">
+      <table class="w-full text-right text-xs">
+        <thead>
+          <tr class="text-[#6E645D] border-b border-[#EAE3D9]">
+            <th class="py-2.5 px-3">كود الطابور</th>
+            <th class="py-2.5 px-3">اسم الطابور</th>
+            <th class="py-2.5 px-3">استراتيجية التوزيع</th>
+            <th class="py-2.5 px-3">الموظفون المسندون والحالة الحية</th>
+            <th class="py-2.5 px-3 text-center">المكالمات المنتظرة</th>
+            <th class="py-2.5 px-3 text-center">إجراءات</th>
+          </tr>
+        </thead>
+        <tbody id="queues-tbody" class="divide-y divide-[#EAE3D9]">
+          <tr>
+            <td colspan="6" class="text-center py-6 text-[#8C827A]">جاري تحميل طوابير الانتظار...</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-
-    <!-- Subtab 2: Call Queues & Routing -->
-    <div id="subtab-content-queues" class="callcenter-subtab-panel space-y-6 hidden">
-      <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-6">
-        <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-[#EAE3D9]">
-          <div>
-            <h2 class="text-lg font-bold text-[#1C1917] flex items-center gap-2">
-              <span class="text-[#680E23] text-xl">👥</span>
-              طوابير الانتظار ومجموعات الاتصال (Call Queues &amp; Routing)
-            </h2>
-            <p class="text-xs text-[#6E645D] mt-1">
-              أنشئ طوابير فرق العمل (كود المبيعات 200، كود الدعم 300) مع نظام الرنين بالتناوب (Round-Robin)، موسيقى انتظار مخصصة، والتحويل التلقائي للذكاء الاصطناعي (Gemini Live) في حال عدم الرد.
-            </p>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button 
-              type="button" 
-              onclick="openNewQueueModal()" 
-              class="px-4 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5 shadow-[#680E23]/20"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-              </svg>
-              <span>طابور جديد</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Call Queues Table -->
-        <div class="mt-4 overflow-x-auto">
-          <table class="w-full text-right text-xs">
-            <thead>
-              <tr class="text-[#6E645D] border-b border-[#EAE3D9]">
-                <th class="py-2.5 px-3">كود الطابور</th>
-                <th class="py-2.5 px-3">اسم الطابور</th>
-                <th class="py-2.5 px-3">استراتيجية التوزيع</th>
-                <th class="py-2.5 px-3">الموظفون المسندون والحالة الحية</th>
-                <th class="py-2.5 px-3 text-center">المكالمات المنتظرة</th>
-                <th class="py-2.5 px-3 text-center">إجراءات</th>
-              </tr>
-            </thead>
-            <tbody id="queues-tbody" class="divide-y divide-[#EAE3D9]">
-              <tr>
-                <td colspan="6" class="text-center py-6 text-[#8C827A]">جاري تحميل طوابير الانتظار...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  </main>
+  </section>
 </div>
 {% endblock %}
 

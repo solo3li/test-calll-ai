@@ -4,13 +4,8 @@
 {% block title %}قاعدة المعرفة RAG - المساعد الصوتي الذكي{% endblock %}
 
 {% block content %}
-<div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
-  <!-- Header -->
-  {% include 'voice_assistant/components/header.html' with page_title="مستندات وتضمينات قاعدة المعرفة (RAG)" page_subtitle="ارفع مستنداتك ليتم تقسيمها وفهرستها دلالياً في PostgreSQL عبر Gemini Embeddings" page_icon="📚" %}
-
-  <main class="flex-1 p-4 md:p-8 space-y-6 max-w-7xl w-full mx-auto">
-    <!-- Documents Knowledge Base Section -->
-    <section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-4">
+<!-- Documents Knowledge Base Section -->
+<section class="bg-white shadow-[0_4px_25px_-3px_rgba(104,14,35,0.06)] border border-[#EAE3D9] rounded-3xl p-6 shadow-xl space-y-4">
       <div class="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-[#EAE3D9]">
         <div>
           <h2 class="text-lg font-bold text-[#1C1917] flex items-center gap-2">
@@ -68,8 +63,6 @@
         </table>
       </div>
     </section>
-  </main>
-</div>
 {% endblock %}
 
 {% block extra_scripts %}
