@@ -359,11 +359,11 @@ async def run_agent_session(
                             logger.error(f"Error receiving from Gemini Live in room {room_name}: {ex}")
                             await asyncio.sleep(0.1)
 
-            # Worker 3: Audio Pacer (paces output to LiveKit track with 180ms jitter buffer and drift-compensated clock)
+            # Worker 3: Audio Pacer (paces output to LiveKit track with 250ms jitter buffer and drift-compensated clock)
             async def audio_pacer_worker():
                 buffer = bytearray()
                 prebuffered = False
-                JITTER_BUFFER_BYTES = OUT_FRAME_BYTES * 9  # 180ms jitter buffer (9 frames)
+                JITTER_BUFFER_BYTES = OUT_FRAME_BYTES * 12  # 250ms jitter buffer (12 frames = 240ms)
                 next_frame_time = time.monotonic()
 
                 while not stop_event.is_set():
@@ -376,7 +376,7 @@ async def run_agent_session(
                             next_frame_time = time.monotonic()
 
                         # Collect incoming audio chunks from Gemini
-                        # Pre-buffer up to 180ms on turn start to absorb network jitter, unless turn is already completed
+                        # Pre-buffer up to 250ms on turn start to absorb network jitter, unless turn is already completed
                         while len(buffer) < OUT_FRAME_BYTES or (not prebuffered and len(buffer) < JITTER_BUFFER_BYTES and not session_state.turn_complete):
                             try:
                                 chunk = await asyncio.wait_for(out_audio_queue.get(), timeout=0.06)
