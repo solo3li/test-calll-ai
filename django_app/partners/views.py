@@ -481,6 +481,11 @@ def api_partner_studio(request, client_id=None):
         "languages": [{"id": l[0], "label": l[1]} for l in AgentProfile.LANGUAGE_CHOICES],
         "language_dialects_map": LANGUAGE_DIALECTS_MAP,
         "genders": [{"id": g[0], "label": g[1]} for g in AgentProfile.GENDER_CHOICES],
+        "verbosities": [
+            {"id": "concise", "label": "مختصر ⚡ (ردود مباشرة في 1-2 جملة)", "description": "10-25 كلمة، رد مباشر وسريع بدون حشو أو أسئلة زائدة"},
+            {"id": "balanced", "label": "متوازن ⚖️ (رد طبيعي ومهذب)", "description": "2-3 جمل طبيعية توازن بين السرعة واللطف"},
+            {"id": "detailed", "label": "مفصل 📖 (شرح وافٍ واستشاري)", "description": "تفاصيل وخطوات وخيارات واقتراحات"}
+        ],
         "sample_roles": [
             "ممثل خدمة عملاء محترف لمتجر الكتروني",
             "مستشار تسويق ومبيعات عقارية خبير في الفلل والأراضي",
@@ -549,6 +554,7 @@ def api_partner_client_profile(request, client_id):
         dialect = data.get('dialect', 'egyptian').strip()
         persona_role = str(data.get('persona_role', 'خدمة عملاء ومبيعات المتجر')).strip()
         speaking_style = str(data.get('speaking_style', 'ودود ولطيف ومرح')).strip()
+        verbosity = str(data.get('verbosity', 'balanced')).strip()
         custom_instructions = data.get('custom_instructions') or data.get('system_prompt', '')
         is_active = data.get('is_active', True)
 
@@ -561,6 +567,7 @@ def api_partner_client_profile(request, client_id):
             dialect=dialect,
             persona_role=persona_role,
             speaking_style=speaking_style,
+            verbosity=verbosity,
             custom_instructions=custom_instructions,
             is_active=is_active
         )
@@ -606,7 +613,7 @@ def api_partner_client_profile_detail(request, client_id, profile_id):
         except Exception:
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
-        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style']:
+        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity']:
             if field in data:
                 setattr(profile, field, str(data[field]).strip())
         if 'custom_instructions' in data or 'system_prompt' in data:

@@ -547,6 +547,19 @@
               </div>
               <textarea id="field-style" rows="2" placeholder="اكتب أسلوب الإلقاء والنبرة بحرية تامة (مثال: ودود ولطيف ومرح، رسمي وهادئ ورصين، سريع وموجز، حماسي ونشيط...)" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]"></textarea>
             </div>
+
+            <!-- Verbosity & Conciseness Level -->
+            <div class="bg-[#FAF7F2] border border-[#EAE3D9] rounded-2xl p-3.5 space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="block font-semibold text-[#443D39]" data-i18n="field_verbosity">مستوى الإيجاز وسرعة الرد (Verbosity Level)</label>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-[#FAF0F2] text-[#680E23] border border-[#E8CCD2]">التحكم في الرغي</span>
+              </div>
+              <select id="field-verbosity" class="w-full px-2.5 py-2 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]">
+                <option value="concise">⚡ مختصر ومباشر (ردود سريعة في 1-2 جملة، بدون حشو أو أسئلة زائدة)</option>
+                <option value="balanced" selected>⚖️ متوازن وطبيعي (2-3 جمل طبيعية تجمع بين اللباقة والسرعة)</option>
+                <option value="detailed">📖 مفصل واستشاري (شرح وافٍ مع ذكر الخيارات والتفاصيل والبدائل)</option>
+              </select>
+            </div>
           </div>
 
           <!-- Custom Instructions & Action Buttons -->
@@ -1368,6 +1381,15 @@
               <label class="block font-semibold text-[#443D39] mb-1">أسلوب الإلقاء والنبرة (كتابة حرة)</label>
               <textarea id="new-prof-style" rows="2" placeholder="اكتب النبرة بحرية (مثال: ودود ولطيف ومرح...)" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]">ودود ولطيف ومرح</textarea>
             </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-[#443D39] mb-1">مستوى الإيجاز وسرعة الرد (Verbosity Level)</label>
+            <select id="new-prof-verbosity" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]">
+              <option value="concise">⚡ مختصر ومباشر (ردود سريعة في 1-2 جملة، بدون حشو)</option>
+              <option value="balanced" selected>⚖️ متوازن وطبيعي (2-3 جمل، توازن بين اللباقة والسرعة)</option>
+              <option value="detailed">📖 مفصل واستشاري (شرح وافٍ وتفاصيل)</option>
+            </select>
           </div>
 
           <div class="flex justify-end gap-2 pt-2 border-t border-[#EAE3D9]">
@@ -4171,6 +4193,7 @@
     const fieldVoice = document.getElementById('field-voice');
     const fieldRole = document.getElementById('field-role');
     const fieldStyle = document.getElementById('field-style');
+    const fieldVerbosity = document.getElementById('field-verbosity');
     const fieldCustom = document.getElementById('field-custom');
     const voiceTagBadge = document.getElementById('voice-tag-badge');
     const profileStatusMsg = document.getElementById('profile-status-msg');
@@ -4180,6 +4203,7 @@
     const newProfGender = document.getElementById('new-prof-gender');
     const newProfLanguage = document.getElementById('new-prof-language');
     const newProfDialect = document.getElementById('new-prof-dialect');
+    const newProfVerbosity = document.getElementById('new-prof-verbosity');
 
     async function loadProfiles() {
       try {
@@ -4296,6 +4320,9 @@
       populateVoiceSelect(fieldVoice, p.gender, p.voice_name);
       fieldRole.value = p.persona_role;
       fieldStyle.value = p.speaking_style;
+      if (fieldVerbosity) {
+        fieldVerbosity.value = p.verbosity || 'balanced';
+      }
       fieldCustom.value = p.custom_instructions || '';
       updateVoiceTag();
       profileStatusMsg.innerText = `البروفايل المطبق: "${p.name}" (${p.voice_name} / ${p.dialect_display || p.dialect})`;
@@ -4336,6 +4363,7 @@
         voice_name: fieldVoice.value,
         persona_role: fieldRole.value,
         speaking_style: fieldStyle.value,
+        verbosity: fieldVerbosity ? fieldVerbosity.value : 'balanced',
         custom_instructions: fieldCustom.value.trim()
       };
 
@@ -4388,6 +4416,7 @@
       const voice_name = document.getElementById('new-prof-voice').value;
       const persona_role = document.getElementById('new-prof-role').value;
       const speaking_style = document.getElementById('new-prof-style').value;
+      const verbosity = newProfVerbosity ? newProfVerbosity.value : 'balanced';
 
       const btn = document.getElementById('btn-create-prof');
       btn.disabled = true;
@@ -4408,6 +4437,7 @@
             voice_name,
             persona_role,
             speaking_style,
+            verbosity,
             is_active: true
           })
         });

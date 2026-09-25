@@ -1221,9 +1221,11 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     "name": {"type": "string", "example": "مساعد المبيعات السعودي" if is_ar else "Saudi Sales Advisor"},
                     "voice_name": {"type": "string", "default": "Aoede", "example": "Aoede"},
                     "gender": {"type": "string", "enum": ["female", "male"], "default": "female"},
-                    "dialect": {"type": "string", "enum": ["saudi", "egyptian", "levantine", "fusha", "english"], "default": "saudi"},
-                    "persona_role": {"type": "string", "enum": ["customer_support", "sales_advisor", "personal_assistant", "technical_consultant"], "default": "sales_advisor"},
-                    "speaking_style": {"type": "string", "enum": ["friendly", "formal", "concise", "enthusiastic"], "default": "friendly"},
+                    "language": {"type": "string", "default": "arabic", "example": "arabic"},
+                    "dialect": {"type": "string", "default": "saudi", "example": "saudi"},
+                    "persona_role": {"type": "string", "description": "الدور والشخصية بكتابة حرة", "example": "ممثل خدمة عملاء محترف"},
+                    "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة بكتابة حرة", "example": "ودود ولطيف ومرح"},
+                    "verbosity": {"type": "string", "enum": ["concise", "balanced", "detailed"], "default": "balanced", "description": "مستوى الإيجاز وسرعة الرد: concise (مختصر), balanced (متوازن), detailed (مفصل)", "example": "concise"},
                     "custom_instructions": {"type": "string", "example": "أنت مستشار مبيعات ودود تتحدث باللهجة السعودية البيضاء." if is_ar else "You are a friendly sales advisor speaking in Saudi dialect."},
                     "is_active": {"type": "boolean", "default": True}
                 }
@@ -1234,9 +1236,11 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     "name": {"type": "string"},
                     "voice_name": {"type": "string"},
                     "gender": {"type": "string", "enum": ["female", "male"]},
-                    "dialect": {"type": "string", "enum": ["saudi", "egyptian", "levantine", "fusha", "english"]},
-                    "persona_role": {"type": "string"},
-                    "speaking_style": {"type": "string"},
+                    "language": {"type": "string"},
+                    "dialect": {"type": "string"},
+                    "persona_role": {"type": "string", "description": "الدور والشخصية بكتابة حرة"},
+                    "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة بكتابة حرة"},
+                    "verbosity": {"type": "string", "enum": ["concise", "balanced", "detailed"], "description": "مستوى الإيجاز وسرعة الرد"},
                     "custom_instructions": {"type": "string"},
                     "is_active": {"type": "boolean"}
                 }

@@ -745,6 +745,7 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                     "dialect": {"type": "string", "default": "egyptian", "example": "egyptian"},
                     "persona_role": {"type": "string", "description": "الدور والشخصية المحددة بكتابة حرة مفتوحة", "example": "ممثل خدمة عملاء ومبيعات متجر الكتروني"},
                     "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة المطلوب الالتزام بها بكتابة حرة", "example": "ودود ولطيف ومرح"},
+                    "verbosity": {"type": "string", "enum": ["concise", "balanced", "detailed"], "default": "balanced", "description": "مستوى الإيجاز وسرعة الرد: concise (مختصر 1-2 جملة), balanced (متوازن 2-3 جمل), detailed (مفصل)", "example": "concise"},
                     "custom_instructions": {"type": "string", "example": "أنت مستشار مبيعات ودود وذكي." if is_ar else "You are a friendly and smart sales advisor."},
                     "is_active": {"type": "boolean", "default": True}
                 }
@@ -759,6 +760,7 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                     "dialect": {"type": "string"},
                     "persona_role": {"type": "string", "description": "الدور والشخصية بكتابة حرة"},
                     "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة بكتابة حرة"},
+                    "verbosity": {"type": "string", "enum": ["concise", "balanced", "detailed"], "description": "مستوى الإيجاز وسرعة الرد"},
                     "custom_instructions": {"type": "string"},
                     "is_active": {"type": "boolean"}
                 }

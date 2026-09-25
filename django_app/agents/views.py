@@ -148,6 +148,7 @@ def list_profiles(request):
         "roles": [{"id": r[0], "label": r[1]} for r in AgentProfile.ROLE_CHOICES],
         "styles": [{"id": s[0], "label": s[1]} for s in AgentProfile.STYLE_CHOICES],
         "genders": [{"id": g[0], "label": g[1]} for g in AgentProfile.GENDER_CHOICES],
+        "verbosities": [{"id": v[0], "label": v[1]} for v in AgentProfile.VERBOSITY_CHOICES],
     })
 
 @login_required(login_url='/login/')
@@ -165,6 +166,7 @@ def create_profile(request):
         dialect = data.get('dialect', 'egyptian')
         persona_role = str(data.get('persona_role', 'خدمة عملاء ومبيعات المتجر')).strip()
         speaking_style = str(data.get('speaking_style', 'ودود ولطيف ومرح')).strip()
+        verbosity = str(data.get('verbosity', 'balanced')).strip() or 'balanced'
         custom_instructions = data.get('custom_instructions', '').strip()
         is_active = bool(data.get('is_active', True))
 
@@ -177,6 +179,7 @@ def create_profile(request):
             dialect=dialect,
             persona_role=persona_role,
             speaking_style=speaking_style,
+            verbosity=verbosity,
             custom_instructions=custom_instructions,
             is_active=is_active
         )
@@ -212,6 +215,8 @@ def update_profile(request, profile_id):
             profile.persona_role = str(data['persona_role']).strip()
         if 'speaking_style' in data:
             profile.speaking_style = str(data['speaking_style']).strip()
+        if 'verbosity' in data and str(data['verbosity']).strip():
+            profile.verbosity = str(data['verbosity']).strip()
         if 'custom_instructions' in data:
             profile.custom_instructions = data['custom_instructions'].strip()
         if 'is_active' in data:

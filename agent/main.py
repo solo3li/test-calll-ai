@@ -444,6 +444,7 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
     dialect = profile.get("dialect", "egyptian")
     role = profile.get("persona_role", "customer_support")
     style = profile.get("speaking_style", "friendly")
+    verbosity = profile.get("verbosity", "balanced")
     custom = (profile.get("custom_instructions") or "").strip()
     name = profile.get("name", "المساعد")
 
@@ -638,6 +639,26 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
 
     custom_text = f"\nتعليمات خاصة إضافية من المستخدم:\n{custom}\n" if custom else ""
 
+    # 5. Verbosity & Conciseness control
+    if verbosity == "concise":
+        verbosity_instruction = (
+            "7. قاعدة الإيجاز الصارم والفوري (شديد الأهمية لمنع الرغي والإطالة):\n"
+            "   - كلامك يجب أن يكون قصيراً ومباشراً جداً، جملة واحدة أو جملتان فقط كحد أقصى (ما بين 10 إلى 25 كلمة).\n"
+            "   - ادخل في صلب الموضوع فوراً وأعطِ الجواب أو المعلومة مباشرة دون مقدمات ترحيبية متكررة أو إعادة صياغة كلام المتصل.\n"
+            "   - ممنوع تماماً الحشو أو طرح أسئلة متابعة غير ضرورية في نهاية ردك (مثل: 'هل تحب أساعدك بحاجة تانية؟' أو 'هل كل شيء واضح؟'). فقط أجب باختصار وتوقف لتستمع للمتصل."
+        )
+    elif verbosity == "detailed":
+        verbosity_instruction = (
+            "7. أسلوب الشرح الوافي والمفصل:\n"
+            "   - قدم إجابات كاملة وشاملة تشرح التفاصيل والخطوات والخيارات المتاحة بوضوح وسلاسة.\n"
+            "   - اقترح حلولاً وبدائل مفيدة، وتأكد من استيعاب العميل للخيارات لمساعدته في اتخاذ القرار."
+        )
+    else:  # balanced (default)
+        verbosity_instruction = (
+            "7. الإيجاز والاتزان الطبيعي:\n"
+            "   - كلامك يكون طبيعياً ومتوازناً وموجزاً (حوالي 2 إلى 3 جمل)، يجمع بين اللباقة والوضوح والسرعة دون إطالة أو حشو زائد."
+        )
+
     memory_text = f"\n8. {memory_card}\nتوجيه للمساعد: وظف الذاكرة السابقة بشكل طبيعي وعفوي في بداية الحديث للتذكير والتواصل الذكي دون قراءتها كقائمة رسمية.\n" if memory_card else ""
 
     prompt = f"""أنت مسجل في النظام كبروفايل: {name}.
@@ -652,7 +673,7 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
 4. أدوات المستندات (RAG): لما يسألك عن أي معلومة تخص مستنداته أو ملفاته المرفوعة، استدعِ أداة search_knowledge_base.
 5. الإجابة من نتائج الأدوات: لخص نتائج الأداة للمستخدم بأسلوبك ولهجتك المحددة، بوضوح وأرقام دقيقة ومباشرة.
 6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات ولا تخص طوابير وأقسام الدعم المتاحة (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{custom_text}
-7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط.{memory_text}"""
+{verbosity_instruction}{memory_text}"""
 
     queues_instruction = ""
     if call_queues:

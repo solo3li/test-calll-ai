@@ -77,6 +77,12 @@ class AgentProfile(models.Model):
         ('enthusiastic', 'حماسي وتشجيعي'),
     ]
 
+    VERBOSITY_CHOICES = [
+        ('concise', 'مختصر (ردود سريعة ومباشرة في 1-2 جملة)'),
+        ('balanced', 'متوازن (طبيعي ومهذب في 2-3 جمل)'),
+        ('detailed', 'مفصل (شرح وافٍ واستشاري)'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='agent_profiles')
     name = models.CharField(max_length=100, default='البروفايل الافتراضي')
     voice_name = models.CharField(max_length=50, default='Aoede')
@@ -85,6 +91,7 @@ class AgentProfile(models.Model):
     dialect = models.CharField(max_length=50, choices=DIALECT_CHOICES, default='egyptian')
     persona_role = models.TextField(blank=True, default='خدمة عملاء ومبيعات المتجر')
     speaking_style = models.TextField(blank=True, default='ودود ولطيف ومرح')
+    verbosity = models.CharField(max_length=20, choices=VERBOSITY_CHOICES, default='balanced')
     custom_instructions = models.TextField(blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -143,6 +150,8 @@ class AgentProfile(models.Model):
             "persona_role_display": self.persona_role,
             "speaking_style": self.speaking_style,
             "speaking_style_display": self.speaking_style,
+            "verbosity": self.verbosity or "balanced",
+            "verbosity_display": self.get_verbosity_display(),
             "custom_instructions": self.custom_instructions,
             "is_active": self.is_active,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
