@@ -119,7 +119,13 @@ class CallSession(models.Model):
                 turns.append({"speaker": "dialogue", "text": line})
         return turns
 
-    def to_dict(self):
+    def to_dict(self, request=None):
+        rec_url = self.recording_url or ""
+        if rec_url and request and not (rec_url.startswith('http://') or rec_url.startswith('https://')):
+            try:
+                rec_url = request.build_absolute_uri(rec_url)
+            except Exception:
+                pass
         return {
             "id": self.id,
             "room_name": self.room_name,
@@ -136,7 +142,7 @@ class CallSession(models.Model):
             "cost_formatted": f"{self.cost:.2f}",
             "summary": self.summary or "",
             "transcript_text": self.transcript_text or "",
-            "recording_url": self.recording_url or "",
+            "recording_url": rec_url,
             "dialogue_turns": self.dialogue_turns,
         }
 

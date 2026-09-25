@@ -4,7 +4,23 @@ import secrets
 import logging
 from decimal import Decimal
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import JsonResponse as _DjangoJsonResponse
+
+def JsonResponse(data, *args, **kwargs):
+    dumps_params = kwargs.pop('json_dumps_params', None)
+    if dumps_params is None:
+        dumps_params = {'ensure_ascii': False}
+    else:
+        dumps_params.setdefault('ensure_ascii', False)
+    return _DjangoJsonResponse(data, *args, json_dumps_params=dumps_params, **kwargs)
+
+def get_full_recording_url(request, rec_url):
+    if not rec_url:
+        return ""
+    if rec_url.startswith("http://") or rec_url.startswith("https://"):
+        return rec_url
+    return request.build_absolute_uri(rec_url)
+
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
@@ -399,7 +415,7 @@ def api_partner_client_calls(request, client_id):
             "cost": float(call.cost),
             "summary": call.summary or "",
             "transcript_text": call.transcript_text or "",
-            "recording_url": call.recording_url or "",
+            "recording_url": get_full_recording_url(request, call.recording_url),
             "dialogue_turns": call.dialogue_turns,
         })
 

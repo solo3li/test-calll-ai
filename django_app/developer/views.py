@@ -6,7 +6,23 @@ from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import JsonResponse
+from django.http import JsonResponse as _DjangoJsonResponse
+
+def JsonResponse(data, *args, **kwargs):
+    dumps_params = kwargs.pop('json_dumps_params', None)
+    if dumps_params is None:
+        dumps_params = {'ensure_ascii': False}
+    else:
+        dumps_params.setdefault('ensure_ascii', False)
+    return _DjangoJsonResponse(data, *args, json_dumps_params=dumps_params, **kwargs)
+
+def get_full_recording_url(request, rec_url):
+    if not rec_url:
+        return ""
+    if rec_url.startswith("http://") or rec_url.startswith("https://"):
+        return rec_url
+    return request.build_absolute_uri(rec_url)
+
 from django.shortcuts import render, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from livekit import api
@@ -201,12 +217,13 @@ class UserSpectacularSchemaView(SpectacularAPIView):
             if 'info' in spec:
                 spec['info']['title'] = 'User Developer REST API (v1)'
                 spec['info']['description'] = 'Developer REST API for Voice Assistant, LiveKit WebRTC, and FastMCP tools.'
-            # Translate campaign tag on paths if English
+            # Translate tags on paths if English
             for p_key, p_methods in spec.get('paths', {}).items():
                 for m_verb, m_data in p_methods.items():
                     if isinstance(m_data, dict) and 'tags' in m_data:
                         m_data['tags'] = [
-                            "10. Outbound Campaigns" if t == "10. حملات الاتصال والعملاء (Campaigns)" else t
+                            "1. Account & Balance" if t == "1. الحساب والرصيد (Account & Balance)" else
+                            ("10. Outbound Campaigns" if t == "10. حملات الاتصال والعملاء (Campaigns)" else t)
                             for t in m_data['tags']
                         ]
 
@@ -224,7 +241,7 @@ api_user_openapi_spec = UserSpectacularSchemaView.as_view()
     summary="بيانات الحساب والرصيد المالي",
     description="استرجاع تفاصيل الحساب، الرصيد المالي الحالي بالدولار، والشخصية المفعلة وإحصائيات النظام.",
     responses={200: UserAccountResponseSerializer},
-    tags=["1. الحساب والرصيد (Account & Billing)"]
+    tags=["1. الحساب والرصيد (Account & Balance)"]
 )
 @api_view(['GET'])
 @user_api_key_required
@@ -1281,7 +1298,7 @@ def api_user_calls(request):
             "cost": float(call.cost),
             "summary": call.summary or "",
             "transcript_text": call.transcript_text or "",
-            "recording_url": call.recording_url or "",
+            "recording_url": get_full_recording_url(request, call.recording_url),
             "dialogue_turns": call.dialogue_turns,
         })
 
