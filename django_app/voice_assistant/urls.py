@@ -72,6 +72,9 @@ urlpatterns = [
     # Dedicated Modular Section Pages
     path('calls/', views.calls_page_view, name='calls_page'),
     path('billing/', views.billing_page_view, name='billing_page'),
+    path('crm/', views.crm_page_view, name='crm_page'),
+    path('documents/', views.rag_page_view, name='rag_page'),
+    path('personas/', views.personas_page_view, name='personas_page'),
 ]
 
 

@@ -590,3 +590,37 @@ def billing_page_view(request):
         'active_nav': 'billing',
     }
     return render(request, 'voice_assistant/pages/billing.html', context)
+
+
+@login_required
+def crm_page_view(request):
+    """Render dedicated CRM & Customer Memory page."""
+    context = {
+        'page_title': 'ذاكرة وسجل العملاء',
+        'page_icon': '🧠',
+        'active_nav': 'crm',
+    }
+    return render(request, 'voice_assistant/pages/crm.html', context)
+
+
+@login_required
+def rag_page_view(request):
+    """Render dedicated Knowledge Base RAG page."""
+    context = {
+        'page_title': 'قاعدة المعرفة RAG',
+        'page_icon': '📚',
+        'active_nav': 'rag',
+    }
+    return render(request, 'voice_assistant/pages/rag.html', context)
+
+
+@login_required
+def personas_page_view(request):
+    """Render dedicated AI Personas & Voice Studio page."""
+    context = {
+        'page_title': 'الشخصيات واللهجات',
+        'page_icon': '🎭',
+        'active_nav': 'personas',
+    }
+    return render(request, 'voice_assistant/pages/personas.html', context)
+

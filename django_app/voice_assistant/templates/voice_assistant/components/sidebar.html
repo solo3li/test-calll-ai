@@ -36,14 +36,14 @@
       <span class="nav-text" data-i18n="nav_voice">غرفة المساعد الصوتي</span>
     </a>
 
-    <!-- 2. Personas -->
-    <a href="{% url 'voice_assistant:room' %}?tab=personas" id="nav-btn-personas" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'personas' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
+    <!-- 2. Personas (Dedicated Page) -->
+    <a href="{% url 'voice_assistant:personas_page' %}" id="nav-btn-personas" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'personas' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
       <span class="text-base shrink-0">🎭</span>
       <span class="nav-text" data-i18n="nav_personas">الشخصيات واللهجات</span>
     </a>
 
-    <!-- 3. RAG -->
-    <a href="{% url 'voice_assistant:room' %}?tab=rag" id="nav-btn-rag" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'rag' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
+    <!-- 3. RAG (Dedicated Page) -->
+    <a href="{% url 'voice_assistant:rag_page' %}" id="nav-btn-rag" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'rag' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
       <span class="text-base shrink-0">📚</span>
       <span class="nav-text" data-i18n="nav_rag">قاعدة المعرفة RAG</span>
     </a>
@@ -60,8 +60,8 @@
       <span class="nav-text" data-i18n="nav_telephony">الربط الهاتفي والسنترال</span>
     </a>
 
-    <!-- 6. CRM -->
-    <a href="{% url 'voice_assistant:room' %}?tab=crm" id="nav-btn-crm" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'crm' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
+    <!-- 6. CRM (Dedicated Page) -->
+    <a href="{% url 'voice_assistant:crm_page' %}" id="nav-btn-crm" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'crm' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
       <span class="text-base shrink-0">🧠</span>
       <span class="nav-text" data-i18n="nav_crm">ذاكرة وسجل العملاء</span>
     </a>
