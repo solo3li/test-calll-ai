@@ -13,10 +13,36 @@ from django.db.models import Q
 from django.core.paginator import Paginator
 from livekit import api
 
+from rest_framework.decorators import api_view
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.views import SpectacularAPIView
 from .models import PartnerProfile, PartnerClientRelationship
 from .decorators import partner_required, partner_client_access_required
 from .services.webhook import dispatch_partner_webhook
 from .openapi_spec import get_partner_openapi_spec
+from .serializers import (
+    PartnerDashboardResponseSerializer,
+    PartnerSettingsUpdateRequestSerializer,
+    PartnerClientRegisterRequestSerializer,
+    PartnerClientResponseSerializer,
+    PartnerClientsListResponseSerializer,
+    PartnerClientProfileSerializer,
+    PartnerClientProfileCreateRequestSerializer,
+    PartnerClientMemorySerializer,
+    PartnerClientMemoryCreateRequestSerializer,
+    PartnerClientDocumentSerializer,
+    PartnerClientRAGQueryRequestSerializer,
+    PartnerClientTrunkSerializer,
+    PartnerClientNumberSerializer,
+    PartnerClientEmployeeSerializer,
+    PartnerClientQueueSerializer,
+    PartnerClientMCPServerSerializer,
+    PartnerClientTokenResponseSerializer,
+    PartnerClientDialRequestSerializer,
+    PartnerClientCallSessionSerializer,
+    BaseSuccessResponseSerializer,
+    BaseErrorResponseSerializer
+)
 from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
 from crm.models import CallSession, CustomerMemory
@@ -1927,21 +1953,47 @@ def api_partner_docs(request):
     })
 
 
-def api_partner_openapi_spec(request):
+class PartnerSpectacularSchemaView(SpectacularAPIView):
     """
-    GET /api/partner/v1/docs/openapi.json
-    Dynamically serves OpenAPI 3.1 specification for the Partner API.
-    Supports bilingual content (?lang=ar | ?lang=en).
-    Uses relative server URL so the interactive client seamlessly adopts
-    the active browser origin, protocol (HTTP/HTTPS), and port.
+    OpenAPI 3.1 Schema generator powered by drf-spectacular for Partner SaaS API.
+    Provides isolated schema for /api/partner/v1/ endpoints and feeds Partner Scalar Docs directly.
     """
-    lang = request.GET.get('lang', 'ar').lower().strip()
-    if lang not in ('ar', 'en'):
-        lang = 'ar'
+    custom_settings = {
+        'TITLE': 'بوابة وحلول الشركاء - Partner SaaS API (v1)',
+        'DESCRIPTION': 'توثيق واجهات برمجة التطبيقات لمنظومة الشركاء وإدارة العملاء المستقلين (Multi-Tenant SaaS) والربط مع السنترالات.',
+        'VERSION': '1.0.0',
+        'PREPROCESSING_HOOKS': ['partners.openapi_hooks.filter_partner_endpoints'],
+    }
 
-    server_url = "/api/partner/v1"
-    spec = get_partner_openapi_spec(server_url=server_url, lang=lang)
-    return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+    def get(self, request, *args, **kwargs):
+        lang = request.GET.get('lang', 'ar').lower().strip()
+        if lang not in ('ar', 'en'):
+            lang = 'ar'
+
+        resp = super().get(request, *args, **kwargs)
+        spec = resp.data if hasattr(resp, 'data') else {}
+
+        legacy_spec = get_partner_openapi_spec(server_url='/api/partner/v1', lang=lang)
+        if not spec.get('paths'):
+            spec['paths'] = legacy_spec.get('paths', {})
+        else:
+            for path_key, path_data in legacy_spec.get('paths', {}).items():
+                if path_key not in spec['paths']:
+                    spec['paths'][path_key] = path_data
+
+        for k in ('info', 'tags', 'servers', 'components'):
+            if k not in spec or not spec[k]:
+                spec[k] = legacy_spec.get(k, {})
+
+        if lang == 'en':
+            if 'info' in spec:
+                spec['info']['title'] = 'Partner SaaS Multi-Tenant REST API (v1)'
+                spec['info']['description'] = 'B2B Partner API for multi-tenant customer management, voice AI personas, and WebRTC telephony.'
+
+        return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+
+
+api_partner_openapi_spec = PartnerSpectacularSchemaView.as_view()
 
 
 def api_partner_docs_scalar(request):

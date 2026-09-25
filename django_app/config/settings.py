@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'drf_spectacular',
     'knowledge.apps.KnowledgeConfig',
     'agents.apps.AgentsConfig',
     'call_center.apps.CallCenterConfig',
@@ -151,3 +153,36 @@ MINIO_EXTERNAL_URL = os.getenv('MINIO_EXTERNAL_URL', f"https://minio.{EXTERNAL_I
 MINIO_ACCESS_KEY = os.getenv('MINIO_ROOT_USER', os.getenv('MINIO_ACCESS_KEY', 'minioadmin'))
 MINIO_SECRET_KEY = os.getenv('MINIO_ROOT_PASSWORD', os.getenv('MINIO_SECRET_KEY', 'minioadmin123'))
 MINIO_BUCKET_NAME = os.getenv('MINIO_BUCKET_NAME', 'call-recordings')
+
+# Django REST Framework & OpenAPI Documentation (drf-spectacular + Scalar)
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'منصة المساعد الصوتي والذكاء الاصطناعي (Smart Voice AI)',
+    'DESCRIPTION': 'توثيق واجهات برمجة التطبيقات للمطورين وحلول الشركاء (SaaS & WebRTC Calling)',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SECURITY': [
+        {'ApiKeyAuth': []},
+        {'BearerAuth': []},
+    ],
+    'APPEND_COMPONENTS': {
+        'securitySchemes': {
+            'ApiKeyAuth': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'X-API-Key',
+                'description': 'مفتاح الـ API الشخصي (sk_live_usr_... أو sk_live_ptnr_...)',
+            },
+            'BearerAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+                'description': 'Bearer Token للوصول المصرح',
+            },
+        }
+    },
+}

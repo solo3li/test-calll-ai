@@ -14,9 +14,40 @@ from google import genai
 from google.genai import types
 from pgvector.django import CosineDistance
 
+from rest_framework.decorators import api_view
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.views import SpectacularAPIView
 from .models import UserApiKey
 from .decorators import user_api_key_required
 from .user_openapi_spec import get_user_openapi_spec
+from .serializers import (
+    UserAccountResponseSerializer,
+    AgentProfileSerializer,
+    AgentProfileCreateRequestSerializer,
+    AgentProfilesListResponseSerializer,
+    AgentStudioMetadataResponseSerializer,
+    CustomerMemorySerializer,
+    CustomerMemoryCreateRequestSerializer,
+    DocumentSerializer,
+    RAGQueryRequestSerializer,
+    RAGQueryResponseSerializer,
+    MCPServerSerializer,
+    MCPServerCreateRequestSerializer,
+    SIPTrunkSerializer,
+    TelephonyNumberSerializer,
+    EmployeeSerializer,
+    EmployeeCreateRequestSerializer,
+    QueueSerializer,
+    QueueCreateRequestSerializer,
+    WebRTCTokenResponseSerializer,
+    DialCallRequestSerializer,
+    DialCallResponseSerializer,
+    HangupCallRequestSerializer,
+    CallSessionSerializer,
+    WebhookEventSerializer,
+    BaseSuccessResponseSerializer,
+    BaseErrorResponseSerializer,
+)
 
 from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
@@ -111,26 +142,60 @@ def api_user_docs(request):
     })
 
 
-def api_user_openapi_spec(request):
+class UserSpectacularSchemaView(SpectacularAPIView):
     """
-    GET /api/v1/docs/openapi.json
-    Dynamically serves OpenAPI 3.1 specification for User Developer API.
-    Supports bilingual content (?lang=ar | ?lang=en).
+    OpenAPI 3.1 Schema generator powered by drf-spectacular for User Developer API.
+    Provides isolated schema for /api/v1/ endpoints and feeds Scalar Docs directly.
     """
-    lang = request.GET.get('lang', 'ar').lower().strip()
-    if lang not in ('ar', 'en'):
-        lang = 'ar'
+    custom_settings = {
+        'TITLE': 'واجهات المطورين المباشرة - User Developer API (v1)',
+        'DESCRIPTION': 'واجهات برمجة التطبيقات للمطورين للتحكم في المساعد الصوتي، المكالمات الحية WebRTC، الشخصيات، واستدعاء أدوات FastMCP.',
+        'VERSION': '1.0.0',
+        'PREPROCESSING_HOOKS': ['developer.openapi_hooks.filter_user_endpoints'],
+    }
 
-    server_url = "/api/v1"
-    spec = get_user_openapi_spec(server_url=server_url, lang=lang)
-    return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+    def get(self, request, *args, **kwargs):
+        lang = request.GET.get('lang', 'ar').lower().strip()
+        if lang not in ('ar', 'en'):
+            lang = 'ar'
+
+        resp = super().get(request, *args, **kwargs)
+        spec = resp.data if hasattr(resp, 'data') else {}
+
+        legacy_spec = get_user_openapi_spec(server_url='/api/v1', lang=lang)
+        if not spec.get('paths'):
+            spec['paths'] = legacy_spec.get('paths', {})
+        else:
+            for path_key, path_data in legacy_spec.get('paths', {}).items():
+                if path_key not in spec['paths']:
+                    spec['paths'][path_key] = path_data
+
+        for k in ('info', 'tags', 'servers', 'components'):
+            if k not in spec or not spec[k]:
+                spec[k] = legacy_spec.get(k, {})
+
+        if lang == 'en':
+            if 'info' in spec:
+                spec['info']['title'] = 'User Developer REST API (v1)'
+                spec['info']['description'] = 'Developer REST API for Voice Assistant, LiveKit WebRTC, and FastMCP tools.'
+
+        return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+
+
+api_user_openapi_spec = UserSpectacularSchemaView.as_view()
 
 
 # =========================================================================
 # User RESTful Developer API Endpoints (Authenticated via X-API-Key)
 # =========================================================================
 
-@csrf_exempt
+@extend_schema(
+    summary="بيانات الحساب والرصيد المالي",
+    description="استرجاع تفاصيل الحساب، الرصيد المالي الحالي بالدولار، والشخصية المفعلة وإحصائيات النظام.",
+    responses={200: UserAccountResponseSerializer},
+    tags=["1. الحساب والرصيد (Account & Billing)"]
+)
+@api_view(['GET'])
 @user_api_key_required
 def api_user_account(request):
     """
