@@ -83,8 +83,8 @@ class AgentProfile(models.Model):
     gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default='female')
     language = models.CharField(max_length=50, choices=LANGUAGE_CHOICES, default='arabic')
     dialect = models.CharField(max_length=50, choices=DIALECT_CHOICES, default='egyptian')
-    persona_role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='customer_support')
-    speaking_style = models.CharField(max_length=50, choices=STYLE_CHOICES, default='friendly')
+    persona_role = models.TextField(blank=True, default='خدمة عملاء ومبيعات المتجر')
+    speaking_style = models.TextField(blank=True, default='ودود ولطيف ومرح')
     custom_instructions = models.TextField(blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -140,9 +140,9 @@ class AgentProfile(models.Model):
             "dialect": self.dialect,
             "dialect_display": self.get_dialect_display(),
             "persona_role": self.persona_role,
-            "persona_role_display": self.get_persona_role_display(),
+            "persona_role_display": self.persona_role,
             "speaking_style": self.speaking_style,
-            "speaking_style_display": self.get_speaking_style_display(),
+            "speaking_style_display": self.speaking_style,
             "custom_instructions": self.custom_instructions,
             "is_active": self.is_active,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),

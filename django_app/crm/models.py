@@ -90,6 +90,7 @@ class CallSession(models.Model):
     cost = models.DecimalField(max_digits=10, decimal_places=4, default=0.0000, verbose_name="تكلفة المكالمة")
     transcript_text = models.TextField(blank=True, default='')
     summary = models.TextField(blank=True, default='')
+    recording_url = models.CharField(max_length=500, blank=True, default='')
 
     class Meta:
         db_table = 'voice_assistant_callsession'
@@ -97,6 +98,26 @@ class CallSession(models.Model):
 
     def __str__(self):
         return f"جلسة مكالمة {self.room_name} ({self.get_direction_display()}) - {self.user.username}"
+
+    @property
+    def dialogue_turns(self):
+        """Parse transcript text into structured dialogue turns."""
+        if not self.transcript_text:
+            return []
+        turns = []
+        for line in self.transcript_text.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            if ':' in line:
+                speaker, _, text = line.partition(':')
+                turns.append({"speaker": speaker.strip(), "text": text.strip()})
+            elif ' - ' in line:
+                speaker, _, text = line.partition(' - ')
+                turns.append({"speaker": speaker.strip(), "text": text.strip()})
+            else:
+                turns.append({"speaker": "dialogue", "text": line})
+        return turns
 
     def to_dict(self):
         return {
@@ -115,6 +136,8 @@ class CallSession(models.Model):
             "cost_formatted": f"{self.cost:.2f}",
             "summary": self.summary or "",
             "transcript_text": self.transcript_text or "",
+            "recording_url": self.recording_url or "",
+            "dialogue_turns": self.dialogue_turns,
         }
 
 

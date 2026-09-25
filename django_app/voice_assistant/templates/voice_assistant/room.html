@@ -532,24 +532,20 @@
 
             <!-- Persona Role -->
             <div class="bg-[#FAF7F2] border border-[#EAE3D9] rounded-2xl p-3.5 space-y-2">
-              <label class="block font-semibold text-[#443D39]" data-i18n="field_persona_role">الدور والشخصية</label>
-              <select id="field-role" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917]">
-                <option value="customer_support">خدمة عملاء ومبيعات المتجر</option>
-                <option value="sales_advisor">مستشار تسويق ومبيعات شاطر</option>
-                <option value="personal_assistant">مساعد شخصي ذكي وودود</option>
-                <option value="technical_consultant">مستشار فني ورسمي</option>
-              </select>
+              <div class="flex justify-between items-center">
+                <label class="block font-semibold text-[#443D39]" data-i18n="field_persona_role">الدور والشخصية (كتابة حرة)</label>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-[#FAF0F2] text-[#680E23] border border-[#E8CCD2]">تخصيص حر</span>
+              </div>
+              <textarea id="field-role" rows="2" placeholder="اكتب الدور والشخصية المحددة للذكاء الاصطناعي بحرية تامة (مثال: ممثل خدمة عملاء محترف لمتجر عطور، مستشار مبيعات عقارية خبير...)" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]"></textarea>
             </div>
 
             <!-- Speaking Style & Pacing -->
             <div class="bg-[#FAF7F2] border border-[#EAE3D9] rounded-2xl p-3.5 space-y-2">
-              <label class="block font-semibold text-[#443D39]" data-i18n="field_speaking_style">أسلوب الإلقاء والنبرة</label>
-              <select id="field-style" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917]">
-                <option value="friendly">ودود ولطيف ومرح</option>
-                <option value="formal">رسمي وهادئ ورصين</option>
-                <option value="concise">مباشر وسريع وموجز</option>
-                <option value="enthusiastic">حماسي وتشجيعي</option>
-              </select>
+              <div class="flex justify-between items-center">
+                <label class="block font-semibold text-[#443D39]" data-i18n="field_speaking_style">أسلوب الإلقاء والنبرة (كتابة حرة)</label>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-[#FAF0F2] text-[#680E23] border border-[#E8CCD2]">نبرة حرة</span>
+              </div>
+              <textarea id="field-style" rows="2" placeholder="اكتب أسلوب الإلقاء والنبرة بحرية تامة (مثال: ودود ولطيف ومرح، رسمي وهادئ ورصين، سريع وموجز، حماسي ونشيط...)" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]"></textarea>
             </div>
           </div>
 
@@ -1363,24 +1359,14 @@
             </select>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label class="block font-semibold text-[#443D39] mb-1">الدور</label>
-              <select id="new-prof-role" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#E8E0D5] border border-[#DDD5C7] rounded-xl text-[#1C1917]">
-                <option value="customer_support">خدمة عملاء المتجر</option>
-                <option value="sales_advisor">مستشار مبيعات</option>
-                <option value="personal_assistant">مساعد شخصي</option>
-                <option value="technical_consultant">مستشار فني</option>
-              </select>
+              <label class="block font-semibold text-[#443D39] mb-1">الدور والشخصية (كتابة حرة)</label>
+              <textarea id="new-prof-role" rows="2" placeholder="اكتب الدور بحرية (مثال: ممثل خدمة عملاء محترف...)" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]">خدمة عملاء ومبيعات المتجر</textarea>
             </div>
             <div>
-              <label class="block font-semibold text-[#443D39] mb-1">أسلوب الإلقاء</label>
-              <select id="new-prof-style" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#E8E0D5] border border-[#DDD5C7] rounded-xl text-[#1C1917]">
-                <option value="friendly">ودود ولطيف</option>
-                <option value="formal">رسمي ورصين</option>
-                <option value="concise">موجز وسريع</option>
-                <option value="enthusiastic">حماسي</option>
-              </select>
+              <label class="block font-semibold text-[#443D39] mb-1">أسلوب الإلقاء والنبرة (كتابة حرة)</label>
+              <textarea id="new-prof-style" rows="2" placeholder="اكتب النبرة بحرية (مثال: ودود ولطيف ومرح...)" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]">ودود ولطيف ومرح</textarea>
             </div>
           </div>
 

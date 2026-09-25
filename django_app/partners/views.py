@@ -367,6 +367,8 @@ def api_partner_client_calls(request, client_id):
             "cost": float(call.cost),
             "summary": call.summary or "",
             "transcript_text": call.transcript_text or "",
+            "recording_url": call.recording_url or "",
+            "dialogue_turns": call.dialogue_turns,
         })
 
     return JsonResponse({
@@ -433,6 +435,69 @@ def api_partner_client_call_dial(request, client_id):
 
 @csrf_exempt
 @partner_client_access_required
+def api_partner_client_call_hangup(request, client_id=None):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/calls/hangup/
+    Terminate an active call session immediately for this sub-client.
+    Accepts:
+    {
+        "call_id": "room_name_or_call_session_id"
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use POST."}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON body format"}, status=400)
+
+    room_name = str(data.get('call_id') or data.get('room_name') or '').strip()
+    if not room_name:
+        return JsonResponse({"status": "error", "message": "call_id or room_name is required"}, status=400)
+
+    from call_center.views import api_hangup_call
+    return api_hangup_call(request)
+
+
+@csrf_exempt
+@partner_required
+def api_partner_studio(request, client_id=None):
+    """
+    GET /api/partner/v1/studio/ or /api/partner/v1/clients/<int:client_id>/profiles/studio/
+    Returns full studio customization metadata:
+    - 30 Google HD studio voices with styles and gender classifications
+    - 11 Supported languages
+    - 29 Regional dialects grouped hierarchically
+    - Sample roles and styles for free-text inspiration
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    from agents.views import GOOGLE_VOICES, LANGUAGE_DIALECTS_MAP
+    return JsonResponse({
+        "status": "success",
+        "google_voices": GOOGLE_VOICES,
+        "languages": [{"id": l[0], "label": l[1]} for l in AgentProfile.LANGUAGE_CHOICES],
+        "language_dialects_map": LANGUAGE_DIALECTS_MAP,
+        "genders": [{"id": g[0], "label": g[1]} for g in AgentProfile.GENDER_CHOICES],
+        "sample_roles": [
+            "ممثل خدمة عملاء محترف لمتجر الكتروني",
+            "مستشار تسويق ومبيعات عقارية خبير في الفلل والأراضي",
+            "مساعد شخصي ذكي وودود لحجز المواعيد وتنظيم المهام",
+            "مستشار دعم فني وتقني متخصص لحل المشاكل التقنية"
+        ],
+        "sample_styles": [
+            "ودود ولطيف ومرح، يبعث على الراحة والابتسامة في الحديث",
+            "رسمي ومهني وجاد، خالٍ من المزاح المفرط، ويركز على الوقار والاحترام",
+            "مباشر وسريع وموجز، يقدم الإجابة بكلمات قليلة ومفيدة دون إطالة",
+            "حماسي ونشيط ومتفائل، يظهر طاقة إيجابية عالية في الرد"
+        ]
+    })
+
+
+@csrf_exempt
+@partner_client_access_required
 def api_partner_client_profile(request, client_id):
     """
     GET & POST /api/partner/v1/clients/<int:client_id>/profiles/
@@ -478,11 +543,12 @@ def api_partner_client_profile(request, client_id):
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
         name = data.get('name') or f"مساعد {request.client_user.first_name or request.client_user.username}"
-        voice_name = data.get('voice_name', 'Aoede')
-        gender = data.get('gender', 'female')
-        dialect = data.get('dialect', 'egyptian')
-        persona_role = data.get('persona_role', 'customer_support')
-        speaking_style = data.get('speaking_style', 'friendly')
+        voice_name = data.get('voice_name', 'Aoede').strip()
+        gender = data.get('gender', 'female').strip()
+        language = data.get('language', 'arabic').strip()
+        dialect = data.get('dialect', 'egyptian').strip()
+        persona_role = str(data.get('persona_role', 'خدمة عملاء ومبيعات المتجر')).strip()
+        speaking_style = str(data.get('speaking_style', 'ودود ولطيف ومرح')).strip()
         custom_instructions = data.get('custom_instructions') or data.get('system_prompt', '')
         is_active = data.get('is_active', True)
 
@@ -491,6 +557,7 @@ def api_partner_client_profile(request, client_id):
             name=name,
             voice_name=voice_name,
             gender=gender,
+            language=language,
             dialect=dialect,
             persona_role=persona_role,
             speaking_style=speaking_style,
@@ -539,18 +606,9 @@ def api_partner_client_profile_detail(request, client_id, profile_id):
         except Exception:
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
-        if 'name' in data:
-            profile.name = str(data['name']).strip()
-        if 'voice_name' in data:
-            profile.voice_name = str(data['voice_name']).strip()
-        if 'gender' in data:
-            profile.gender = str(data['gender']).strip()
-        if 'dialect' in data:
-            profile.dialect = str(data['dialect']).strip()
-        if 'persona_role' in data:
-            profile.persona_role = str(data['persona_role']).strip()
-        if 'speaking_style' in data:
-            profile.speaking_style = str(data['speaking_style']).strip()
+        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style']:
+            if field in data:
+                setattr(profile, field, str(data[field]).strip())
         if 'custom_instructions' in data or 'system_prompt' in data:
             profile.custom_instructions = data.get('custom_instructions') or data.get('system_prompt', '')
         if 'is_active' in data:
@@ -1197,11 +1255,13 @@ def api_partner_client_queues(request, client_id):
 
         name = data.get('name', 'طابور خدمة العملاء')
         code = str(data.get('code', '200')).strip()
+        description = str(data.get('description', '')).strip()
         queue, created = CallQueue.objects.update_or_create(
             user=request.client_user,
             code=code,
             defaults={
                 'name': name,
+                'description': description,
                 'strategy': data.get('strategy', 'round_robin'),
                 'ring_timeout_seconds': int(data.get('ring_timeout_seconds', 15)),
                 'total_timeout_seconds': int(data.get('total_timeout_seconds', 60)),
@@ -1261,6 +1321,8 @@ def api_partner_client_queue_detail(request, client_id, queue_id):
                 if CallQueue.objects.filter(user=request.client_user, code=new_code).exclude(id=queue.id).exists():
                     return JsonResponse({"status": "error", "message": f"Queue code '{new_code}' already exists"}, status=409)
                 queue.code = new_code
+        if 'description' in data:
+            queue.description = str(data['description']).strip()
         if 'strategy' in data:
             queue.strategy = data['strategy']
         if 'ring_timeout_seconds' in data:

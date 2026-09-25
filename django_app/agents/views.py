@@ -163,8 +163,8 @@ def create_profile(request):
         gender = data.get('gender', 'female')
         language = data.get('language', '').strip() or 'arabic'
         dialect = data.get('dialect', 'egyptian')
-        persona_role = data.get('persona_role', 'customer_support')
-        speaking_style = data.get('speaking_style', 'friendly')
+        persona_role = str(data.get('persona_role', 'خدمة عملاء ومبيعات المتجر')).strip()
+        speaking_style = str(data.get('speaking_style', 'ودود ولطيف ومرح')).strip()
         custom_instructions = data.get('custom_instructions', '').strip()
         is_active = bool(data.get('is_active', True))
 
@@ -209,9 +209,9 @@ def update_profile(request, profile_id):
         if 'dialect' in data:
             profile.dialect = data['dialect']
         if 'persona_role' in data:
-            profile.persona_role = data['persona_role']
+            profile.persona_role = str(data['persona_role']).strip()
         if 'speaking_style' in data:
-            profile.speaking_style = data['speaking_style']
+            profile.speaking_style = str(data['speaking_style']).strip()
         if 'custom_instructions' in data:
             profile.custom_instructions = data['custom_instructions'].strip()
         if 'is_active' in data:

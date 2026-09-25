@@ -768,7 +768,7 @@ def api_hangup_call(request):
 
     try:
         data = json.loads(request.body.decode('utf-8')) if request.body else {}
-        room_name = data.get('room_name')
+        room_name = data.get('room_name') or data.get('call_id')
         target_employee_id = data.get('target_employee_id')
 
         if not room_name and not target_employee_id:
@@ -866,7 +866,16 @@ def api_hangup_call(request):
         # 6. Complete all open call logs for this room and notify employees + reset status
         if room_name:
             from django.utils import timezone
+            from crm.models import CallSession
+            import math
             now = timezone.now()
+            for sess in CallSession.objects.filter(room_name=room_name, ended_at__isnull=True):
+                sess.ended_at = now
+                d_sec = max(int((now - sess.started_at).total_seconds()), 0)
+                sess.duration_seconds = d_sec
+                sess.billed_minutes = math.ceil(d_sec / 60.0) if d_sec > 0 else 0
+                sess.save(update_fields=['ended_at', 'duration_seconds', 'billed_minutes'])
+
             open_logs = EmployeeCallLog.objects.filter(room_name=room_name, ended_at__isnull=True).select_related('employee')
             for log in open_logs:
                 elapsed = int((now - log.started_at).total_seconds())

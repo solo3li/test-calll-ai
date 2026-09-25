@@ -14,6 +14,7 @@ urlpatterns = [
     path('account/', views.api_user_account, name='developer_account'),
     
     path('profiles/', views.api_user_profiles, name='developer_profiles'),
+    path('profiles/studio/', views.api_user_profiles_studio, name='developer_profiles_studio'),
     path('profiles/<int:profile_id>/', views.api_user_profile_detail, name='developer_profile_detail'),
     path('profiles/<int:profile_id>/activate/', views.api_user_profile_activate, name='developer_profile_activate'),
 
@@ -35,9 +36,11 @@ urlpatterns = [
 
     path('queues/', views.api_user_queues, name='developer_queues'),
     path('queues/<int:queue_id>/', views.api_user_queue_detail, name='developer_queue_detail'),
+    path('queues/<int:queue_id>/members/', views.api_user_queue_members, name='developer_queue_members'),
 
     path('token/', views.api_user_token, name='developer_token'),
     path('calls/', views.api_user_calls, name='developer_calls'),
     path('calls/dial/', views.api_user_call_dial, name='developer_calls_dial'),
+    path('calls/hangup/', views.api_user_call_hangup, name='developer_calls_hangup'),
     path('webhooks/', views.api_user_webhooks, name='developer_webhooks'),
 ]

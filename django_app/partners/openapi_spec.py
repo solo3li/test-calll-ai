@@ -194,6 +194,22 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                 }
             }
         },
+        "/studio/": {
+            "get": {
+                "tags": [tag_map["tag_profiles"]],
+                "summary": "استوديو تخصيص الشخصية والأصوات للشريك (Partner Persona Studio)" if is_ar else "Voice & Persona Studio Metadata",
+                "description": "استرجاع قائمة كافة أصوات Google الـ 30 واللغات الـ 11 واللهجات الـ 29 ونماذج الأدوار والأساليب." if is_ar else "Get full studio catalog: 30 Google HD voices, 11 languages, 29 dialects, and sample roles/styles.",
+                "responses": {"200": {"description": "بيانات استوديو الشخصيات" if is_ar else "Persona studio metadata"}}
+            }
+        },
+        "/clients/{client_id}/profiles/studio/": {
+            "get": {
+                "tags": [tag_map["tag_profiles"]],
+                "summary": "استوديو تخصيص الشخصية لصالح عميل فرعي (Client Persona Studio)" if is_ar else "Client Voice & Persona Studio Metadata",
+                "parameters": [{"$ref": "#/components/parameters/ClientId"}],
+                "responses": {"200": {"description": "بيانات استوديو الشخصيات" if is_ar else "Persona studio metadata"}}
+            }
+        },
         "/clients/{client_id}/profiles/": {
             "get": {
                 "tags": [tag_map["tag_profiles"]],
@@ -875,6 +891,30 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     "402": {"description": "رصيد محفظة الشريك غير كافٍ" if is_ar else "Partner balance insufficient"},
                     "403": {"description": "تم تجاوز سقف الاستهلاك المحدد للعميل الفرعي" if is_ar else "Client spending or minute cap exceeded"},
                     "422": {"description": "لا يوجد مسار اتصال صادر مفعل" if is_ar else "No active outbound route configured"}
+                }
+            }
+        },
+        "/clients/{client_id}/calls/hangup/": {
+            "post": {
+                "tags": [tag_map["tag_cdr"]],
+                "summary": "إنهاء مكالمة جارية لعميل فرعي (Hangup Client Call)" if is_ar else "Hang Up Client Call Session",
+                "parameters": [{"$ref": "#/components/parameters/ClientId"}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["call_id"],
+                                "properties": {
+                                    "call_id": {"type": "string", "example": "partner_1_19_ai_out_fa7b2c", "description": "معرف المكالمة أو اسم الغرفة"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "تم إنهاء المكالمة بنجاح" if is_ar else "Call terminated successfully"}
                 }
             }
         },

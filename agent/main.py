@@ -608,23 +608,33 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
     }
     dialect_rules = DIALECT_RULES_MAP.get(dialect, DIALECT_RULES_MAP["egyptian"])
 
-    # 3. Role
+    # 3. Role & Persona (supports preset keys or full free-text typed by user)
     role_map = {
         "customer_support": "دورك هو ممثل خدمة عملاء محترف لمتجر المستخدم: تساعد في الرد على استفسارات المنتجات وتتبع الشحنات وحل المشكلات بلباقة وسرعة.",
         "sales_advisor": "دورك هو مستشار مبيعات خبير وشاطر: تشرح مزايا ومواصفات المنتجات بأسلوب مقنع وجذاب وتشجع العميل بلطف على إتمام الشراء.",
         "personal_assistant": "دورك هو مساعد شخصي ذكي وودود: تنظم الأمور وتجيب على الأسئلة بوضوح ومرونة وسرعة.",
         "technical_consultant": "دورك هو مستشار فني ورسمي: تقدم إجابات دقيقة واحترافية وتركز على التفاصيل والمواصفات بحرفية عالية."
     }
-    role_text = role_map.get(role, role_map["customer_support"])
+    if role in role_map:
+        role_text = role_map[role]
+    elif role and str(role).strip():
+        role_text = f"الدور والشخصية المحددة لك بدقة: {str(role).strip()}"
+    else:
+        role_text = role_map["customer_support"]
 
-    # 4. Speaking style
+    # 4. Speaking style & Tone (supports preset keys or full free-text typed by user)
     style_map = {
         "friendly": "أسلوب الإلقاء: ودود ولطيف ومرح، يبعث على الراحة والابتسامة في الحديث.",
         "formal": "أسلوب الإلقاء: رسمي ومهني وجاد، خالٍ من المزاح المفرط، ويركز على الوقار والاحترام.",
         "concise": "أسلوب الإلقاء: مباشر وسريع وموجز، يقدم الإجابة بكلمات قليلة ومفيدة دون مقدمات طويلة.",
         "enthusiastic": "أسلوب الإلقاء: حماسي ونشيط ومتفائل، يظهر طاقة إيجابية عالية في الرد."
     }
-    style_text = style_map.get(style, style_map["friendly"])
+    if style in style_map:
+        style_text = style_map[style]
+    elif style and str(style).strip():
+        style_text = f"أسلوب الإلقاء والنبرة المطلوب منك الالتزام التام بها: {str(style).strip()}"
+    else:
+        style_text = style_map["friendly"]
 
     custom_text = f"\nتعليمات خاصة إضافية من المستخدم:\n{custom}\n" if custom else ""
 

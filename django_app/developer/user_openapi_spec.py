@@ -101,6 +101,14 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 }
             }
         },
+        "/profiles/studio/": {
+            "get": {
+                "tags": [tag_map["tag_profiles"]],
+                "summary": "استوديو تخصيص الشخصية والأصوات (Persona Studio Metadata)" if is_ar else "Voice & Persona Studio Metadata",
+                "description": "استرجاع قائمة كافة أصوات Google الرسمية الـ 30، اللغات الـ 11، اللهجات الـ 29، ونماذج الأدوار والأساليب الحرة." if is_ar else "Get full studio catalog: 30 Google HD voices, 11 languages, 29 dialects, and inspiration roles/styles.",
+                "responses": {"200": {"description": "بيانات استوديو الشخصيات" if is_ar else "Persona studio metadata"}}
+            }
+        },
         "/profiles/": {
             "get": {
                 "tags": [tag_map["tag_profiles"]],
@@ -441,13 +449,57 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                                 "required": ["name"],
                                 "properties": {
                                     "name": {"type": "string", "example": "طابور الدعم الفني" if is_ar else "Technical Support Queue"},
-                                    "strategy": {"type": "string", "enum": ["round_robin", "least_recent", "random"], "default": "round_robin"}
+                                    "code": {"type": "string", "example": "200", "description": "كود الطابور للتحويل"},
+                                    "description": {"type": "string", "example": "طابور استفسارات المنتجات والشحن والمبيعات"},
+                                    "strategy": {"type": "string", "enum": ["round_robin", "ring_all"], "default": "round_robin"},
+                                    "ring_timeout_seconds": {"type": "integer", "default": 15},
+                                    "total_timeout_seconds": {"type": "integer", "default": 60},
+                                    "fallback_action": {"type": "string", "enum": ["ai_assistant", "hangup"], "default": "ai_assistant"},
+                                    "members": {"type": "array", "items": {"type": "integer"}, "description": "قائمة معرفات الموظفين"}
                                 }
                             }
                         }
                     }
                 },
                 "responses": {"201": {"description": "تم إنشاء الطابور بنجاح" if is_ar else "Queue created successfully"}}
+            }
+        },
+        "/queues/{queue_id}/members/": {
+            "get": {
+                "tags": [tag_map["tag_queues"]],
+                "summary": "استعراض أعضاء الطابور (List Queue Members)" if is_ar else "List Queue Members",
+                "parameters": [{"name": "queue_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                "responses": {"200": {"description": "أعضاء الطابور" if is_ar else "Queue members list"}}
+            },
+            "post": {
+                "tags": [tag_map["tag_queues"]],
+                "summary": "إضافة موظف إلى الطابور (Add Queue Member)" if is_ar else "Add Employee to Queue",
+                "parameters": [{"name": "queue_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["employee_id"],
+                                "properties": {
+                                    "employee_id": {"type": "integer", "example": 1},
+                                    "order": {"type": "integer", "default": 0}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "تمت إضافة الموظف للطابور" if is_ar else "Employee added to queue"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_queues"]],
+                "summary": "إزالة موظف من الطابور (Remove Queue Member)" if is_ar else "Remove Employee from Queue",
+                "parameters": [
+                    {"name": "queue_id", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    {"name": "employee_id", "in": "query", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تمت الإزالة بنجاح" if is_ar else "Member removed successfully"}}
             }
         },
         "/token/": {
@@ -573,6 +625,35 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 }
             }
         },
+        "/calls/hangup/": {
+            "post": {
+                "tags": [tag_map["tag_cdr"]],
+                "summary": "إنهاء مكالمة جارية فورياً (Hangup Active Call)" if is_ar else "Hang Up Active Call Session",
+                "description": (
+                    "إنهاء مكالمة هاتفية أو صوتية جارية فورياً وفصل المتصل والذكاء الاصطناعي وحذف غرفة LiveKit وتسجيل مدة المكالمة."
+                    if is_ar else
+                    "Immediately terminates an active voice/phone call session, closes the LiveKit room, notifies presence channels, and finalizes call logs."
+                ),
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["call_id"],
+                                "properties": {
+                                    "call_id": {"type": "string", "example": "user_1_8f9e", "description": "معرف المكالمة أو اسم الغرفة"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "تم إنهاء المكالمة بنجاح" if is_ar else "Call terminated successfully"},
+                    "400": {"description": "معرف المكالمة غير محدد" if is_ar else "call_id is required"}
+                }
+            }
+        },
         "/webhooks/": {
             "get": {
                 "tags": [tag_map["tag_webhooks"]],
@@ -660,9 +741,10 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                     "name": {"type": "string", "example": "مساعد المبيعات السعودي" if is_ar else "Saudi Sales Advisor"},
                     "voice_name": {"type": "string", "default": "Aoede", "example": "Aoede"},
                     "gender": {"type": "string", "enum": ["female", "male"], "default": "female"},
-                    "dialect": {"type": "string", "enum": ["saudi", "egyptian", "levantine", "fusha", "english"], "default": "saudi"},
-                    "persona_role": {"type": "string", "default": "sales_advisor"},
-                    "speaking_style": {"type": "string", "default": "friendly"},
+                    "language": {"type": "string", "default": "arabic", "example": "arabic"},
+                    "dialect": {"type": "string", "default": "egyptian", "example": "egyptian"},
+                    "persona_role": {"type": "string", "description": "الدور والشخصية المحددة بكتابة حرة مفتوحة", "example": "ممثل خدمة عملاء ومبيعات متجر الكتروني"},
+                    "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة المطلوب الالتزام بها بكتابة حرة", "example": "ودود ولطيف ومرح"},
                     "custom_instructions": {"type": "string", "example": "أنت مستشار مبيعات ودود وذكي." if is_ar else "You are a friendly and smart sales advisor."},
                     "is_active": {"type": "boolean", "default": True}
                 }
@@ -673,7 +755,10 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                     "name": {"type": "string"},
                     "voice_name": {"type": "string"},
                     "gender": {"type": "string", "enum": ["female", "male"]},
-                    "dialect": {"type": "string", "enum": ["saudi", "egyptian", "levantine", "fusha", "english"]},
+                    "language": {"type": "string"},
+                    "dialect": {"type": "string"},
+                    "persona_role": {"type": "string", "description": "الدور والشخصية بكتابة حرة"},
+                    "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة بكتابة حرة"},
                     "custom_instructions": {"type": "string"},
                     "is_active": {"type": "boolean"}
                 }
