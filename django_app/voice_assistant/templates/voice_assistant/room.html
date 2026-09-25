@@ -1643,6 +1643,15 @@
             </div>
           </div>
 
+          <div>
+            <label class="block font-semibold text-[#443D39] mb-1">
+              <span>وصف واختصاصات الطابور للذكاء الاصطناعي</span>
+              <span class="text-[11px] font-normal text-[#8C827A] mr-1">(لتوجيه الـ AI متى يحول للموظفين)</span>
+            </label>
+            <textarea id="queue-description" rows="2" placeholder="مثال: مخصص لشكاوى الفواتير، الدعم الفني، والمشاكل التقنية. حول المتصل هنا عند حدوث مشكلة أو طلب الدعم." class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23] leading-relaxed"></textarea>
+            <p class="text-[10px] text-[#8C827A] mt-0.5">يعتمد مساعد الذكاء الاصطناعي على هذا الوصف في المكالمة ليقرر متى يحول المتصل إلى هذا القسم فوراً.</p>
+          </div>
+
           <div class="grid grid-cols-3 gap-2">
             <div>
               <label class="block font-semibold text-[#443D39] mb-1">استراتيجية التوزيع</label>
@@ -1687,8 +1696,40 @@
       </div>
     </div>
 
-
-
+    <!-- Edit Queue Description Modal -->
+    <div id="edit-queue-modal" class="fixed inset-0 z-50 bg-[#FAF7F2]/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-white border border-[#EAE3D9] rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-3 border-b border-[#EAE3D9]">
+          <h3 class="text-base font-bold text-[#1C1917] flex items-center gap-2">
+            <span>⚙️</span> تعديل اختصاصات وتوجيهات الطابور للـ AI
+          </h3>
+          <button type="button" onclick="closeEditQueueModal()" class="text-[#6E645D] hover:text-[#2D2825]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <input type="hidden" id="edit-queue-id" />
+        <div class="space-y-3">
+          <div>
+            <div class="font-bold text-[#680E23] text-sm mb-1" id="edit-queue-title-label">طابور الدعم</div>
+            <p class="text-[11px] text-[#8C827A]">قم بتحديد متى يحول المساعد الصوتي المكالمة إلى هذا الطابور بالتفصيل.</p>
+          </div>
+          <div>
+            <label class="block font-semibold text-[#443D39] mb-1">وصف واختصاصات الطابور للذكاء الاصطناعي:</label>
+            <textarea id="edit-queue-description" rows="4" placeholder="مثال: مخصص لشكاوى الفواتير، الاستفسارات التقنية، الدعم الفني، والمشاكل الحسابية. حول المتصل هنا عند طلب التحدث مع الدعم أو موظف بشري." class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23] leading-relaxed"></textarea>
+            <p class="text-[10px] text-[#8C827A] mt-1">يقرأ الذكاء الاصطناعي هذا الوصف أثناء الحوار مع المتصل ليحول إليه تلقائياً عند مطابقة المشكلة.</p>
+          </div>
+        </div>
+        <div id="edit-queue-error" class="hidden p-2 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-300 text-xs"></div>
+        <div class="flex justify-end gap-2 pt-3 border-t border-[#EAE3D9]">
+          <button type="button" onclick="closeEditQueueModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] transition">إلغاء</button>
+          <button type="button" onclick="saveQueueDescription()" id="btn-save-queue-desc" class="px-4 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-semibold transition flex items-center gap-1.5">
+            <span>حفظ التعديلات</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- New Employee Modal -->
     <div id="new-employee-modal" class="fixed inset-0 z-50 bg-[#FAF7F2]/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
@@ -4641,9 +4682,14 @@
                   ${escapeHtml(q.code)}
                 </span>
               </td>
-              <td class="py-3 px-3 font-bold text-[#1C1917]">
-                ${escapeHtml(q.name)}
-                ${q.hold_music_url ? '<span class="mr-1 text-[10px] text-[#680E23]" title="موسيقى انتظار مخصصة">🎵</span>' : ''}
+              <td class="py-3 px-3">
+                <div class="font-bold text-[#1C1917] flex items-center gap-1.5">
+                  <span>${escapeHtml(q.name)}</span>
+                  ${q.hold_music_url ? '<span class="text-[10px] text-[#680E23]" title="موسيقى انتظار مخصصة">🎵</span>' : ''}
+                </div>
+                <div class="text-[11px] text-[#6E645D] font-normal mt-0.5 max-w-xs leading-snug line-clamp-2" title="${escapeHtml(q.description || 'لا يوجد وصف')}">
+                  ${q.description ? `<span class="text-[#680E23] font-semibold">🤖 اختصاص الـ AI:</span> ${escapeHtml(q.description)}` : `<span class="text-[#8C827A] italic">لم يُحدد وصف لاختصاص الطابور للـ AI</span>`}
+                </div>
               </td>
               <td class="py-3 px-3 text-[#443D39] font-mono text-[11px]">${strategyLabel}</td>
               <td class="py-3 px-3">
@@ -4651,14 +4697,22 @@
               </td>
               <td class="py-3 px-3 text-center">${waitingBadge}</td>
               <td class="py-3 px-3 text-center">
-                <div class="flex items-center justify-center gap-1.5">
+                <div class="flex items-center justify-center gap-1.5 flex-wrap">
                   <button 
                     type="button" 
                     onclick="dialTargetFromDashboard('${escapeHtml(q.code)}', '${escapeHtml(q.name)}')"
                     class="px-2.5 py-1 rounded-lg bg-[#FAF0F2] hover:bg-[#FAF0F2] text-[#680E23] border border-[#EAE3D9] text-[11px] font-bold transition inline-flex items-center gap-1 shadow-sm"
                     title="اتصال وتجربة الطابور عبر WebRTC"
                   >
-                    <span>📞 اتصال بالطابور</span>
+                    <span>📞 اتصال</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    onclick="openEditQueueModal('${q.id}', '${escapeHtml(q.name)}', '${escapeHtml(q.description || '')}')"
+                    class="px-2 py-1 rounded-lg bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#680E23] border border-[#DDD5C7] text-[11px] font-semibold transition inline-flex items-center gap-1 shadow-sm"
+                    title="تعديل اختصاصات ووصف الطابور للذكاء الاصطناعي"
+                  >
+                    <span>✏️ وصف الـ AI</span>
                   </button>
                   <button 
                     type="button" 
@@ -4677,6 +4731,54 @@
         }).join('');
       } catch (err) {
         console.error('Error loading call queues:', err);
+      }
+    }
+
+    function openEditQueueModal(id, name, desc) {
+      document.getElementById('edit-queue-id').value = id;
+      document.getElementById('edit-queue-title-label').innerText = `طابور: ${name}`;
+      document.getElementById('edit-queue-description').value = desc || '';
+      document.getElementById('edit-queue-error').classList.add('hidden');
+      document.getElementById('edit-queue-modal').classList.remove('hidden');
+    }
+
+    function closeEditQueueModal() {
+      document.getElementById('edit-queue-modal').classList.add('hidden');
+    }
+
+    async function saveQueueDescription() {
+      const id = document.getElementById('edit-queue-id').value;
+      const desc = document.getElementById('edit-queue-description').value.trim();
+      const btn = document.getElementById('btn-save-queue-desc');
+      const errEl = document.getElementById('edit-queue-error');
+
+      btn.disabled = true;
+      btn.innerText = 'جاري الحفظ...';
+      errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch(`/api/call-center/queues/${id}/update/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ description: desc })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          closeEditQueueModal();
+          await loadQueues();
+        } else {
+          errEl.innerText = data.message || 'فشل تحديث الوصف';
+          errEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        errEl.innerText = 'حدث خطأ أثناء حفظ التعديلات.';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'حفظ التعديلات';
       }
     }
 
@@ -4715,6 +4817,7 @@
       const errEl = document.getElementById('new-queue-error');
       const name = document.getElementById('queue-name').value.trim();
       const code = document.getElementById('queue-code').value.trim();
+      const description = (document.getElementById('queue-description')?.value || '').trim();
       const strategy = document.getElementById('queue-strategy').value;
       const ringTimeout = document.getElementById('queue-ring-timeout').value;
       const totalTimeout = document.getElementById('queue-total-timeout').value;
@@ -4726,6 +4829,7 @@
       const formData = new FormData();
       formData.append('name', name);
       formData.append('code', code);
+      formData.append('description', description);
       formData.append('strategy', strategy);
       formData.append('ring_timeout_seconds', ringTimeout);
       formData.append('total_timeout_seconds', totalTimeout);

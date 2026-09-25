@@ -493,6 +493,7 @@ def api_internal_agent_bootstrap(request):
                 "id": q.id,
                 "name": q.name,
                 "code": q.code,
+                "description": q.description or "",
                 "strategy": q.strategy,
                 "ring_timeout_seconds": q.ring_timeout_seconds,
                 "total_timeout_seconds": q.total_timeout_seconds,

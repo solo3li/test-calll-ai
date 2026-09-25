@@ -382,6 +382,7 @@ def create_call_queue(request):
     try:
         name = request.POST.get('name', '').strip() or "طابور المبيعات"
         code = request.POST.get('code', '').strip()
+        description = request.POST.get('description', '').strip()
         strategy = request.POST.get('strategy', 'round_robin').strip()
         ring_timeout = int(request.POST.get('ring_timeout_seconds', 15))
         total_timeout = int(request.POST.get('total_timeout_seconds', 60))
@@ -406,6 +407,7 @@ def create_call_queue(request):
             user=request.user,
             name=name,
             code=code,
+            description=description,
             strategy=strategy,
             ring_timeout_seconds=ring_timeout,
             total_timeout_seconds=total_timeout,
@@ -436,6 +438,42 @@ def create_call_queue(request):
     except Exception as e:
         logger.error(f"Error creating call queue: {e}", exc_info=True)
         return JsonResponse({"status": "error", "message": f"حدث خطأ أثناء إنشاء الطابور: {str(e)}"}, status=400)
+
+@login_required(login_url='/login/')
+def update_call_queue(request, queue_id):
+    """Update call queue description and configuration."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
+
+    queue = get_object_or_404(CallQueue, id=queue_id, user=request.user)
+    try:
+        data = request.POST
+        if not data and request.body:
+            try:
+                data = json.loads(request.body.decode('utf-8'))
+            except Exception:
+                data = {}
+
+        if 'description' in data:
+            queue.description = str(data.get('description') or '').strip()
+        if 'name' in data and data.get('name'):
+            queue.name = str(data.get('name')).strip()
+        if 'strategy' in data and data.get('strategy'):
+            queue.strategy = str(data.get('strategy')).strip()
+        if 'ring_timeout_seconds' in data:
+            queue.ring_timeout_seconds = int(data.get('ring_timeout_seconds'))
+        if 'total_timeout_seconds' in data:
+            queue.total_timeout_seconds = int(data.get('total_timeout_seconds'))
+
+        queue.save()
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم تحديث إعدادات طابور '{queue.name}' بنجاح.",
+            "queue": queue.to_dict()
+        })
+    except Exception as e:
+        logger.error(f"Error updating call queue {queue_id}: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": f"حدث خطأ أثناء التحديث: {str(e)}"}, status=400)
 
 @login_required(login_url='/login/')
 def delete_call_queue(request, queue_id):

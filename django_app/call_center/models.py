@@ -48,6 +48,7 @@ class CallQueue(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='call_queues')
     name = models.CharField(max_length=100, default='طابور المبيعات')
     code = models.CharField(max_length=32, help_text='كود الطابور للاتصال والتحويل مثل 200 أو 300')
+    description = models.TextField(blank=True, default='', help_text='وصف واختصاصات الطابور وتوجيهات الذكاء الاصطناعي للتحويل')
     strategy = models.CharField(max_length=32, default='round_robin', choices=[
         ('round_robin', 'رنين بالتناوب (Round-Robin)'),
         ('ring_all', 'رنين جماعي متزامن (Ring-All)')
@@ -78,6 +79,7 @@ class CallQueue(models.Model):
             "id": self.id,
             "name": self.name,
             "code": self.code,
+            "description": self.description,
             "strategy": self.strategy,
             "ring_timeout_seconds": self.ring_timeout_seconds,
             "total_timeout_seconds": self.total_timeout_seconds,

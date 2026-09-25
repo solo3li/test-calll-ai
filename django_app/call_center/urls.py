@@ -18,6 +18,7 @@ urlpatterns = [
     # Queues
     path('queues/', views.list_call_queues, name='list_call_queues'),
     path('queues/create/', views.create_call_queue, name='create_call_queue'),
+    path('queues/<int:queue_id>/update/', views.update_call_queue, name='update_call_queue'),
     path('queues/<int:queue_id>/delete/', views.delete_call_queue, name='delete_call_queue'),
 
     # WebRTC Calls

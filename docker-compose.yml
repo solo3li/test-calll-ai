@@ -107,6 +107,7 @@ services:
     container_name: voice_agent
     restart: unless-stopped
     volumes:
+      - ./agent:/app
       - media_data:/app/media:ro
     env_file:
       - .env
