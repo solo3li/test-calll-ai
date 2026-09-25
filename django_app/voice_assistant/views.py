@@ -624,3 +624,37 @@ def personas_page_view(request):
     }
     return render(request, 'voice_assistant/pages/personas.html', context)
 
+
+@login_required
+def campaigns_page_view(request):
+    """Render dedicated Outbound Campaigns & Leads CRM page."""
+    context = {
+        'page_title': 'حملات الاتصال والعملاء',
+        'page_icon': '🚀',
+        'active_nav': 'campaigns',
+    }
+    return render(request, 'voice_assistant/pages/campaigns.html', context)
+
+
+@login_required
+def store_page_view(request):
+    """Render dedicated Tools & MCP Store page."""
+    context = {
+        'page_title': 'متجر وأدوات MCP',
+        'page_icon': '🛍️',
+        'active_nav': 'store',
+    }
+    return render(request, 'voice_assistant/pages/store.html', context)
+
+
+@login_required
+def developer_page_view(request):
+    """Render dedicated Developer API Portal page."""
+    context = {
+        'page_title': 'واجهات المطورين (API)',
+        'page_icon': '⚡',
+        'active_nav': 'developer',
+    }
+    return render(request, 'voice_assistant/pages/developer.html', context)
+
+

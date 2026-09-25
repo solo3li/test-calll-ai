@@ -66,15 +66,15 @@
       <span class="nav-text" data-i18n="nav_crm">ذاكرة وسجل العملاء</span>
     </a>
 
-    <!-- 6.5. Outbound Campaigns -->
-    <a href="{% url 'voice_assistant:room' %}?tab=campaigns" id="nav-btn-campaigns" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'campaigns' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
+    <!-- 6.5. Outbound Campaigns (Dedicated Page) -->
+    <a href="{% url 'voice_assistant:campaigns_page' %}" id="nav-btn-campaigns" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'campaigns' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
       <span class="text-base shrink-0">🚀</span>
       <span class="nav-text">حملات الاتصال والعملاء</span>
       <span class="px-2 py-0.5 text-[9px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">AI CRM</span>
     </a>
 
-    <!-- 7. Store MCP -->
-    <a href="{% url 'voice_assistant:room' %}?tab=store" id="nav-btn-store" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'store' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
+    <!-- 7. Store MCP (Dedicated Page) -->
+    <a href="{% url 'voice_assistant:store_page' %}" id="nav-btn-store" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'store' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
       <span class="text-base shrink-0">🛍️</span>
       <span class="nav-text" data-i18n="nav_store">متجر وأدوات MCP</span>
     </a>
@@ -97,8 +97,8 @@
       <span class="nav-text" data-i18n="nav_partner">الشريك والـ SaaS</span>
     </a>
 
-    <!-- 11. Developer API Portal -->
-    <a href="{% url 'voice_assistant:room' %}?tab=developer" id="nav-btn-developer" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'developer' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
+    <!-- 11. Developer API Portal (Dedicated Page) -->
+    <a href="{% url 'voice_assistant:developer_page' %}" id="nav-btn-developer" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'developer' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
       <span class="text-base shrink-0">⚡</span>
       <span class="nav-text" data-i18n="nav_developer">واجهات المطورين (API)</span>
       <span class="px-2 py-0.5 text-[9px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">REST</span>

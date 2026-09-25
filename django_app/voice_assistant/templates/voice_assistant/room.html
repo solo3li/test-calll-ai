@@ -201,18 +201,18 @@
         <span class="nav-text" data-i18n="nav_crm">ذاكرة وسجل العملاء</span>
       </a>
 
-      <!-- 6.5. Outbound Campaigns & CRM Leads Engine -->
-      <button type="button" onclick="switchTab('campaigns')" id="nav-btn-campaigns" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+      <!-- 6.5. Outbound Campaigns & CRM Leads Engine (Dedicated Page) -->
+      <a href="{% url 'voice_assistant:campaigns_page' %}" id="nav-btn-campaigns" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
         <span class="text-base shrink-0">🚀</span>
         <span class="nav-text">حملات الاتصال والعملاء</span>
         <span class="px-2 py-0.5 text-[9px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">AI CRM</span>
-      </button>
+      </a>
 
-      <!-- 7. Store MCP -->
-      <button type="button" onclick="switchTab('store')" id="nav-btn-store" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+      <!-- 7. Store MCP (Dedicated Page) -->
+      <a href="{% url 'voice_assistant:store_page' %}" id="nav-btn-store" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
         <span class="text-base shrink-0">🛍️</span>
         <span class="nav-text" data-i18n="nav_store">متجر وأدوات MCP</span>
-      </button>
+      </a>
 
       <!-- 8. Usage & Billing (Dedicated Page) -->
       <a href="{% url 'voice_assistant:billing_page' %}" id="nav-btn-billing" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
@@ -233,12 +233,12 @@
         <span id="partner-nav-badge" class="hidden px-2 py-0.5 text-[9px] font-bold rounded-full bg-[#D4AF37] text-[#4A0817]">PRO</span>
       </button>
 
-      <!-- 11. Developer API Portal -->
-      <button type="button" onclick="switchTab('developer')" id="nav-btn-developer" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+      <!-- 11. Developer API Portal (Dedicated Page) -->
+      <a href="{% url 'voice_assistant:developer_page' %}" id="nav-btn-developer" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
         <span class="text-base shrink-0">⚡</span>
         <span class="nav-text" data-i18n="nav_developer">واجهات المطورين (API)</span>
         <span class="px-2 py-0.5 text-[9px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">REST</span>
-      </button>
+      </a>
     </nav>
 
     <!-- Sidebar Bottom Profile / Status (Pinned) -->

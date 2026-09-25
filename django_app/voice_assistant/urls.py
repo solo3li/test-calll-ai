@@ -75,6 +75,9 @@ urlpatterns = [
     path('crm/', views.crm_page_view, name='crm_page'),
     path('documents/', views.rag_page_view, name='rag_page'),
     path('personas/', views.personas_page_view, name='personas_page'),
+    path('campaigns/', views.campaigns_page_view, name='campaigns_page'),
+    path('tools/', views.store_page_view, name='store_page'),
+    path('developer/', views.developer_page_view, name='developer_page'),
 ]
 
 
