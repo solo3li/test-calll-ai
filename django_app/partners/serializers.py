@@ -230,3 +230,55 @@ class PartnerClientCallSessionSerializer(serializers.Serializer):
     ended_at = serializers.DateTimeField(allow_null=True)
     recording_url = serializers.URLField(allow_null=True)
     summary = serializers.CharField(allow_blank=True)
+
+
+# ============================================================================
+# Client Campaigns & Outbound Dialing (Inngest Powered)
+# ============================================================================
+
+class PartnerClientCampaignContactItemSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(required=True)
+    name = serializers.CharField(required=False, allow_blank=True, default="")
+    attributes = serializers.DictField(required=False, default=dict)
+
+
+class PartnerClientCampaignCreateRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(required=True)
+    agent_profile_id = serializers.IntegerField(required=False, allow_null=True)
+    call_prompt = serializers.CharField(required=True)
+    max_retries = serializers.IntegerField(default=1, required=False)
+    retry_delay_minutes = serializers.IntegerField(default=15, required=False)
+    contacts = PartnerClientCampaignContactItemSerializer(many=True, required=False)
+
+
+class PartnerClientCampaignSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    name = serializers.CharField()
+    agent_profile_id = serializers.IntegerField(allow_null=True)
+    agent_profile_name = serializers.CharField()
+    call_prompt = serializers.CharField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+    total_contacts = serializers.IntegerField()
+    completed_contacts = serializers.IntegerField()
+    answered_contacts = serializers.IntegerField()
+    hot_leads_count = serializers.IntegerField()
+    warm_leads_count = serializers.IntegerField()
+    cold_leads_count = serializers.IntegerField()
+    progress_percent = serializers.FloatField()
+    created_at = serializers.CharField()
+    updated_at = serializers.CharField()
+
+
+class PartnerClientCampaignsListResponseSerializer(serializers.Serializer):
+    status = serializers.CharField(default="success")
+    total = serializers.IntegerField()
+    campaigns = PartnerClientCampaignSerializer(many=True)
+
+
+class PartnerClientCampaignDetailResponseSerializer(serializers.Serializer):
+    status = serializers.CharField(default="success")
+    campaign = PartnerClientCampaignSerializer()
+    contacts = serializers.ListField(child=serializers.DictField())
+    total_contacts_count = serializers.IntegerField()
+

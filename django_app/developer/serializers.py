@@ -260,3 +260,76 @@ class WebhookEventSerializer(serializers.Serializer):
     payload = serializers.DictField()
     status = serializers.CharField()
     created_at = serializers.DateTimeField()
+
+
+# ============================================================================
+# Campaigns & Outbound Dialing (Inngest Powered)
+# ============================================================================
+
+class CampaignContactItemSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(required=True, help_text="رقم هاتف العميل بالصيغة الدولية")
+    name = serializers.CharField(required=False, allow_blank=True, default="")
+    attributes = serializers.DictField(required=False, default=dict, help_text="بيانات وحقول مخصصة للعميل")
+
+
+class CampaignContactSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    phone_number = serializers.CharField()
+    customer_name = serializers.CharField(allow_blank=True)
+    call_status = serializers.CharField()
+    call_status_display = serializers.CharField()
+    interest_level = serializers.CharField()
+    call_duration_seconds = serializers.IntegerField()
+    call_summary = serializers.CharField(allow_blank=True)
+    ai_insights = serializers.DictField(allow_null=True)
+    extra_attributes = serializers.DictField()
+    retries_count = serializers.IntegerField()
+    last_called_at = serializers.DateTimeField(allow_null=True)
+
+
+class CampaignCreateRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(required=True, help_text="اسم الحملة التسويقية أو التشغيلية")
+    agent_profile_id = serializers.IntegerField(required=False, allow_null=True, help_text="معرف شخصية الذكاء الاصطناعي المنفذة للمكالمات")
+    call_prompt = serializers.CharField(required=True, help_text="سيناريو وهدف المكالمة المخصص (Prompt) مع دعم المتغيرات مثل {name}")
+    max_retries = serializers.IntegerField(default=1, required=False, help_text="محاولات إعادة الاتصال في حال عدم الرد (0-5)")
+    retry_delay_minutes = serializers.IntegerField(default=15, required=False, help_text="الفارق الزمني بين محاولات الإعادة بالدقائق")
+    contacts = CampaignContactItemSerializer(many=True, required=False, help_text="قائمة أرقام وبيانات العملاء المستهدفين في الحملة")
+
+
+class CampaignSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    name = serializers.CharField()
+    agent_profile_id = serializers.IntegerField(allow_null=True)
+    agent_profile_name = serializers.CharField()
+    call_prompt = serializers.CharField()
+    status = serializers.CharField(help_text="حالة الحملة: draft, running, paused, completed")
+    status_display = serializers.CharField()
+    total_contacts = serializers.IntegerField()
+    completed_contacts = serializers.IntegerField()
+    answered_contacts = serializers.IntegerField()
+    hot_leads_count = serializers.IntegerField()
+    warm_leads_count = serializers.IntegerField()
+    cold_leads_count = serializers.IntegerField()
+    progress_percent = serializers.FloatField()
+    created_at = serializers.CharField()
+    updated_at = serializers.CharField()
+
+
+class CampaignDetailResponseSerializer(serializers.Serializer):
+    status = serializers.CharField(default="success")
+    campaign = CampaignSerializer()
+    contacts = CampaignContactSerializer(many=True)
+    total_contacts_count = serializers.IntegerField()
+
+
+class CampaignsListResponseSerializer(serializers.Serializer):
+    status = serializers.CharField(default="success")
+    total = serializers.IntegerField()
+    campaigns = CampaignSerializer(many=True)
+
+
+class CampaignActionResponseSerializer(serializers.Serializer):
+    status = serializers.CharField(default="success")
+    message = serializers.CharField()
+    campaign = CampaignSerializer()
+

@@ -43,4 +43,11 @@ urlpatterns = [
     path('calls/dial/', views.api_user_call_dial, name='developer_calls_dial'),
     path('calls/hangup/', views.api_user_call_hangup, name='developer_calls_hangup'),
     path('webhooks/', views.api_user_webhooks, name='developer_webhooks'),
+
+    # Campaigns & Outbound Calling (Inngest Powered)
+    path('campaigns/', views.api_user_campaigns, name='developer_campaigns'),
+    path('campaigns/<int:campaign_id>/', views.api_user_campaign_detail, name='developer_campaign_detail'),
+    path('campaigns/<int:campaign_id>/start/', views.api_user_campaign_start, name='developer_campaign_start'),
+    path('campaigns/<int:campaign_id>/pause/', views.api_user_campaign_pause, name='developer_campaign_pause'),
 ]
+

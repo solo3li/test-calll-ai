@@ -47,13 +47,21 @@ from .serializers import (
     WebhookEventSerializer,
     BaseSuccessResponseSerializer,
     BaseErrorResponseSerializer,
+    CampaignSerializer,
+    CampaignCreateRequestSerializer,
+    CampaignDetailResponseSerializer,
+    CampaignsListResponseSerializer,
+    CampaignActionResponseSerializer,
 )
+import inngest
+from asgiref.sync import async_to_sync
 
 from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
 from billing.models import UserWallet
 from call_center.models import EmployeeProfile, CallQueue, QueueMembership
-from crm.models import CustomerMemory, CallSession
+from crm.models import CustomerMemory, CallSession, OutboundCampaign, CampaignContact, UserCampaignLimit
+from crm.inngest_jobs import inngest_client, broadcast_campaign_update
 from knowledge.models import Document, DocumentChunk
 from telephony.models import OutboundSIPTrunk, InboundPBXTrunk
 from telephony.services import initiate_outbound_call
@@ -1377,4 +1385,213 @@ def api_user_call_dial(request):
     except Exception as e:
         logger.exception(f"Error in api_user_call_dial for user {request.user.id}: {e}")
         return JsonResponse({"status": "error", "message": f"Outbound call initiation failed: {str(e)}"}, status=500)
+
+
+# =========================================================================
+# User RESTful Campaigns API (Inngest Powered)
+# =========================================================================
+
+@extend_schema(
+    methods=['GET'],
+    operation_id="list_user_campaigns",
+    summary="استعراض قائمة حملات الاتصال الآلي (Campaigns)",
+    description="استعراض قائمة حملات الاتصال الصادرة وإحصائيات التقدم ومؤشرات العملاء المهتمين.",
+    responses={200: CampaignsListResponseSerializer},
+    tags=["10. حملات الاتصال والعملاء (Campaigns)"]
+)
+@extend_schema(
+    methods=['POST'],
+    operation_id="create_user_campaign",
+    summary="إنشاء حملة اتصال آلي جديدة مع جهات الاتصال",
+    description="إنشاء حملة جديدة وتزويدها بقائمة جهات الاتصال والسيناريو المخصص.",
+    request=CampaignCreateRequestSerializer,
+    responses={201: CampaignActionResponseSerializer},
+    tags=["10. حملات الاتصال والعملاء (Campaigns)"]
+)
+@api_view(['GET', 'POST'])
+@user_api_key_required
+def api_user_campaigns(request):
+    """
+    GET & POST /api/v1/campaigns/
+    List all outbound campaigns or create a new campaign with target contacts.
+    """
+    if request.method == 'GET':
+        qs = OutboundCampaign.objects.filter(user=request.user).order_by('-created_at')
+        return JsonResponse({
+            "status": "success",
+            "total": qs.count(),
+            "campaigns": [c.to_dict() for c in qs]
+        })
+
+    elif request.method == 'POST':
+        data = request.data if hasattr(request, 'data') and request.data else {}
+        if not data and request.body:
+            try:
+                data = json.loads(request.body.decode('utf-8'))
+            except Exception:
+                pass
+
+        name = data.get('name', '').strip()
+        if not name:
+            return JsonResponse({"status": "error", "message": "name is required"}, status=400)
+
+        call_prompt = data.get('call_prompt', '').strip()
+        profile_id = data.get('agent_profile_id')
+        agent_profile = AgentProfile.objects.filter(id=profile_id, user=request.user).first() if profile_id else None
+
+        campaign = OutboundCampaign.objects.create(
+            user=request.user,
+            name=name,
+            agent_profile=agent_profile,
+            call_prompt=call_prompt,
+            max_retries=int(data.get('max_retries', 1)),
+            retry_delay_minutes=int(data.get('retry_delay_minutes', 15)),
+            status='draft'
+        )
+
+        contacts_list = data.get('contacts', [])
+        for item in contacts_list:
+            phone = str(item.get('phone_number') or '').strip()
+            if not phone:
+                continue
+            CampaignContact.objects.create(
+                campaign=campaign,
+                phone_number=phone,
+                customer_name=str(item.get('name') or '').strip(),
+                attributes=item.get('attributes') or {},
+                call_status='pending'
+            )
+
+        campaign.update_metrics()
+        return JsonResponse({
+            "status": "success",
+            "message": "تم إنشاء حملة الاتصال بنجاح",
+            "campaign": campaign.to_dict()
+        }, status=201)
+
+
+@extend_schema(
+    methods=['GET'],
+    operation_id="get_user_campaign_detail",
+    summary="تفاصيل حملة اتصال محددة وقائمة العملاء",
+    description="استرجاع بيانات الحملة التفصيلية وقائمة العملاء المستهدفين وتصنيفات الذكاء الاصطناعي.",
+    responses={200: CampaignDetailResponseSerializer},
+    tags=["10. حملات الاتصال والعملاء (Campaigns)"]
+)
+@extend_schema(
+    methods=['DELETE'],
+    operation_id="delete_user_campaign",
+    summary="حذف حملة اتصال",
+    description="حذف الحملة وكافة جهات الاتصال التابعة لها.",
+    responses={200: BaseSuccessResponseSerializer},
+    tags=["10. حملات الاتصال والعملاء (Campaigns)"]
+)
+@api_view(['GET', 'DELETE'])
+@user_api_key_required
+def api_user_campaign_detail(request, campaign_id):
+    """
+    GET & DELETE /api/v1/campaigns/<campaign_id>/
+    """
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+
+    if request.method == 'GET':
+        contacts = campaign.contacts.all().order_by('id')
+        return JsonResponse({
+            "status": "success",
+            "campaign": campaign.to_dict(),
+            "contacts": [c.to_dict() for c in contacts],
+            "total_contacts_count": contacts.count()
+        })
+
+    elif request.method == 'DELETE':
+        campaign.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": "تم حذف الحملة بنجاح"
+        })
+
+
+@extend_schema(
+    operation_id="start_user_campaign",
+    summary="بدء إطلاق الاتصال الآلي للحملة عبر Inngest",
+    description="تفعيل الحملة وبدء محرك الاتصال الآلي المتوازي عبر Inngest بحسب الحدود المسموحة للحساب.",
+    request=None,
+    responses={200: CampaignActionResponseSerializer},
+    tags=["10. حملات الاتصال والعملاء (Campaigns)"]
+)
+@api_view(['POST'])
+@user_api_key_required
+def api_user_campaign_start(request, campaign_id):
+    """
+    POST /api/v1/campaigns/<campaign_id>/start/
+    """
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+    has_gw = OutboundSIPTrunk.objects.filter(user=campaign.user, is_active=True).exists()
+    if not has_gw and not getattr(settings, 'DEBUG', False):
+        return JsonResponse({
+            "status": "error",
+            "code": "no_outbound_gateway",
+            "message": "لا يمكن بدء الحملة: لا يوجد خط اتصال صادر (SIP Trunk) مفعل في حسابك."
+        }, status=422)
+
+    limit = UserCampaignLimit.get_limit_for_user(request.user)
+    campaign.status = 'running'
+    campaign.save(update_fields=['status', 'updated_at'])
+
+    pending_contacts = list(campaign.contacts.filter(call_status='pending').values_list('id', flat=True))
+    if pending_contacts:
+        try:
+            events = [
+                inngest.Event(
+                    name="campaign/contact.dial",
+                    data={
+                        "campaign_id": campaign.id,
+                        "contact_id": cid,
+                        "user_id": campaign.user_id,
+                        "concurrency_limit": limit
+                    }
+                )
+                for cid in pending_contacts
+            ]
+            async_to_sync(inngest_client.send)(events)
+        except Exception as e:
+            logger.warning(f"Inngest dispatch notice for campaign {campaign.id}: {e}")
+
+        broadcast_campaign_update(campaign.id, "campaign_started", {
+            "queued": len(pending_contacts),
+            "concurrency_limit": limit
+        })
+
+    return JsonResponse({
+        "status": "success",
+        "message": "تم بدء تشغيل الحملة والاتصال الآلي بنجاح",
+        "campaign": campaign.to_dict()
+    })
+
+
+@extend_schema(
+    operation_id="pause_user_campaign",
+    summary="إيقاف الحملة مؤقتاً",
+    description="إيقاف الاتصال الآلي للحملة مؤقتاً مع الحفاظ على تقدم المكالمات السابقة.",
+    request=None,
+    responses={200: CampaignActionResponseSerializer},
+    tags=["10. حملات الاتصال والعملاء (Campaigns)"]
+)
+@api_view(['POST'])
+@user_api_key_required
+def api_user_campaign_pause(request, campaign_id):
+    """
+    POST /api/v1/campaigns/<campaign_id>/pause/
+    """
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+    campaign.status = 'paused'
+    campaign.save(update_fields=['status', 'updated_at'])
+    broadcast_campaign_update(campaign.id, "campaign_paused", {})
+
+    return JsonResponse({
+        "status": "success",
+        "message": "تم إيقاف الحملة مؤقتاً بنجاح",
+        "campaign": campaign.to_dict()
+    })
+
 

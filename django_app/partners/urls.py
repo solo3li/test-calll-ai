@@ -40,4 +40,11 @@ urlpatterns = [
     path('clients/<int:client_id>/mcp/<int:mcp_id>/', views.api_partner_client_mcp_detail, name='api_partner_client_mcp_detail'),
     path('clients/<int:client_id>/mcp/<int:mcp_id>/sync/', views.api_partner_client_mcp_sync, name='api_partner_client_mcp_sync'),
     path('clients/<int:client_id>/token/', views.api_partner_client_token, name='api_partner_client_token'),
+
+    # Managed Client Campaigns (Inngest Powered)
+    path('clients/<int:client_id>/campaigns/', views.api_partner_client_campaigns, name='api_partner_client_campaigns'),
+    path('clients/<int:client_id>/campaigns/<int:campaign_id>/', views.api_partner_client_campaign_detail, name='api_partner_client_campaign_detail'),
+    path('clients/<int:client_id>/campaigns/<int:campaign_id>/start/', views.api_partner_client_campaign_start, name='api_partner_client_campaign_start'),
+    path('clients/<int:client_id>/campaigns/<int:campaign_id>/pause/', views.api_partner_client_campaign_pause, name='api_partner_client_campaign_pause'),
 ]
+

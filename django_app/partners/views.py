@@ -37,15 +37,21 @@ from .serializers import (
     PartnerClientEmployeeSerializer,
     PartnerClientQueueSerializer,
     PartnerClientMCPServerSerializer,
-    PartnerClientTokenResponseSerializer,
-    PartnerClientDialRequestSerializer,
     PartnerClientCallSessionSerializer,
     BaseSuccessResponseSerializer,
-    BaseErrorResponseSerializer
+    BaseErrorResponseSerializer,
+    PartnerClientCampaignSerializer,
+    PartnerClientCampaignCreateRequestSerializer,
+    PartnerClientCampaignDetailResponseSerializer,
+    PartnerClientCampaignsListResponseSerializer
 )
+import inngest
+from asgiref.sync import async_to_sync
+
 from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
-from crm.models import CallSession, CustomerMemory
+from crm.models import CallSession, CustomerMemory, OutboundCampaign, CampaignContact, UserCampaignLimit
+from crm.inngest_jobs import inngest_client, broadcast_campaign_update
 from knowledge.models import Document, DocumentChunk
 from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 from telephony.models import InboundPBXTrunk, OutboundSIPTrunk
@@ -2002,3 +2008,216 @@ def api_partner_docs_scalar(request):
     Alias redirecting or rendering the primary documentation.
     """
     return api_partner_docs(request)
+
+
+# =========================================================================
+# Partner SaaS Client Campaigns API (Inngest Powered)
+# =========================================================================
+
+@extend_schema(
+    methods=['GET'],
+    operation_id="list_partner_client_campaigns",
+    summary="استعراض حملات الاتصال الآلي للعميل التابع (Client Campaigns)",
+    description="استعراض قائمة حملات الاتصال الصادرة الخاصة بعميل الشريك وإحصائياتها.",
+    responses={200: PartnerClientCampaignsListResponseSerializer},
+    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+)
+@extend_schema(
+    methods=['POST'],
+    operation_id="create_partner_client_campaign",
+    summary="إنشاء حملة اتصال آلي جديدة للعميل التابع",
+    description="إطلاق حملة اتصال جديدة وتزويدها بجهات الاتصال والسيناريو المخصص.",
+    request=PartnerClientCampaignCreateRequestSerializer,
+    responses={201: BaseSuccessResponseSerializer},
+    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+)
+@api_view(['GET', 'POST'])
+@partner_client_access_required
+def api_partner_client_campaigns(request, client_id):
+    """
+    GET & POST /api/partner/v1/clients/<client_id>/campaigns/
+    """
+    client_user = request.client_user
+    if request.method == 'GET':
+        qs = OutboundCampaign.objects.filter(user=client_user).order_by('-created_at')
+        return JsonResponse({
+            "status": "success",
+            "total": qs.count(),
+            "campaigns": [c.to_dict() for c in qs]
+        })
+
+    elif request.method == 'POST':
+        data = request.data if hasattr(request, 'data') and request.data else {}
+        if not data and request.body:
+            try:
+                data = json.loads(request.body.decode('utf-8'))
+            except Exception:
+                pass
+
+        name = data.get('name', '').strip()
+        if not name:
+            return JsonResponse({"status": "error", "message": "name is required"}, status=400)
+
+        call_prompt = data.get('call_prompt', '').strip()
+        profile_id = data.get('agent_profile_id')
+        agent_profile = AgentProfile.objects.filter(id=profile_id, user=client_user).first() if profile_id else None
+
+        campaign = OutboundCampaign.objects.create(
+            user=client_user,
+            name=name,
+            agent_profile=agent_profile,
+            call_prompt=call_prompt,
+            max_retries=int(data.get('max_retries', 1)),
+            retry_delay_minutes=int(data.get('retry_delay_minutes', 15)),
+            status='draft'
+        )
+
+        contacts_list = data.get('contacts', [])
+        for item in contacts_list:
+            phone = str(item.get('phone_number') or '').strip()
+            if not phone:
+                continue
+            CampaignContact.objects.create(
+                campaign=campaign,
+                phone_number=phone,
+                customer_name=str(item.get('name') or '').strip(),
+                attributes=item.get('attributes') or {},
+                call_status='pending'
+            )
+
+        campaign.update_metrics()
+        return JsonResponse({
+            "status": "success",
+            "message": "تم إنشاء حملة الاتصال للعميل بنجاح",
+            "campaign": campaign.to_dict()
+        }, status=201)
+
+
+@extend_schema(
+    methods=['GET'],
+    operation_id="get_partner_client_campaign_detail",
+    summary="تفاصيل حملة اتصال للعميل التابع",
+    description="استرجاع بيانات الحملة التفصيلية وقائمة العملاء المستهدفين وتصنيفات AI.",
+    responses={200: PartnerClientCampaignDetailResponseSerializer},
+    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+)
+@extend_schema(
+    methods=['DELETE'],
+    operation_id="delete_partner_client_campaign",
+    summary="حذف حملة اتصال للعميل التابع",
+    description="حذف الحملة وكافة جهات الاتصال التابعة لها.",
+    responses={200: BaseSuccessResponseSerializer},
+    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+)
+@api_view(['GET', 'DELETE'])
+@partner_client_access_required
+def api_partner_client_campaign_detail(request, client_id, campaign_id):
+    """
+    GET & DELETE /api/partner/v1/clients/<client_id>/campaigns/<campaign_id>/
+    """
+    client_user = request.client_user
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=client_user)
+
+    if request.method == 'GET':
+        contacts = campaign.contacts.all().order_by('id')
+        return JsonResponse({
+            "status": "success",
+            "campaign": campaign.to_dict(),
+            "contacts": [c.to_dict() for c in contacts],
+            "total_contacts_count": contacts.count()
+        })
+
+    elif request.method == 'DELETE':
+        campaign.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": "تم حذف الحملة بنجاح"
+        })
+
+
+@extend_schema(
+    operation_id="start_partner_client_campaign",
+    summary="بدء إطلاق الاتصال الآلي لحملة العميل عبر Inngest",
+    description="تفعيل الحملة وبدء محرك الاتصال الآلي المتوازي للعميل بحسب حد المكالمات المتزامنة المخصص له.",
+    request=None,
+    responses={200: BaseSuccessResponseSerializer},
+    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+)
+@api_view(['POST'])
+@partner_client_access_required
+def api_partner_client_campaign_start(request, client_id, campaign_id):
+    """
+    POST /api/partner/v1/clients/<client_id>/campaigns/<campaign_id>/start/
+    """
+    client_user = request.client_user
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=client_user)
+
+    has_gw = OutboundSIPTrunk.objects.filter(user=campaign.user, is_active=True).exists()
+    if not has_gw and not getattr(settings, 'DEBUG', False):
+        return JsonResponse({
+            "status": "error",
+            "code": "no_outbound_gateway",
+            "message": "لا يمكن بدء الحملة: لا يوجد خط اتصال صادر (SIP Trunk) مفعل لحساب العميل."
+        }, status=422)
+
+    limit = getattr(request.client_rel, 'concurrent_call_limit', 1) or 1
+    campaign.status = 'running'
+    campaign.save(update_fields=['status', 'updated_at'])
+
+    pending_contacts = list(campaign.contacts.filter(call_status='pending').values_list('id', flat=True))
+    if pending_contacts:
+        try:
+            events = [
+                inngest.Event(
+                    name="campaign/contact.dial",
+                    data={
+                        "campaign_id": campaign.id,
+                        "contact_id": cid,
+                        "user_id": campaign.user_id,
+                        "concurrency_limit": limit
+                    }
+                )
+                for cid in pending_contacts
+            ]
+            async_to_sync(inngest_client.send)(events)
+        except Exception as e:
+            logger.warning(f"Inngest dispatch notice for partner campaign {campaign.id}: {e}")
+
+        broadcast_campaign_update(campaign.id, "campaign_started", {
+            "queued": len(pending_contacts),
+            "concurrency_limit": limit
+        })
+
+    return JsonResponse({
+        "status": "success",
+        "message": "تم بدء تشغيل الحملة والاتصال الآلي بنجاح",
+        "campaign": campaign.to_dict()
+    })
+
+
+@extend_schema(
+    operation_id="pause_partner_client_campaign",
+    summary="إيقاف حملة العميل مؤقتاً",
+    description="إيقاف الاتصال الآلي لحملة العميل مؤقتاً مع الحفاظ على تقدم المكالمات السابقة.",
+    request=None,
+    responses={200: BaseSuccessResponseSerializer},
+    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+)
+@api_view(['POST'])
+@partner_client_access_required
+def api_partner_client_campaign_pause(request, client_id, campaign_id):
+    """
+    POST /api/partner/v1/clients/<client_id>/campaigns/<campaign_id>/pause/
+    """
+    client_user = request.client_user
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=client_user)
+    campaign.status = 'paused'
+    campaign.save(update_fields=['status', 'updated_at'])
+    broadcast_campaign_update(campaign.id, "campaign_paused", {})
+
+    return JsonResponse({
+        "status": "success",
+        "message": "تم إيقاف الحملة مؤقتاً بنجاح",
+        "campaign": campaign.to_dict()
+    })
+
