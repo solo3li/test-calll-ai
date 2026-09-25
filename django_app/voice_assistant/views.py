@@ -658,3 +658,37 @@ def developer_page_view(request):
     return render(request, 'voice_assistant/pages/developer.html', context)
 
 
+@login_required
+def callcenter_page_view(request):
+    """Render dedicated Call Center & Queues page."""
+    context = {
+        'page_title': 'المركز الهاتفي وطوابير الانتظار',
+        'page_icon': '🎧',
+        'active_nav': 'callcenter',
+    }
+    return render(request, 'voice_assistant/pages/callcenter.html', context)
+
+
+@login_required
+def telephony_page_view(request):
+    """Render dedicated Telephony & PBX Trunks page."""
+    context = {
+        'page_title': 'الاتصالات وسنترالات PBX',
+        'page_icon': '📞',
+        'active_nav': 'telephony',
+    }
+    return render(request, 'voice_assistant/pages/telephony.html', context)
+
+
+@login_required
+def partner_page_view(request):
+    """Render dedicated Partner & SaaS Portal page."""
+    context = {
+        'page_title': 'بوابة الشركاء وحلول الـ SaaS',
+        'page_icon': '💼',
+        'active_nav': 'partner',
+    }
+    return render(request, 'voice_assistant/pages/partner.html', context)
+
+
+

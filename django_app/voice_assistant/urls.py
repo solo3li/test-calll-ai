@@ -78,6 +78,9 @@ urlpatterns = [
     path('campaigns/', views.campaigns_page_view, name='campaigns_page'),
     path('tools/', views.store_page_view, name='store_page'),
     path('developer/', views.developer_page_view, name='developer_page'),
+    path('call-center/', views.callcenter_page_view, name='callcenter_page'),
+    path('telephony/', views.telephony_page_view, name='telephony_page'),
+    path('partner/', views.partner_page_view, name='partner_page'),
 ]
 
 

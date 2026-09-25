@@ -183,17 +183,17 @@
         <span class="nav-text" data-i18n="nav_rag">قاعدة المعرفة RAG</span>
       </a>
 
-      <!-- 4. Call Center -->
-      <button type="button" onclick="switchTab('callcenter')" id="nav-btn-callcenter" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+      <!-- 4. Call Center (Dedicated Page) -->
+      <a href="{% url 'voice_assistant:callcenter_page' %}" id="nav-btn-callcenter" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
         <span class="text-base shrink-0">🎧</span>
         <span class="nav-text" data-i18n="nav_callcenter">مركز الاتصالات والطوابير</span>
-      </button>
+      </a>
 
-      <!-- 5. Telephony -->
-      <button type="button" onclick="switchTab('telephony')" id="nav-btn-telephony" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+      <!-- 5. Telephony (Dedicated Page) -->
+      <a href="{% url 'voice_assistant:telephony_page' %}" id="nav-btn-telephony" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
         <span class="text-base shrink-0">📞</span>
         <span class="nav-text" data-i18n="nav_telephony">الربط الهاتفي والسنترال</span>
-      </button>
+      </a>
 
       <!-- 6. CRM (Dedicated Page) -->
       <a href="{% url 'voice_assistant:crm_page' %}" id="nav-btn-crm" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
@@ -226,12 +226,12 @@
         <span class="nav-text" data-i18n="nav_calls">سجل المكالمات (CDR)</span>
       </a>
 
-      <!-- 10. Partner & SaaS Portal -->
-      <button type="button" onclick="handlePartnerNavClick()" id="nav-btn-partner" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
+      <!-- 10. Partner & SaaS Portal (Dedicated Page) -->
+      <a href="{% url 'voice_assistant:partner_page' %}" id="nav-btn-partner" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">
         <span class="text-base shrink-0">💼</span>
         <span class="nav-text" data-i18n="nav_partner">الشريك والـ SaaS</span>
         <span id="partner-nav-badge" class="hidden px-2 py-0.5 text-[9px] font-bold rounded-full bg-[#D4AF37] text-[#4A0817]">PRO</span>
-      </button>
+      </a>
 
       <!-- 11. Developer API Portal (Dedicated Page) -->
       <a href="{% url 'voice_assistant:developer_page' %}" id="nav-btn-developer" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start text-[#EADBC8] hover:text-white hover:bg-white/10">

@@ -1,5 +1,5 @@
 """
-End-to-End Test for Modular Multi-Page Architecture:
+End-to-End Test for Complete Modular Multi-Page Architecture:
 - Verifies /calls/ renders dedicated page extending base.html.
 - Verifies /billing/ renders dedicated page extending base.html.
 - Verifies /crm/ renders dedicated page extending base.html.
@@ -8,8 +8,11 @@ End-to-End Test for Modular Multi-Page Architecture:
 - Verifies /campaigns/ renders dedicated page extending base.html.
 - Verifies /tools/ renders dedicated page extending base.html.
 - Verifies /developer/ renders dedicated page extending base.html.
+- Verifies /call-center/ renders dedicated page extending base.html.
+- Verifies /telephony/ renders dedicated page extending base.html.
+- Verifies /partner/ renders dedicated page extending base.html.
 - Verifies / renders room.html with updated sidebar navigation links and ?tab= query parameter support.
-- Verifies static JS files (/static/js/common.js, /static/js/calls.js, /static/js/billing.js, /static/js/crm.js, /static/js/rag.js, /static/js/personas.js, /static/js/campaigns.js, /static/js/store.js, /static/js/developer.js).
+- Verifies all 12 static JS files (/static/js/common.js, calls.js, billing.js, crm.js, rag.js, personas.js, campaigns.js, store.js, developer.js, callcenter.js, telephony.js, partner.js).
 - Verifies unauthenticated users are redirected to /login/.
 """
 import os
@@ -25,7 +28,7 @@ from django.urls import reverse
 
 def test_modular_pages():
     print("\n========================================================")
-    print("🚀 Running Modular Pages Multi-Page Architecture Test")
+    print("🚀 Running Complete Modular Multi-Page Architecture Test")
     print("========================================================")
     
     client = Client()
@@ -42,6 +45,9 @@ def test_modular_pages():
         '/campaigns/',
         '/tools/',
         '/developer/',
+        '/call-center/',
+        '/telephony/',
+        '/partner/',
     ]
 
     # 1. Unauthenticated redirects
@@ -157,8 +163,59 @@ def test_modular_pages():
     assert 'js/common.js' in content_dev
     print("✅ /developer/ page successfully rendered with API key controls, curl samples, and developer.js!")
 
-    # 10. Main room.html navigation integration
-    print("\n[TEST 10] Testing main / (room.html) links and tab param...")
+    # 10. Authenticated access to /call-center/ (Call Center & Queues)
+    print("\n[TEST 10] Testing dedicated /call-center/ page...")
+    resp_cc = client.get('/call-center/')
+    assert resp_cc.status_code == 200, f"Expected 200, got {resp_cc.status_code}"
+    content_cc = resp_cc.content.decode('utf-8')
+    assert 'المركز الهاتفي وطوابير الانتظار' in content_cc
+    assert 'employees-tbody' in content_cc
+    assert 'queues-tbody' in content_cc
+    assert 'dashboard-active-call-banner' in content_cc
+    assert 'new-queue-modal' in content_cc
+    assert 'edit-queue-modal' in content_cc
+    assert 'new-employee-modal' in content_cc
+    assert 'js/callcenter.js' in content_cc
+    assert 'js/common.js' in content_cc
+    print("✅ /call-center/ page successfully rendered with employees directory, queues routing, modals, and callcenter.js!")
+
+    # 11. Authenticated access to /telephony/ (Telephony & PBX Trunks)
+    print("\n[TEST 11] Testing dedicated /telephony/ page...")
+    resp_tel = client.get('/telephony/')
+    assert resp_tel.status_code == 200, f"Expected 200, got {resp_tel.status_code}"
+    content_tel = resp_tel.content.decode('utf-8')
+    assert 'إدارة الاتصالات والسنترالات' in content_tel
+    assert 'outbound-trunk-form' in content_tel
+    assert 'outbound-trunk-badge' in content_tel
+    assert 'pbx-trunks-grid' in content_tel
+    assert 'ai-call-modal' in content_tel
+    assert 'new-pbx-modal' in content_tel
+    assert 'issabel-code-modal' in content_tel
+    assert 'js/telephony.js' in content_tel
+    assert 'js/common.js' in content_tel
+    print("✅ /telephony/ page successfully rendered with SIP trunk form, PBX grid, Issabel config modal, and telephony.js!")
+
+    # 12. Authenticated access to /partner/ (Partner & SaaS Portal)
+    print("\n[TEST 12] Testing dedicated /partner/ page...")
+    resp_partner = client.get('/partner/')
+    assert resp_partner.status_code == 200, f"Expected 200, got {resp_partner.status_code}"
+    content_partner = resp_partner.content.decode('utf-8')
+    assert 'برنامج الشركاء وحلول الـ SaaS' in content_partner
+    assert 'partner-kpi-balance' in content_partner
+    assert 'partner-code-input' in content_partner
+    assert 'partner-api-key-input' in content_partner
+    assert 'partner-shared-mcp-select' in content_partner
+    assert 'partner-clients-tbody' in content_partner
+    assert 'partner-calls-tbody' in content_partner
+    assert 'partner-apply-modal' in content_partner
+    assert 'partner-cap-modal' in content_partner
+    assert 'partner-docs-modal' in content_partner
+    assert 'js/partner.js' in content_partner
+    assert 'js/common.js' in content_partner
+    print("✅ /partner/ page successfully rendered with KPIs, headless API credentials, sub-clients tables, modals, and partner.js!")
+
+    # 13. Main room.html navigation integration
+    print("\n[TEST 13] Testing main / (room.html) links and tab param...")
     resp_room = client.get('/')
     assert resp_room.status_code == 200
     content_room = resp_room.content.decode('utf-8')
@@ -167,8 +224,8 @@ def test_modular_pages():
     assert 'URLSearchParams(window.location.search).get(\'tab\')' in content_room
     print("✅ / (room.html) contains direct links to all dedicated pages and handles ?tab= parameter!")
 
-    # 11. Static files delivery verification
-    print("\n[TEST 11] Testing static JS files delivery...")
+    # 14. Static files delivery verification
+    print("\n[TEST 14] Testing static JS files delivery...")
     static_files = [
         'common.js',
         'calls.js',
@@ -179,6 +236,9 @@ def test_modular_pages():
         'campaigns.js',
         'store.js',
         'developer.js',
+        'callcenter.js',
+        'telephony.js',
+        'partner.js',
     ]
     for sf in static_files:
         resp_sf = client.get(f'/static/js/{sf}')
@@ -188,7 +248,7 @@ def test_modular_pages():
     print(f"✅ All {len(static_files)} static JS files are properly served with non-empty content!")
 
     print("\n========================================================")
-    print("🎉 ALL PHASE 1, 2 & 3 MODULAR PAGES TESTS PASSED! (100%)")
+    print("🎉 ALL 14/14 MODULAR MULTI-PAGE END-TO-END TESTS PASSED! (100%)")
     print("========================================================\n")
 
 
