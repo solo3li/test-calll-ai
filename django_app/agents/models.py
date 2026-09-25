@@ -8,12 +8,59 @@ class AgentProfile(models.Model):
         ('male', 'ذكر'),
     ]
 
-    DIALECT_CHOICES = [
-        ('egyptian', 'لهجة مصرية عامية'),
-        ('saudi', 'لهجة خليجية / سعودية'),
-        ('levantine', 'لهجة شامية'),
-        ('fusha', 'عربية فصحى معاصرة'),
+    LANGUAGE_CHOICES = [
+        ('arabic', 'العربية (Arabic)'),
         ('english', 'English'),
+        ('french', 'Français (French)'),
+        ('spanish', 'Español (Spanish)'),
+        ('german', 'Deutsch (German)'),
+        ('italian', 'Italiano (Italian)'),
+        ('turkish', 'Türkçe (Turkish)'),
+        ('russian', 'Русский (Russian)'),
+        ('urdu', 'اردو (Urdu)'),
+        ('hindi', 'हिन्दी (Hindi)'),
+        ('chinese', '中文 (Mandarin Chinese)'),
+    ]
+
+    DIALECT_CHOICES = [
+        # Arabic dialects
+        ('egyptian', 'لهجة مصرية عامية (مصر)'),
+        ('saudi', 'لهجة سعودية / نجدية وحجازية (السعودية)'),
+        ('emirati', 'لهجة إماراتية / خليجية (الإمارات)'),
+        ('kuwaiti', 'لهجة كويتية (الكويت)'),
+        ('levantine', 'لهجة شامية (سوريا ولبنان)'),
+        ('jordanian_palestinian', 'لهجة أردنية وفلسطينية (الأردن وفلسطين)'),
+        ('moroccan', 'لهجة مغربية / دارجة (المغرب)'),
+        ('algerian', 'لهجة جزائرية (الجزائر)'),
+        ('tunisian', 'لهجة تونسية (تونس)'),
+        ('iraqi', 'لهجة عراقية (العراق)'),
+        ('sudanese', 'لهجة سودانية (السودان)'),
+        ('yemeni', 'لهجة يمنية (اليمن)'),
+        ('fusha', 'عربية فصحى معاصرة (رسمية)'),
+
+        # English dialects
+        ('english_us', 'American English (US)'),
+        ('english_uk', 'British English (UK)'),
+        ('english_aus', 'Australian English (Australia)'),
+        ('english_ind', 'Indian English (India)'),
+        ('english', 'General English'),
+
+        # French dialects
+        ('french_fr', 'Français Métropolitain (France)'),
+        ('french_ca', 'Français Canadien (Canada)'),
+
+        # Spanish dialects
+        ('spanish_es', 'Español de España (Spain)'),
+        ('spanish_latam', 'Español Latinoamericano'),
+
+        # Global languages
+        ('german_de', 'Standarddeutsch (Germany & Austria)'),
+        ('italian_it', 'Italiano Standard (Italy)'),
+        ('turkish_tr', 'Türkçe (Turkey)'),
+        ('russian_ru', 'Русский язык (Russia)'),
+        ('urdu_pk', 'اردو (Pakistan & India)'),
+        ('hindi_in', 'हिन्दी (India)'),
+        ('chinese_zh', '普通话 (Mandarin Chinese)'),
     ]
 
     ROLE_CHOICES = [
@@ -34,6 +81,7 @@ class AgentProfile(models.Model):
     name = models.CharField(max_length=100, default='البروفايل الافتراضي')
     voice_name = models.CharField(max_length=50, default='Aoede')
     gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default='female')
+    language = models.CharField(max_length=50, choices=LANGUAGE_CHOICES, default='arabic')
     dialect = models.CharField(max_length=50, choices=DIALECT_CHOICES, default='egyptian')
     persona_role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='customer_support')
     speaking_style = models.CharField(max_length=50, choices=STYLE_CHOICES, default='friendly')
@@ -51,6 +99,30 @@ class AgentProfile(models.Model):
         return f"{self.name} ({self.voice_name}/{self.dialect}){active_str}"
 
     def save(self, *args, **kwargs):
+        # Auto-deduce language from dialect if dialect belongs to a specific language
+        if self.dialect in ['english', 'english_us', 'english_uk', 'english_aus', 'english_ind']:
+            self.language = 'english'
+        elif self.dialect in ['french_fr', 'french_ca']:
+            self.language = 'french'
+        elif self.dialect in ['spanish_es', 'spanish_latam']:
+            self.language = 'spanish'
+        elif self.dialect == 'german_de':
+            self.language = 'german'
+        elif self.dialect == 'italian_it':
+            self.language = 'italian'
+        elif self.dialect == 'turkish_tr':
+            self.language = 'turkish'
+        elif self.dialect == 'russian_ru':
+            self.language = 'russian'
+        elif self.dialect == 'urdu_pk':
+            self.language = 'urdu'
+        elif self.dialect == 'hindi_in':
+            self.language = 'hindi'
+        elif self.dialect == 'chinese_zh':
+            self.language = 'chinese'
+        elif not self.language:
+            self.language = 'arabic'
+
         if self.is_active:
             # Ensure only one active profile per user
             AgentProfile.objects.filter(user=self.user, is_active=True).exclude(pk=self.pk).update(is_active=False)
@@ -60,6 +132,8 @@ class AgentProfile(models.Model):
         return {
             "id": self.id,
             "name": self.name,
+            "language": self.language,
+            "language_display": self.get_language_display(),
             "voice_name": self.voice_name,
             "gender": self.gender,
             "gender_display": self.get_gender_display(),

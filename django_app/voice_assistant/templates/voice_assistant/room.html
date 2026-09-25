@@ -492,20 +492,30 @@
 
           <!-- Current Profile Summary / Editor Fields -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-            <!-- Gender & Dialect -->
+            <!-- Gender, Language & Dialect -->
             <div class="bg-[#FAF7F2] border border-[#EAE3D9] rounded-2xl p-3.5 space-y-2">
-              <label class="block font-semibold text-[#443D39]" data-i18n="field_gender_dialect">النوع واللهجة</label>
+              <label class="block font-semibold text-[#443D39]" data-i18n="field_gender_dialect">النوع واللغة واللهجة</label>
               <div class="grid grid-cols-2 gap-2">
                 <select id="field-gender" onchange="syncGenderVoiceOptions()" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917]">
                   <option value="female">أنثى (بنت)</option>
                   <option value="male">ذكر (شاب)</option>
                 </select>
-                <select id="field-dialect" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917]">
-                  <option value="egyptian">مصرية عامية</option>
-                  <option value="saudi">سعودية / خليجية</option>
-                  <option value="levantine">شامية</option>
-                  <option value="fusha">فصحى معاصرة</option>
+                <select id="field-language" onchange="handleLanguageChange('field')" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917]">
+                  <option value="arabic">العربية</option>
                   <option value="english">English</option>
+                  <option value="french">Français</option>
+                  <option value="spanish">Español</option>
+                  <option value="german">Deutsch</option>
+                  <option value="italian">Italiano</option>
+                  <option value="turkish">Türkçe</option>
+                  <option value="russian">Русский</option>
+                  <option value="urdu">اردو</option>
+                  <option value="hindi">हिन्दी</option>
+                  <option value="chinese">中文</option>
+                </select>
+              </div>
+              <div>
+                <select id="field-dialect" class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917]">
                 </select>
               </div>
             </div>
@@ -1316,22 +1326,33 @@
             <input type="text" id="new-prof-name" required placeholder="فهد - مبيعات سعودي" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#E8E0D5] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23] focus:ring-[#680E23]" />
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="block font-semibold text-[#443D39] mb-1">النوع</label>
-              <select id="new-prof-gender" onchange="syncNewProfileVoices()" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#E8E0D5] border border-[#DDD5C7] rounded-xl text-[#1C1917]">
+              <select id="new-prof-gender" onchange="syncNewProfileVoices()" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917]">
                 <option value="female">أنثى (بنت)</option>
                 <option value="male">ذكر (شاب)</option>
               </select>
             </div>
             <div>
-              <label class="block font-semibold text-[#443D39] mb-1">اللهجة</label>
-              <select id="new-prof-dialect" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#E8E0D5] border border-[#DDD5C7] rounded-xl text-[#1C1917]">
-                <option value="egyptian">مصرية عامية</option>
-                <option value="saudi">سعودية / خليجية</option>
-                <option value="levantine">شامية</option>
-                <option value="fusha">فصحى معاصرة</option>
+              <label class="block font-semibold text-[#443D39] mb-1">اللغة</label>
+              <select id="new-prof-language" onchange="handleLanguageChange('new')" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917]">
+                <option value="arabic">العربية</option>
                 <option value="english">English</option>
+                <option value="french">Français</option>
+                <option value="spanish">Español</option>
+                <option value="german">Deutsch</option>
+                <option value="italian">Italiano</option>
+                <option value="turkish">Türkçe</option>
+                <option value="russian">Русский</option>
+                <option value="urdu">اردو</option>
+                <option value="hindi">हिन्दी</option>
+                <option value="chinese">中文</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-[#443D39] mb-1">اللهجة</label>
+              <select id="new-prof-dialect" class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917]">
               </select>
             </div>
           </div>
@@ -4154,9 +4175,12 @@
     let userProfiles = [];
     let activeProfile = null;
     let googleVoices = [];
+    let availableLanguages = [];
+    let languageDialectsMap = {};
 
     const profileSelect = document.getElementById('profile-select');
     const fieldGender = document.getElementById('field-gender');
+    const fieldLanguage = document.getElementById('field-language');
     const fieldDialect = document.getElementById('field-dialect');
     const fieldVoice = document.getElementById('field-voice');
     const fieldRole = document.getElementById('field-role');
@@ -4168,6 +4192,8 @@
     const profileModal = document.getElementById('profile-modal');
     const newProfVoice = document.getElementById('new-prof-voice');
     const newProfGender = document.getElementById('new-prof-gender');
+    const newProfLanguage = document.getElementById('new-prof-language');
+    const newProfDialect = document.getElementById('new-prof-dialect');
 
     async function loadProfiles() {
       try {
@@ -4177,6 +4203,8 @@
           userProfiles = data.profiles;
           activeProfile = data.active_profile;
           googleVoices = data.google_voices;
+          availableLanguages = data.languages || [];
+          languageDialectsMap = data.language_dialects_map || {};
 
           renderProfileDropdown(); renderProfileCards();
           syncGenderVoiceOptions();
@@ -4199,6 +4227,28 @@
           ${p.name} ${p.is_active ? '⭐ [نشط للمكالمات]' : ''}
         </option>
       `).join('');
+    }
+
+    function populateDialectSelect(selectElem, selectedLang, selectedDialect) {
+      if (!selectElem) return;
+      const list = (languageDialectsMap && languageDialectsMap[selectedLang]) || [
+        { id: 'egyptian', label: 'لهجة مصرية عامية (مصر)' }
+      ];
+      selectElem.innerHTML = list.map(d => `
+        <option value="${d.id}" ${d.id === selectedDialect ? 'selected' : ''}>
+          ${d.label}
+        </option>
+      `).join('');
+    }
+
+    function handleLanguageChange(context) {
+      if (context === 'field') {
+        const lang = fieldLanguage ? fieldLanguage.value : 'arabic';
+        populateDialectSelect(fieldDialect, lang);
+      } else if (context === 'new') {
+        const lang = newProfLanguage ? newProfLanguage.value : 'arabic';
+        populateDialectSelect(newProfDialect, lang);
+      }
     }
 
     function populateVoiceSelect(selectElem, targetGender, selectedVoice) {
@@ -4253,13 +4303,16 @@
 
     function populateProfileForm(p) {
       fieldGender.value = p.gender;
-      fieldDialect.value = p.dialect;
+      if (fieldLanguage) {
+        fieldLanguage.value = p.language || 'arabic';
+      }
+      populateDialectSelect(fieldDialect, p.language || 'arabic', p.dialect);
       populateVoiceSelect(fieldVoice, p.gender, p.voice_name);
       fieldRole.value = p.persona_role;
       fieldStyle.value = p.speaking_style;
       fieldCustom.value = p.custom_instructions || '';
       updateVoiceTag();
-      profileStatusMsg.innerText = `البروفايل المطبق: "${p.name}" (${p.voice_name})`;
+      profileStatusMsg.innerText = `البروفايل المطبق: "${p.name}" (${p.voice_name} / ${p.dialect_display || p.dialect})`;
       profileStatusMsg.className = 'text-xs text-[#680E23] font-semibold';
     }
 
@@ -4292,6 +4345,7 @@
 
       const payload = {
         gender: fieldGender.value,
+        language: fieldLanguage ? fieldLanguage.value : 'arabic',
         dialect: fieldDialect.value,
         voice_name: fieldVoice.value,
         persona_role: fieldRole.value,
@@ -4329,6 +4383,8 @@
 
     function openNewProfileModal() {
       document.getElementById('new-profile-form').reset();
+      if (newProfLanguage) newProfLanguage.value = 'arabic';
+      populateDialectSelect(newProfDialect, 'arabic', 'egyptian');
       syncNewProfileVoices();
       profileModal.classList.remove('hidden');
     }
@@ -4341,7 +4397,8 @@
       e.preventDefault();
       const name = document.getElementById('new-prof-name').value.trim();
       const gender = document.getElementById('new-prof-gender').value;
-      const dialect = document.getElementById('new-prof-dialect').value;
+      const language = newProfLanguage ? newProfLanguage.value : 'arabic';
+      const dialect = newProfDialect.value;
       const voice_name = document.getElementById('new-prof-voice').value;
       const persona_role = document.getElementById('new-prof-role').value;
       const speaking_style = document.getElementById('new-prof-style').value;
@@ -4360,6 +4417,7 @@
           body: JSON.stringify({
             name,
             gender,
+            language,
             dialect,
             voice_name,
             persona_role,
