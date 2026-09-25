@@ -82,6 +82,31 @@ def fetch_agent_bootstrap_sync(user_id: int, caller_phone: str = "web_dashboard"
         logger.error(f"Failed to fetch bootstrap from Django API: {e}")
         return {}
 
+def trigger_ai_transfer_sync(room_name: str, user_id: int, queue_code: str, caller_phone: str = "web", caller_name: str = "العميل", reason: str = "") -> dict:
+    """Notify Django backend to dispatch Inngest transfer for this queue."""
+    try:
+        url = f"{DJANGO_API_URL}/api/call-center/internal/ai-transfer/"
+        headers = {
+            "X-Internal-API-Key": INTERNAL_API_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "room_name": room_name,
+            "user_id": user_id,
+            "queue_code": queue_code,
+            "caller_phone": caller_phone,
+            "caller_name": caller_name,
+            "reason": reason
+        }
+        res = requests.post(url, json=payload, headers=headers, timeout=5)
+        if res.status_code == 200:
+            return res.json()
+        logger.error(f"AI transfer API error ({res.status_code}): {res.text}")
+        return {"status": "error", "message": res.text}
+    except Exception as e:
+        logger.error(f"Failed to trigger AI transfer via Django API: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
+
 def query_knowledge_base_sync(query: str, user_id: int, genai_client=None, top_k: int = 4) -> str:
     """Query user's documents semantically via Django Knowledge RAG API."""
     if not user_id:
@@ -411,7 +436,7 @@ async def distill_and_update_memory(user_id: int, room_name: str, started_at: fl
     except Exception as e:
         logger.error(f"Error in distill_and_update_memory for user {user_id}: {e}", exc_info=True)
 
-def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue_context: dict = None, outbound_context: dict = None) -> str:
+def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue_context: dict = None, outbound_context: dict = None, call_queues: list = None) -> str:
     """Construct dynamic prompt incorporating dialect, gender, role, style, memory, queue fallback context, outbound context, and strict guardrails."""
     gender = profile.get("gender", "female")
     dialect = profile.get("dialect", "egyptian")
@@ -513,7 +538,20 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
 5. الإجابة من نتائج الأدوات: لخص نتائج الأداة للمستخدم بأسلوبك ولهجتك المحددة، بوضوح وأرقام دقيقة ومباشرة.
 6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{custom_text}
 7. الإيجاز: كلامك يكون مفيداً وموجزاً وعلى قد السؤال بالظبط.{memory_text}"""
-    return (outbound_header + fallback_header + prompt).strip()
+
+    queues_instruction = ""
+    if call_queues:
+        q_lines = [f"- قسم {q['name']}: كود ({q['code']})" for q in call_queues]
+        q_list_str = "\n".join(q_lines)
+        queues_instruction = (
+            f"\n\nطوابير وأقسام خدمة العملاء المتاحة حصراً في شركتك للتحويل إليها:\n{q_list_str}\n"
+            f"قواعد التحويل الإلزامية الصارمة:\n"
+            f"1. إذا طلب العميل التحدث مع موظف بشري أو خدمة العملاء أو قسم معين، استدعِ فوراً أداة 'transfer_to_queue' بكود الطابور المناسب حصراً.\n"
+            f"2. قبل إتمام التحويل، أخبر العميل بلباقة واختصار: 'حاضر يا فندم، هحول حضرتك حالا لقسم [الاسم]، ثواني معايا...'.\n"
+            f"3. ممنوع نهائياً اختراع أو ذكر أي أقسام أو أرقام طوابير غير الموجودة في القائمة أعلاه."
+        )
+
+    return (outbound_header + fallback_header + prompt + queues_instruction).strip()
 
 async def run_agent_session(room_name: str, user_id: int = None, caller_phone: str = "web_dashboard", profile_data: dict = None, queue_context: dict = None, outbound_context: dict = None):
     channel_name = f"rooms:{room_name}"
@@ -641,9 +679,41 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
     if mcp_tools:
         logger.info(f"Loaded {len(mcp_tools)} total MCP tools across {len(mcp_servers_list)} active servers: {list(mcp_tools.keys())}")
 
+    # Add tenant call_queues transfer tool if tenant has active queues
+    call_queues = bootstrap.get("call_queues", []) if bootstrap else []
+    if call_queues:
+        q_codes = [str(q["code"]) for q in call_queues]
+        q_descriptions = ", ".join([f"{q['name']} ({q['code']})" for q in call_queues])
+        transfer_decl = {
+            "name": "transfer_to_queue",
+            "description": f"تحويل المكالمة الجارية إلى أحد طوابير الموظفين البشريين التابعة للمؤسسة. الأقسام المتاحة: {q_descriptions}. استدعِ هذه الأداة فوراً عند طلب العميل التحدث مع موظف بشري أو الاستفسار عن قسم معين.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "queue_code": {
+                        "type": "STRING",
+                        "description": f"كود الطابور المراد التحويل إليه حصراً من بين: {q_codes}"
+                    },
+                    "reason": {
+                        "type": "STRING",
+                        "description": "سبب التحويل وملخص ما يريده العميل لتمريره لممثلي القسم"
+                    }
+                },
+                "required": ["queue_code"]
+            }
+        }
+        func_decls.append(transfer_decl)
+        logger.info(f"Loaded transfer_to_queue tool with {len(call_queues)} tenant queues: {q_codes}")
+
     tools = [{"function_declarations": func_decls}]
 
-    system_instruction_text = build_dynamic_system_instruction(active_profile, memory_card_text, queue_context=queue_context, outbound_context=outbound_context)
+    system_instruction_text = build_dynamic_system_instruction(
+        active_profile,
+        memory_card_text,
+        queue_context=queue_context,
+        outbound_context=outbound_context,
+        call_queues=call_queues
+    )
     logger.info(f"Dynamic system instruction compiled (length={len(system_instruction_text)} chars)")
 
     live_config = types.LiveConnectConfig(
@@ -660,6 +730,7 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
     in_audio_queue = asyncio.Queue()
     out_audio_queue = asyncio.Queue()
     stop_event = asyncio.Event()
+    pending_transfer = None
 
     call_started_at = time.time()
     call_dialogue_turns = []
@@ -822,6 +893,28 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
                                             name=fc.name,
                                             response={"result": action_result}
                                         ))
+                                    elif fc.name == "transfer_to_queue":
+                                        q_code = str(fc.args.get("queue_code", "")).strip() if fc.args else ""
+                                        reason = str(fc.args.get("reason", "")).strip() if fc.args else ""
+                                        matched_q = next((q for q in call_queues if str(q.get("code")) == q_code), None)
+                                        q_name = matched_q.get("name", "القسم المطلوب") if matched_q else f"طابور {q_code}"
+                                        logger.info(f"AI requested transfer_to_queue in room {room_name}: queue_code={q_code}, queue_name={q_name}, reason={reason}")
+
+                                        notify_centrifugo(channel_name, "agent_transferring", f"جاري تحويلك إلى {q_name}...")
+                                        function_responses.append(types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={
+                                                "status": "transfer_initiated",
+                                                "target_queue": q_name,
+                                                "instruction": f"تم استلام التحويل لـ {q_name}. أخبر العميل بلباقة واختصار الآن: 'حاضر يا فندم، هحول حضرتك حالا لـ {q_name}، ثواني معايا...' وسيقوم النظام بنقله فوراً."
+                                            }
+                                        ))
+                                        pending_transfer = {
+                                            "queue_code": q_code,
+                                            "queue_name": q_name,
+                                            "reason": reason
+                                        }
                                     else:
                                         logger.warning(f"Unknown tool requested by Gemini: {fc.name}")
                                         function_responses.append(types.FunctionResponse(
@@ -877,6 +970,20 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
                             if content.turn_complete:
                                 logger.info(f"Gemini model turn complete for room {room_name}")
                                 state["turn_complete"] = True
+                                if pending_transfer:
+                                    logger.info(f"Pending transfer detected after turn complete in {room_name}. Launching execute_ai_transfer_and_hold...")
+                                    # Allow audio pacer buffer to empty so confirmation is completely heard by caller
+                                    await asyncio.sleep(2.5)
+                                    asyncio.create_task(execute_ai_transfer_and_hold(
+                                        room_name=room_name,
+                                        user_id=user_id,
+                                        queue_code=pending_transfer["queue_code"],
+                                        caller_phone=caller_phone,
+                                        caller_name="العميل",
+                                        reason=pending_transfer.get("reason", "")
+                                    ))
+                                    stop_event.set()
+                                    break
 
                     except asyncio.CancelledError:
                         break
@@ -998,6 +1105,85 @@ async def stream_user_audio_to_queue(audio_stream: rtc.AudioStream, queue: async
             queue.put_nowait(bytes(frame.data))
     except Exception as e:
         logger.debug(f"Audio stream for {identity} ended: {e}")
+
+async def execute_ai_transfer_and_hold(room_name: str, user_id: int, queue_code: str, caller_phone: str = "web", caller_name: str = "العميل", reason: str = ""):
+    """
+    Executes AI transfer:
+    1. Triggers Inngest call transfer in Django.
+    2. Connects a transfer hold bot into room_name to play calming hold chime.
+    3. Exits as soon as an employee answers and joins the room.
+    """
+    logger.info(f"[AI TRANSFER] Starting AI transfer for room '{room_name}' to queue '{queue_code}' (caller: {caller_phone})")
+    
+    # 1. Trigger Django API to dispatch Inngest
+    res = await asyncio.to_thread(trigger_ai_transfer_sync, room_name, user_id, queue_code, caller_phone, caller_name, reason)
+    logger.info(f"[AI TRANSFER] Django transfer response: {res}")
+    
+    # 2. Connect transfer-bot to play hold music to customer
+    token = api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET) \
+        .with_identity("transfer-bot") \
+        .with_name("نغمة الانتظار") \
+        .with_grants(api.VideoGrants(
+            room_join=True,
+            room=room_name,
+            can_publish=True,
+            can_subscribe=True,
+        ))
+    bot_jwt = token.to_jwt()
+
+    room = rtc.Room()
+    stop_hold_event = asyncio.Event()
+    hold_playback_task = None
+
+    try:
+        await room.connect(LIVEKIT_INTERNAL_URL, bot_jwt)
+        logger.info(f"[AI TRANSFER] Transfer hold bot connected to room '{room_name}' to play chime")
+
+        audio_source = rtc.AudioSource(sample_rate=24000, num_channels=1)
+        audio_track = rtc.LocalAudioTrack.create_audio_track("transfer-hold-audio", audio_source)
+        publish_options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
+        await room.local_participant.publish_track(audio_track, publish_options)
+
+        from queue_manager import HOLD_CHIME_FRAMES, play_hold_audio_loop
+        hold_playback_task = asyncio.create_task(play_hold_audio_loop(audio_source, stop_hold_event, HOLD_CHIME_FRAMES))
+
+        # 3. Wait until human employee answers and joins room or customer leaves
+        start_time = time.time()
+        max_wait = 90
+        while (time.time() - start_time) < max_wait:
+            remote_parts = list(room.remote_participants.values())
+            customer_present = any(
+                not p.identity.startswith("transfer-")
+                and not p.identity.startswith("queue-")
+                and not p.identity.startswith("agent_")
+                and not p.identity.startswith("pipecat-")
+                for p in remote_parts
+            )
+            if room.connection_state == rtc.ConnectionState.CONN_CONNECTED and not customer_present and len(remote_parts) == 0:
+                logger.info(f"[AI TRANSFER] Customer left room '{room_name}'. Ending hold bot.")
+                break
+
+            employee_answered = any(
+                p.identity.startswith("employee_")
+                for p in remote_parts
+            )
+            if employee_answered:
+                logger.info(f"[AI TRANSFER] Human employee answered and joined room '{room_name}'! Stopping hold bot.")
+                break
+
+            await asyncio.sleep(0.5)
+
+    except Exception as e:
+        logger.error(f"[AI TRANSFER] Error in transfer hold bot: {e}")
+    finally:
+        stop_hold_event.set()
+        if hold_playback_task:
+            hold_playback_task.cancel()
+        try:
+            await room.disconnect()
+        except Exception:
+            pass
+        logger.info(f"[AI TRANSFER] Transfer hold bot disconnected from room '{room_name}'.")
 
 async def handle_webrtc_transfer_session(data: dict):
     """

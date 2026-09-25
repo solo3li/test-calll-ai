@@ -485,6 +485,22 @@ def api_internal_agent_bootstrap(request):
             "total_calls_count": 0
         }
 
+        # 4. Active Call Queues for this tenant/user
+        from call_center.models import CallQueue
+        queues = CallQueue.objects.filter(user=user, is_active=True).order_by('code')
+        queues_list = [
+            {
+                "id": q.id,
+                "name": q.name,
+                "code": q.code,
+                "strategy": q.strategy,
+                "ring_timeout_seconds": q.ring_timeout_seconds,
+                "total_timeout_seconds": q.total_timeout_seconds,
+                "members_count": q.memberships.filter(is_active=True).count()
+            }
+            for q in queues
+        ]
+
         return JsonResponse({
             "status": "success",
             "user_id": user.id,
@@ -492,7 +508,8 @@ def api_internal_agent_bootstrap(request):
             "profile": profile_data,
             "mcp_servers": mcp_list,
             "customer_memory": memory_data,
-            "partner_info": partner_info
+            "partner_info": partner_info,
+            "call_queues": queues_list
         })
 
     except Exception as e:

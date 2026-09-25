@@ -1173,3 +1173,105 @@ def api_list_call_logs(request):
         "logs": [log.to_dict() for log in logs],
         "count": len(logs)
     })
+
+
+@csrf_exempt
+def api_internal_ai_transfer(request):
+    """
+    Internal API called by the Voice AI agent to transfer a customer to a tenant's CallQueue.
+    Uses the exact Inngest transfer workflow fn_transfer_call_queue.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    from agents.views import verify_internal_api_key
+    if not verify_internal_api_key(request):
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        room_name = str(data.get('room_name', '')).strip()
+        queue_code = str(data.get('queue_code', '')).strip()
+        user_id = data.get('user_id')
+        caller_phone = str(data.get('caller_phone', '')).strip()
+        caller_name = str(data.get('caller_name', 'العميل المتصل')).strip()
+        reason = str(data.get('reason', '')).strip()
+
+        if not room_name or not queue_code:
+            return JsonResponse({"status": "error", "message": "room_name و queue_code مطلوبان"}, status=400)
+
+        # 1. Resolve Queue for this tenant/user
+        queue = None
+        if user_id:
+            queue = CallQueue.objects.filter(user_id=user_id, code=queue_code, is_active=True).first()
+        if not queue:
+            queue = CallQueue.objects.filter(code=queue_code, is_active=True).first()
+
+        if not queue:
+            return JsonResponse({"status": "error", "message": f"طابور الانتظار '{queue_code}' غير موجود أو غير نشط"}, status=404)
+
+        candidate_ids = list(
+            queue.memberships.filter(is_active=True)
+            .order_by('order')
+            .values_list('employee_id', flat=True)
+        )
+
+        if not candidate_ids:
+            return JsonResponse({"status": "error", "message": f"لا يوجد موظفون في طابور '{queue.name}' للتحويل إليهم"}, status=400)
+
+        # 2. Generate transfer_id and store state in Redis
+        transfer_id = f"tr_{uuid.uuid4().hex[:8]}"
+        r = redis.Redis.from_url(settings.REDIS_URL)
+        r.set(f"transfer:{transfer_id}:from_ai", "true", ex=300)
+        r.set(f"transfer:{transfer_id}:caller_phone", caller_phone, ex=300)
+        r.set(f"transfer:{transfer_id}:state", "ringing", ex=300)
+        r.set(f"room:{room_name}:is_transferring", "true", ex=120)
+
+        # 3. Notify room on Centrifugo
+        publish_to_centrifugo(f"rooms:{room_name}", {
+            "event": "transfer_hold",
+            "transfer_id": transfer_id,
+            "transferred_by": "المساعد الذكي (AI)",
+            "target_name": queue.name,
+            "message": f"جاري تحويل مكالمتك إلى {queue.name}، يرجى الانتظار...",
+            "hold_audio_url": "https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3",
+            "timestamp": time.time()
+        })
+
+        # 4. Dispatch Inngest event to run fn_transfer_call_queue
+        ring_timeout = queue.ring_timeout_seconds or 15
+        total_timeout = queue.total_timeout_seconds or 60
+        async_to_sync(inngest_client.send)(
+            inngest.Event(
+                name="call_center/transfer.requested",
+                data={
+                    "transfer_id": transfer_id,
+                    "old_room_name": room_name,
+                    "from_employee_id": 0,
+                    "from_employee_name": "المساعد الذكي (AI)",
+                    "from_employee_extension": "AI",
+                    "caller_id": None,
+                    "caller_name": caller_name,
+                    "caller_extension": caller_phone or "العميل",
+                    "candidate_ids": candidate_ids,
+                    "ring_timeout_seconds": ring_timeout,
+                    "total_timeout_seconds": total_timeout,
+                    "reason": reason,
+                }
+            )
+        )
+
+        logger.info(f"AI initiated call transfer {transfer_id} in room {room_name} to queue {queue.name} ({queue.code}) - candidates: {candidate_ids}")
+
+        return JsonResponse({
+            "status": "success",
+            "message": f"تم بدء تحويل المكالمة إلى طابور {queue.name}",
+            "transfer_id": transfer_id,
+            "queue_name": queue.name,
+            "queue_code": queue.code,
+            "candidates_count": len(candidate_ids)
+        })
+
+    except Exception as e:
+        logger.error(f"Error in api_internal_ai_transfer: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)

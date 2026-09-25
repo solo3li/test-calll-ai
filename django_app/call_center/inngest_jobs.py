@@ -122,9 +122,9 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
 
     logger.info(f"[Inngest Transfer {transfer_id}] Starting transfer for caller {caller_name} ({caller_ext}) -> candidates {candidate_ids}")
 
-    # Step 1: Ensure old LiveKit room is cleanly deleted
+    # Step 1: Ensure old LiveKit room is cleanly deleted if internal employee transfer
     async def step_close_old_room():
-        if old_room_name:
+        if caller_id and old_room_name:
             await delete_livekit_room(old_room_name)
         return {"status": "room_closed", "room": old_room_name}
 
@@ -177,7 +177,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                 "event": "incoming_call",
                 "call_type": "transfer",
                 "transfer_id": transfer_id,
-                "room_name": f"transfer_{transfer_id}",
+                "room_name": old_room_name if (not caller_id and old_room_name) else f"transfer_{transfer_id}",
                 "caller_name": caller_name,
                 "caller_extension": caller_ext,
                 "transferred_by": from_emp_name,
@@ -222,15 +222,12 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
             answered_emp_id = cand_id
 
             async def step_complete_transfer():
-                new_room = f"call_ext_{caller_ext}_{cand.extension}_tr_{uuid.uuid4().hex[:6]}"
+                if not caller_id and old_room_name:
+                    new_room = old_room_name
+                else:
+                    new_room = f"call_ext_{caller_ext}_{cand.extension}_tr_{uuid.uuid4().hex[:6]}"
                 
                 # Tokens
-                caller_token = generate_livekit_token(
-                    new_room,
-                    f"employee_{caller_id}_{caller_ext}",
-                    caller_name,
-                    {"role": "caller", "employee_id": caller_id}
-                )
                 cand_token = generate_livekit_token(
                     new_room,
                     f"employee_{cand.id}_{cand.extension}",
@@ -246,16 +243,33 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                     cand.id, caller_name, caller_ext, new_room, "inbound"
                 )
 
-                # Send new room token to Caller on hold
-                publish_to_centrifugo(f"employee:{caller_id}", {
-                    "event": "transfer_room_ready",
-                    "transfer_id": transfer_id,
-                    "room_name": new_room,
-                    "livekit_url": settings.LIVEKIT_URL,
-                    "livekit_token": caller_token,
-                    "partner_name": cand.display_name,
-                    "partner_extension": cand.extension
-                })
+                # Send new room token to Caller on hold if employee
+                if caller_id:
+                    caller_token = generate_livekit_token(
+                        new_room,
+                        f"employee_{caller_id}_{caller_ext}",
+                        caller_name,
+                        {"role": "caller", "employee_id": caller_id}
+                    )
+                    publish_to_centrifugo(f"employee:{caller_id}", {
+                        "event": "transfer_room_ready",
+                        "transfer_id": transfer_id,
+                        "room_name": new_room,
+                        "livekit_url": settings.LIVEKIT_URL,
+                        "livekit_token": caller_token,
+                        "partner_name": cand.display_name,
+                        "partner_extension": cand.extension
+                    })
+
+                # Broadcast to room channel for web widgets
+                if old_room_name:
+                    publish_to_centrifugo(f"rooms:{old_room_name}", {
+                        "event": "transfer_room_ready",
+                        "transfer_id": transfer_id,
+                        "room_name": new_room,
+                        "partner_name": cand.display_name,
+                        "partner_extension": cand.extension
+                    })
 
                 # Send new room token to Answered Candidate
                 publish_to_centrifugo(f"employee:{cand.id}", {
@@ -268,14 +282,15 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                     "partner_extension": caller_ext
                 })
 
-                # Notify Transferrer of success and set them ready
-                publish_to_centrifugo(f"employee:{from_emp_id}", {
-                    "event": "transfer_success",
-                    "transfer_id": transfer_id,
-                    "transferred_to": cand.display_name,
-                    "target_extension": cand.extension
-                })
-                await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(from_emp_id, "ready")
+                # Notify Transferrer of success if human employee
+                if from_emp_id:
+                    publish_to_centrifugo(f"employee:{from_emp_id}", {
+                        "event": "transfer_success",
+                        "transfer_id": transfer_id,
+                        "transferred_to": cand.display_name,
+                        "target_extension": cand.extension
+                    })
+                    await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(from_emp_id, "ready")
 
                 r.set(f"transfer:{transfer_id}:state", "completed", ex=300)
                 r.set(f"transfer:{transfer_id}:answered_by", cand.id, ex=300)
@@ -363,12 +378,20 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                 logger.info(f"[Inngest Transfer {transfer_id}] In-step check: transfer already resolved. Skipping failure.")
                 return {"status": "already_resolved"}
 
-            publish_to_centrifugo(f"employee:{caller_id}", {
-                "event": "transfer_failed",
-                "transfer_id": transfer_id,
-                "message": "عذراً، لم يتسنَّ للموظفين الرد على المكالمة حالياً وتم إنهاء المكالمة."
-            })
-            await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(caller_id, "ready")
+            if caller_id:
+                publish_to_centrifugo(f"employee:{caller_id}", {
+                    "event": "transfer_failed",
+                    "transfer_id": transfer_id,
+                    "message": "عذراً، لم يتسنَّ للموظفين الرد على المكالمة حالياً وتم إنهاء المكالمة."
+                })
+                await sync_to_async(_update_employee_status_sync, thread_sensitive=True)(caller_id, "ready")
+
+            if old_room_name:
+                publish_to_centrifugo(f"rooms:{old_room_name}", {
+                    "event": "transfer_failed",
+                    "transfer_id": transfer_id,
+                    "message": "عذراً، لم يتسنَّ للموظفين الرد على المكالمة حالياً وتم إنهاء المكالمة."
+                })
             r_check.set(f"transfer:{transfer_id}:state", "failed", ex=300)
             return {"status": "failed", "reason": "all_candidates_exhausted"}
 

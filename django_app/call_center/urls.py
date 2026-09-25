@@ -28,4 +28,5 @@ urlpatterns = [
     path('calls/transfer/cancel/', views.api_transfer_cancel, name='api_transfer_cancel'),
     path('calls/transfer/action/', views.api_transfer_action, name='api_transfer_action'),
     path('calls/logs/', views.api_list_call_logs, name='api_list_call_logs'),
+    path('internal/ai-transfer/', views.api_internal_ai_transfer, name='api_internal_ai_transfer'),
 ]
