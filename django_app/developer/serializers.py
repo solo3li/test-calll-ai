@@ -294,12 +294,15 @@ class CampaignContactSerializer(serializers.Serializer):
 
 
 class CampaignCreateRequestSerializer(serializers.Serializer):
-    name = serializers.CharField(required=True, help_text="اسم الحملة التسويقية أو التشغيلية")
+    name = serializers.CharField(required=False, help_text="اسم الحملة التسويقية أو التشغيلية (اختياري في حال رفع ملف، يتم استخدام اسم الملف تلقائياً)")
+    file = serializers.FileField(required=False, help_text="ملف جهات الاتصال المراد رفعه (Excel: .xlsx, .xls أو CSV: .csv أو TXT أو JSON)")
     agent_profile_id = serializers.IntegerField(required=False, allow_null=True, help_text="معرف شخصية الذكاء الاصطناعي المنفذة للمكالمات")
-    call_prompt = serializers.CharField(required=True, help_text="سيناريو وهدف المكالمة المخصص (Prompt) مع دعم المتغيرات مثل {name}")
+    call_prompt = serializers.CharField(required=False, allow_blank=True, help_text="سيناريو وهدف المكالمة المخصص (Prompt) مع دعم المتغيرات مثل {name}")
     max_retries = serializers.IntegerField(default=1, required=False, help_text="محاولات إعادة الاتصال في حال عدم الرد (0-5)")
     retry_delay_minutes = serializers.IntegerField(default=15, required=False, help_text="الفارق الزمني بين محاولات الإعادة بالدقائق")
-    contacts = CampaignContactItemSerializer(many=True, required=False, help_text="قائمة أرقام وبيانات العملاء المستهدفين في الحملة")
+    gateway_type = serializers.CharField(default='auto', required=False, help_text="نوع بوابة الاتصال (auto, sip_trunk)")
+    gateway_id = serializers.IntegerField(required=False, allow_null=True, help_text="معرف خط الاتصال المخصص")
+    contacts = CampaignContactItemSerializer(many=True, required=False, help_text="قائمة أرقام وبيانات العملاء المستهدفين كبديل في حال عدم رفع ملف")
 
 
 class CampaignSerializer(serializers.Serializer):

@@ -249,11 +249,14 @@ class PartnerClientCampaignContactItemSerializer(serializers.Serializer):
 
 
 class PartnerClientCampaignCreateRequestSerializer(serializers.Serializer):
-    name = serializers.CharField(required=True)
+    name = serializers.CharField(required=False, help_text="اسم الحملة التسويقية أو التشغيلية (اختياري في حال رفع ملف)")
+    file = serializers.FileField(required=False, help_text="ملف جهات الاتصال المراد رفعه (Excel: .xlsx, .xls أو CSV: .csv أو TXT أو JSON)")
     agent_profile_id = serializers.IntegerField(required=False, allow_null=True)
-    call_prompt = serializers.CharField(required=True)
+    call_prompt = serializers.CharField(required=False, allow_blank=True)
     max_retries = serializers.IntegerField(default=1, required=False)
     retry_delay_minutes = serializers.IntegerField(default=15, required=False)
+    gateway_type = serializers.CharField(default='auto', required=False)
+    gateway_id = serializers.IntegerField(required=False, allow_null=True)
     contacts = PartnerClientCampaignContactItemSerializer(many=True, required=False)
 
 

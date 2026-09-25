@@ -29,7 +29,8 @@ from django.db.models import Q
 from django.core.paginator import Paginator
 from livekit import api
 
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.views import SpectacularAPIView
 from .models import PartnerProfile, PartnerClientRelationship
@@ -72,6 +73,8 @@ from knowledge.models import Document, DocumentChunk
 from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 from telephony.models import InboundPBXTrunk, OutboundSIPTrunk
 from telephony.services import initiate_outbound_call
+from django.utils import timezone
+from crm.file_parser import parse_leads_file, normalize_phone, is_valid_phone
 from call_center.models import CallQueue, EmployeeProfile, QueueMembership
 from google import genai
 from google.genai import types
@@ -2105,10 +2108,12 @@ def api_partner_docs_scalar(request):
     tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['GET', 'POST'])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 @partner_client_access_required
 def api_partner_client_campaigns(request, client_id):
     """
     GET & POST /api/partner/v1/clients/<client_id>/campaigns/
+    List all outbound campaigns or create a new campaign with target contacts (via file upload or JSON array).
     """
     client_user = request.client_user
     if request.method == 'GET':
@@ -2127,38 +2132,101 @@ def api_partner_client_campaigns(request, client_id):
             except Exception:
                 pass
 
-        name = data.get('name', '').strip()
-        if not name:
-            return JsonResponse({"status": "error", "message": "name is required"}, status=400)
+        file_obj = request.FILES.get('file')
+        contacts_to_create = []
 
-        call_prompt = data.get('call_prompt', '').strip()
+        if file_obj:
+            file_bytes = file_obj.read()
+            parse_res = parse_leads_file(file_bytes, file_obj.name)
+            if parse_res.get("status") != "success":
+                return JsonResponse({"status": "error", "message": parse_res.get("message", "فشل تحليل الملف")}, status=400)
+            valid_contacts = parse_res.get("valid_contacts", [])
+            if not valid_contacts:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "لم يتم العثور على أي أرقام هواتف صالحة داخل الملف المرفوع. يرجى التأكد من محتوى الملف."
+                }, status=400)
+            contacts_to_create = valid_contacts
+        else:
+            raw_contacts = data.get('contacts')
+            if isinstance(raw_contacts, str):
+                try:
+                    raw_contacts = json.loads(raw_contacts)
+                except Exception:
+                    raw_contacts = []
+            if isinstance(raw_contacts, list) and raw_contacts:
+                for item in raw_contacts:
+                    if not isinstance(item, dict):
+                        continue
+                    phone = normalize_phone(item.get('phone_number') or item.get('phone') or '')
+                    if not is_valid_phone(phone):
+                        phone = str(item.get('phone_number') or item.get('phone') or '').strip()
+                    if not phone:
+                        continue
+                    name_val = str(item.get('name') or item.get('customer_name') or '').strip()
+                    contacts_to_create.append({
+                        "customer_name": name_val or f"عميل ({phone})",
+                        "phone_number": phone,
+                        "attributes": item.get('attributes') or {}
+                    })
+
+        if not contacts_to_create:
+            return JsonResponse({
+                "status": "error",
+                "message": "يجب تزويد ملف جهات الاتصال (file) أو مصفوفة جهات الاتصال (contacts) تحتوي على أرقام هواتف صالحة."
+            }, status=400)
+
+        name = str(data.get('name') or '').strip()
+        if not name:
+            if file_obj:
+                name = f"حملة {file_obj.name} - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
+            else:
+                name = f"حملة جهات اتصال - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
+
+        call_prompt = str(data.get('call_prompt') or '').strip()
         profile_id = data.get('agent_profile_id')
         agent_profile = AgentProfile.objects.filter(id=profile_id, user=client_user).first() if profile_id else None
+
+        gateway_type = str(data.get('gateway_type') or 'auto').strip()
+        gateway_id = data.get('gateway_id')
+        gateway_id_int = int(gateway_id) if gateway_id and str(gateway_id).isdigit() else None
+
+        try:
+            max_retries = max(0, min(5, int(data.get('max_retries', 1))))
+        except (ValueError, TypeError):
+            max_retries = 1
+
+        try:
+            retry_delay_minutes = max(1, min(1440, int(data.get('retry_delay_minutes', 15))))
+        except (ValueError, TypeError):
+            retry_delay_minutes = 15
 
         campaign = OutboundCampaign.objects.create(
             user=client_user,
             name=name,
             agent_profile=agent_profile,
             call_prompt=call_prompt,
-            max_retries=int(data.get('max_retries', 1)),
-            retry_delay_minutes=int(data.get('retry_delay_minutes', 15)),
+            max_retries=max_retries,
+            retry_delay_minutes=retry_delay_minutes,
+            gateway_type=gateway_type,
+            gateway_id=gateway_id_int,
             status='draft'
         )
 
-        contacts_list = data.get('contacts', [])
-        for item in contacts_list:
-            phone = str(item.get('phone_number') or '').strip()
-            if not phone:
-                continue
-            CampaignContact.objects.create(
+        contact_objs = [
+            CampaignContact(
                 campaign=campaign,
-                phone_number=phone,
-                customer_name=str(item.get('name') or '').strip(),
-                attributes=item.get('attributes') or {},
-                call_status='pending'
+                customer_name=c.get("customer_name") or f"عميل ({c.get('phone_number')})",
+                phone_number=c.get("phone_number"),
+                attributes=c.get("attributes", {}),
+                call_status='pending',
+                interest_level='uncontacted'
             )
-
+            for c in contacts_to_create
+        ]
+        CampaignContact.objects.bulk_create(contact_objs)
         campaign.update_metrics()
+
         return JsonResponse({
             "status": "success",
             "message": "تم إنشاء حملة الاتصال للعميل بنجاح",
