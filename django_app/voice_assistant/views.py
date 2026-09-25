@@ -568,3 +568,25 @@ def stream_call_recording(request, filename):
     except Exception as e:
         logger.error(f"Error streaming recording {filename}: {e}")
         return HttpResponse(f"Error streaming recording: {e}", status=500)
+
+
+@login_required
+def calls_page_view(request):
+    """Render dedicated Call Detail Records & Recordings page."""
+    context = {
+        'page_title': 'سجل المكالمات (CDR) والتسجيلات',
+        'page_icon': '📋',
+        'active_nav': 'calls',
+    }
+    return render(request, 'voice_assistant/pages/calls.html', context)
+
+
+@login_required
+def billing_page_view(request):
+    """Render dedicated Usage & Billing page."""
+    context = {
+        'page_title': 'الرصيد والفواتير',
+        'page_icon': '💳',
+        'active_nav': 'billing',
+    }
+    return render(request, 'voice_assistant/pages/billing.html', context)
