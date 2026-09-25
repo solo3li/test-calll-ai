@@ -754,17 +754,42 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
     subscribed_sids = set()
 
     def subscribe_track(track: rtc.Track, publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
+        p_identity = participant.identity or ""
+        # Never subscribe to hold music or queue announcement bots
+        if p_identity.startswith("transfer-") or p_identity.startswith("queue-"):
+            return
+        # Strict Human Employee Guardrail: If an employee is present or joins, AI must immediately disconnect!
+        if p_identity.startswith("employee_"):
+            logger.info(f"Human employee '{p_identity}' detected in room '{room_name}'. Immediately terminating AI Voice Agent session.")
+            stop_event.set()
+            return
+
         sid = publication.sid or (track.sid if track else None)
         if not sid or sid in subscribed_sids:
             return
         if track and track.kind == rtc.TrackKind.KIND_AUDIO:
             subscribed_sids.add(sid)
-            logger.info(f"Subscribing to audio track {sid} from participant {participant.identity}")
+            logger.info(f"Subscribing to audio track {sid} from customer {participant.identity}")
             audio_stream = rtc.AudioStream(track, sample_rate=16000, num_channels=1)
             asyncio.create_task(stream_user_audio_to_queue(audio_stream, in_audio_queue, stop_event, participant.identity))
 
+    @room.on("participant_connected")
+    def on_participant_connected(participant: rtc.RemoteParticipant):
+        p_identity = participant.identity or ""
+        logger.info(f"Participant connected: {p_identity} in room {room_name}")
+        if p_identity.startswith("employee_"):
+            logger.info(f"Human employee '{p_identity}' joined room '{room_name}'! Immediately disconnecting AI Voice Agent.")
+            stop_event.set()
+
     @room.on("track_published")
     def on_track_published(publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
+        p_identity = participant.identity or ""
+        if p_identity.startswith("employee_"):
+            logger.info(f"Human employee '{p_identity}' published track in room '{room_name}'. Disconnecting AI.")
+            stop_event.set()
+            return
+        if p_identity.startswith("transfer-") or p_identity.startswith("queue-"):
+            return
         publication.set_subscribed(True)
         if publication.track:
             subscribe_track(publication.track, publication, participant)
@@ -774,6 +799,13 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
         subscribe_track(track, publication, participant)
 
     for participant in room.remote_participants.values():
+        p_identity = participant.identity or ""
+        if p_identity.startswith("employee_"):
+            logger.info(f"Human employee '{p_identity}' already present in room '{room_name}'. Terminating AI Voice Agent session.")
+            stop_event.set()
+            break
+        if p_identity.startswith("transfer-") or p_identity.startswith("queue-"):
+            continue
         for publication in participant.track_publications.values():
             publication.set_subscribed(True)
             if publication.track:
@@ -782,9 +814,15 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
     @room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
         logger.info(f"Participant disconnected: {participant.identity} from room {room_name}")
-        remaining_humans = [p for p in room.remote_participants.values() if p.identity != "pipecat-agent"]
+        remaining_humans = [
+            p for p in room.remote_participants.values() 
+            if p.identity != "pipecat-agent"
+            and not p.identity.startswith("transfer-")
+            and not p.identity.startswith("queue-")
+            and not p.identity.startswith("employee_")
+        ]
         if not remaining_humans:
-            logger.info(f"No human participants left in room '{room_name}'. Terminating agent session.")
+            logger.info(f"No human customer participants left in room '{room_name}'. Terminating agent session.")
             stop_event.set()
 
     # 5. Connect to Gemini Live Session
@@ -859,6 +897,7 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
 
             # Worker 2: Receive audio, transcripts & handle tool calls from Gemini Live across multiple turns
             async def receive_audio_worker():
+                pending_transfer = None
                 while not stop_event.is_set():
                     try:
                         async for response in session.receive():
@@ -981,8 +1020,12 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
                                 state["turn_complete"] = True
                                 if pending_transfer:
                                     logger.info(f"Pending transfer detected after turn complete in {room_name}. Launching execute_ai_transfer_and_hold...")
-                                    # Allow audio pacer buffer to empty so confirmation is completely heard by caller
-                                    await asyncio.sleep(2.5)
+                                    # Wait for audio pacer to finish playing the agent's farewell audio so caller hears it fully
+                                    wait_start = time.time()
+                                    while (state.get("is_agent_speaking") or not out_audio_queue.empty()) and (time.time() - wait_start < 4.0):
+                                        await asyncio.sleep(0.1)
+                                    await asyncio.sleep(0.3)
+
                                     asyncio.create_task(execute_ai_transfer_and_hold(
                                         room_name=room_name,
                                         user_id=user_id,
@@ -991,6 +1034,7 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
                                         caller_name="العميل",
                                         reason=pending_transfer.get("reason", "")
                                     ))
+                                    logger.info(f"AI voice agent transfer launched. Exiting Voice Agent cleanly from room '{room_name}'.")
                                     stop_event.set()
                                     break
 
