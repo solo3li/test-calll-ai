@@ -1317,13 +1317,16 @@ def api_internal_ai_transfer(request):
             return JsonResponse({"status": "error", "message": f"لا يوجد موظفون في طابور '{queue.name}' للتحويل إليهم"}, status=400)
 
         # 2. Generate transfer_id and store state in Redis
+        total_timeout = queue.total_timeout_seconds or 300
+        ring_timeout = queue.ring_timeout_seconds or 15
+
         transfer_id = f"tr_{uuid.uuid4().hex[:8]}"
         r = redis.Redis.from_url(settings.REDIS_URL)
-        r.set(f"transfer:{transfer_id}:from_ai", "true", ex=300)
-        r.set(f"transfer:{transfer_id}:caller_phone", caller_phone, ex=300)
-        r.set(f"transfer:{transfer_id}:state", "ringing", ex=300)
-        r.set(f"room:{room_name}:is_transferring", "true", ex=120)
-        r.set(f"room:{room_name}:transfer_id", transfer_id, ex=300)
+        r.set(f"transfer:{transfer_id}:from_ai", "true", ex=total_timeout + 60)
+        r.set(f"transfer:{transfer_id}:caller_phone", caller_phone, ex=total_timeout + 60)
+        r.set(f"transfer:{transfer_id}:state", "ringing", ex=total_timeout + 60)
+        r.set(f"room:{room_name}:is_transferring", "true", ex=total_timeout + 60)
+        r.set(f"room:{room_name}:transfer_id", transfer_id, ex=total_timeout + 60)
 
         # 3. Notify room on Centrifugo
         publish_to_centrifugo(f"rooms:{room_name}", {
@@ -1337,8 +1340,6 @@ def api_internal_ai_transfer(request):
         })
 
         # 4. Dispatch Inngest event to run fn_transfer_call_queue
-        ring_timeout = queue.ring_timeout_seconds or 15
-        total_timeout = queue.total_timeout_seconds or 60
         async_to_sync(inngest_client.send)(
             inngest.Event(
                 name="call_center/transfer.requested",

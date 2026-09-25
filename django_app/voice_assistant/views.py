@@ -292,6 +292,16 @@ def livekit_webhook(request):
             })
             return HttpResponse("ok")
 
+        # Skip internal helper bots (transfer hold bot, queue bots, etc.)
+        if (
+            str(participant_identity).startswith("transfer-")
+            or str(participant_identity).startswith("queue-")
+            or str(participant_identity).startswith("bot_")
+            or participant_identity == "transfer-bot"
+        ):
+            logger.info(f"Internal helper bot '{participant_identity}' joined room {room_name}. Skipping AI agent dispatch.")
+            return HttpResponse("ok")
+
         # Skip direct human-to-human calls (employee to employee or employee to external PSTN)
         if room_name.startswith("call_ext_") or room_name.startswith("call_tr_") or room_name.startswith("call_rst_") or room_name.startswith("pstn_out_") or str(participant_identity).startswith("employee_"):
             logger.info(f"Direct human-to-human call room '{room_name}' (participant: {participant_identity}). Skipping AI agent dispatch.")

@@ -552,7 +552,7 @@ def build_dynamic_system_instruction(profile: dict, memory_card: str = "", queue
             f"1. إذا طلب العميل التحدث مع موظف بشري أو خدمة العملاء أو قسم معين:\n"
             f"   - طابق مشكلة العميل واحتياجه بدقة مع اختصاصات ووصف كل طابور أعلاه، واستدعِ فوراً أداة 'transfer_to_queue' بكود الطابور الأنسب.\n"
             f"   - إذا طلب العميل التحويل بشكل عام دون تحديد قسم أو مشكلة، اسأله بلباقة واختصار (مثال: 'تحت أمرك يا فندم، تحب أحولك لأي قسم بالتحديد، أو إيه طبيعة المشكلة عشان أوجهك للقسم المختص؟'). وإذا أصر العميل على التحويل أو كان هناك قسم دعم عام، حوله فوراً إليه.\n"
-            f"2. قبل استدعاء أداة التحويل، أخبر العميل بلباقة واختصار: 'حاضر يا فندم، هحول حضرتك حالا لقسم [الاسم]، ثواني معايا...'.\n"
+            f"2. عند التحويل، استدعِ فوراً أداة 'transfer_to_queue'. انطق جملة واحدة فقط موجزة تؤكد التحويل (مثال: 'حاضر يا فندم، هحولك حالا لقسم [الاسم]، ثواني معايا...') في نفس وقت استدعاء الأداة، وممنوع نهائياً تكرار أو إعادة نطق الجملة بعد تنفيذ الأداة.\n"
             f"3. ممنوع نهائياً اختراع أو ذكر أي أقسام أو أرقام طوابير غير الموجودة في القائمة أعلاه، وممنوع رفض طلب التحويل إذا كان العميل يطلب التواصل مع موظف أو قسم متاح في القائمة أعلاه."
         )
 
@@ -955,7 +955,7 @@ async def run_agent_session(room_name: str, user_id: int = None, caller_phone: s
                                             response={
                                                 "status": "transfer_initiated",
                                                 "target_queue": q_name,
-                                                "instruction": f"تم استلام التحويل لـ {q_name}. أخبر العميل بلباقة واختصار الآن: 'حاضر يا فندم، هحول حضرتك حالا لـ {q_name}، ثواني معايا...' وسيقوم النظام بنقله فوراً."
+                                                "instruction": f"تم تفعيل تحويل المكالمة لطابور {q_name}. لا تكرر أي كلام سابق إطلاقاً، فقط قل كلمة موجزة مثل 'ثواني معايا' وسيبدأ نقله فوراً."
                                             }
                                         ))
                                         pending_transfer = {
@@ -1202,7 +1202,7 @@ async def execute_ai_transfer_and_hold(room_name: str, user_id: int, queue_code:
 
         # 3. Wait until human employee answers and joins room or customer leaves
         start_time = time.time()
-        max_wait = 90
+        max_wait = 330  # Support up to 5.5 minutes of queue hold music
         while (time.time() - start_time) < max_wait:
             remote_parts = list(room.remote_participants.values())
             customer_present = any(
