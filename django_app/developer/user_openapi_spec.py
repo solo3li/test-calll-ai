@@ -38,8 +38,9 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         {"name": "7. دليل الموظفين والتحويلات", "description": "إدارة الموظفين والتحويلات الداخلية للعميل وحالات التوفر (Ready, Busy, Offline)."},
         {"name": "8. طوابير الانتظار والكول سنتر", "description": "طوابير الكول سنتر واستراتيجيات التوزيع (Round Robin) وإدارة الأعضاء."},
         {"name": "9. بدء مكالمة WebRTC", "description": "إصدار توكنات LiveKit المشفرة لبدء المكالمة الصوتية الفورية في المتصفح أو التطبيق."},
-        {"name": "10. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
-        {"name": "11. إشعارات الويبهوك", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من الأحداث الموقعة."}
+        {"name": "10. حملات الاتصال والعملاء (Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي الصادرة وجدولة الاتصال المتوازي عبر Inngest."},
+        {"name": "11. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
+        {"name": "12. إشعارات الويبهوك", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من الأحداث الموقعة."}
     ]
 
     tags_en = [
@@ -52,8 +53,9 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         {"name": "7. Employee Directory & Extensions", "description": "Staff directory, internal SIP extensions, call transfers, and agent availability status."},
         {"name": "8. Call Queues & Routing", "description": "Call center queues, routing strategies (Round Robin), and queue membership."},
         {"name": "9. WebRTC Voice Sessions", "description": "Issuing encrypted LiveKit access tokens for instant browser and mobile voice sessions."},
-        {"name": "10. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
-        {"name": "11. Webhooks & Events", "description": "Configure webhook endpoints for call.completed notifications and event payloads."}
+        {"name": "10. Outbound Campaigns", "description": "Create and manage automated outbound calling campaigns and dial execution via Inngest."},
+        {"name": "11. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
+        {"name": "12. Webhooks & Events", "description": "Configure webhook endpoints for call.completed notifications and event payloads."}
     ]
 
     tags = tags_ar if is_ar else tags_en
@@ -67,8 +69,9 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         "tag_employees": tags[6]["name"],
         "tag_queues": tags[7]["name"],
         "tag_token": tags[8]["name"],
-        "tag_cdr": tags[9]["name"],
-        "tag_webhooks": tags[10]["name"],
+        "tag_campaigns": tags[9]["name"],
+        "tag_cdr": tags[10]["name"],
+        "tag_webhooks": tags[11]["name"],
     }
 
     paths = {

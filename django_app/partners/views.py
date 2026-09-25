@@ -1979,6 +1979,18 @@ class PartnerSpectacularSchemaView(SpectacularAPIView):
         resp = super().get(request, *args, **kwargs)
         spec = resp.data if hasattr(resp, 'data') else {}
 
+        # 1. Normalize paths: Django's root URLconf has '/api/partner/v1/', but the OpenAPI server base URL
+        # is already '/api/partner/v1'. Stripping '/api/partner/v1' prevents duplicate '/api/partner/v1/api/partner/v1/...' in Scalar.
+        cleaned_paths = {}
+        for path_key, path_data in spec.get('paths', {}).items():
+            clean_path = path_key
+            if clean_path.startswith('/api/partner/v1/'):
+                clean_path = clean_path[15:]  # strips '/api/partner/v1' while keeping leading '/'
+            elif clean_path == '/api/partner/v1':
+                clean_path = '/'
+            cleaned_paths[clean_path] = path_data
+        spec['paths'] = cleaned_paths
+
         legacy_spec = get_partner_openapi_spec(server_url='/api/partner/v1', lang=lang)
         if not spec.get('paths'):
             spec['paths'] = legacy_spec.get('paths', {})
@@ -1987,14 +1999,25 @@ class PartnerSpectacularSchemaView(SpectacularAPIView):
                 if path_key not in spec['paths']:
                     spec['paths'][path_key] = path_data
 
-        for k in ('info', 'tags', 'servers', 'components'):
+        for k in ('info', 'servers', 'components'):
             if k not in spec or not spec[k]:
                 spec[k] = legacy_spec.get(k, {})
+
+        # Use curated ordered tags from partner openapi_spec
+        spec['tags'] = legacy_spec.get('tags', [])
 
         if lang == 'en':
             if 'info' in spec:
                 spec['info']['title'] = 'Partner SaaS Multi-Tenant REST API (v1)'
                 spec['info']['description'] = 'B2B Partner API for multi-tenant customer management, voice AI personas, and WebRTC telephony.'
+            # Translate campaign tag on paths if English
+            for p_key, p_methods in spec.get('paths', {}).items():
+                for m_verb, m_data in p_methods.items():
+                    if isinstance(m_data, dict) and 'tags' in m_data:
+                        m_data['tags'] = [
+                            "13. Client Outbound Campaigns" if t == "13. حملات اتصال العملاء (Client Campaigns)" else t
+                            for t in m_data['tags']
+                        ]
 
         return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
 
@@ -2020,7 +2043,7 @@ def api_partner_docs_scalar(request):
     summary="استعراض حملات الاتصال الآلي للعميل التابع (Client Campaigns)",
     description="استعراض قائمة حملات الاتصال الصادرة الخاصة بعميل الشريك وإحصائياتها.",
     responses={200: PartnerClientCampaignsListResponseSerializer},
-    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+    tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @extend_schema(
     methods=['POST'],
@@ -2029,7 +2052,7 @@ def api_partner_docs_scalar(request):
     description="إطلاق حملة اتصال جديدة وتزويدها بجهات الاتصال والسيناريو المخصص.",
     request=PartnerClientCampaignCreateRequestSerializer,
     responses={201: BaseSuccessResponseSerializer},
-    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+    tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['GET', 'POST'])
 @partner_client_access_required
@@ -2099,7 +2122,7 @@ def api_partner_client_campaigns(request, client_id):
     summary="تفاصيل حملة اتصال للعميل التابع",
     description="استرجاع بيانات الحملة التفصيلية وقائمة العملاء المستهدفين وتصنيفات AI.",
     responses={200: PartnerClientCampaignDetailResponseSerializer},
-    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+    tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @extend_schema(
     methods=['DELETE'],
@@ -2107,7 +2130,7 @@ def api_partner_client_campaigns(request, client_id):
     summary="حذف حملة اتصال للعميل التابع",
     description="حذف الحملة وكافة جهات الاتصال التابعة لها.",
     responses={200: BaseSuccessResponseSerializer},
-    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+    tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['GET', 'DELETE'])
 @partner_client_access_required
@@ -2141,7 +2164,7 @@ def api_partner_client_campaign_detail(request, client_id, campaign_id):
     description="تفعيل الحملة وبدء محرك الاتصال الآلي المتوازي للعميل بحسب حد المكالمات المتزامنة المخصص له.",
     request=None,
     responses={200: BaseSuccessResponseSerializer},
-    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+    tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['POST'])
 @partner_client_access_required
@@ -2201,7 +2224,7 @@ def api_partner_client_campaign_start(request, client_id, campaign_id):
     description="إيقاف الاتصال الآلي لحملة العميل مؤقتاً مع الحفاظ على تقدم المكالمات السابقة.",
     request=None,
     responses={200: BaseSuccessResponseSerializer},
-    tags=["11. حملات اتصال العملاء (Client Campaigns)"]
+    tags=["13. حملات اتصال العملاء (Client Campaigns)"]
 )
 @api_view(['POST'])
 @partner_client_access_required

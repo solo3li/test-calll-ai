@@ -42,7 +42,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "9. بدء مكالمة WebRTC", "description": "إصدار توكنات LiveKit المشفرة لبدء المكالمة الصوتية الفورية في المتصفح أو التطبيق."},
         {"name": "10. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
         {"name": "11. الويبهوك والتوقيع المشفر", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من توقيع HMAC-SHA256."},
-        {"name": "12. إدارة خوادم FastMCP للعملاء", "description": "ربط خوادم FastMCP الخارجية لعميل محدد عبر بروتوكول SSE ومزامنة أدوات الذكاء الاصطناعي الحية."}
+        {"name": "12. إدارة خوادم FastMCP للعملاء", "description": "ربط خوادم FastMCP الخارجية لعميل محدد عبر بروتوكول SSE ومزامنة أدوات الذكاء الاصطناعي الحية."},
+        {"name": "13. حملات اتصال العملاء (Client Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي وجدولة الاتصال المتوازي لعملاء الشريك عبر Inngest."}
     ]
 
     tags_en = [
@@ -57,7 +58,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "9. WebRTC Voice Sessions", "description": "Issuing encrypted LiveKit access tokens for instant browser and mobile voice sessions."},
         {"name": "10. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
         {"name": "11. Webhooks & HMAC Signatures", "description": "Real-time call completion webhook notifications and HMAC-SHA256 signature verification."},
-        {"name": "12. Client FastMCP Management", "description": "Manage external FastMCP SSE tool servers per sub-client and synchronize live tool schemas."}
+        {"name": "12. Client FastMCP Management", "description": "Manage external FastMCP SSE tool servers per sub-client and synchronize live tool schemas."},
+        {"name": "13. Client Outbound Campaigns", "description": "Create and execute outbound calling campaigns for sub-clients via Inngest."}
     ]
 
     tags = tags_ar if is_ar else tags_en
@@ -74,6 +76,7 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         "tag_cdr": tags[9]["name"],
         "tag_webhooks": tags[10]["name"],
         "tag_mcp": tags[11]["name"],
+        "tag_campaigns": tags[12]["name"],
     }
 
     # 3. Path Operations

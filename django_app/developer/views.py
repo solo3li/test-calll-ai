@@ -170,6 +170,18 @@ class UserSpectacularSchemaView(SpectacularAPIView):
         resp = super().get(request, *args, **kwargs)
         spec = resp.data if hasattr(resp, 'data') else {}
 
+        # 1. Normalize paths: Django's root URLconf has '/api/v1/', but the OpenAPI server base URL
+        # is already '/api/v1'. Stripping '/api/v1' prevents duplicate '/api/v1/api/v1/...' in Scalar.
+        cleaned_paths = {}
+        for path_key, path_data in spec.get('paths', {}).items():
+            clean_path = path_key
+            if clean_path.startswith('/api/v1/'):
+                clean_path = clean_path[7:]  # strips '/api/v1' while keeping leading '/'
+            elif clean_path == '/api/v1':
+                clean_path = '/'
+            cleaned_paths[clean_path] = path_data
+        spec['paths'] = cleaned_paths
+
         legacy_spec = get_user_openapi_spec(server_url='/api/v1', lang=lang)
         if not spec.get('paths'):
             spec['paths'] = legacy_spec.get('paths', {})
@@ -178,14 +190,25 @@ class UserSpectacularSchemaView(SpectacularAPIView):
                 if path_key not in spec['paths']:
                     spec['paths'][path_key] = path_data
 
-        for k in ('info', 'tags', 'servers', 'components'):
+        for k in ('info', 'servers', 'components'):
             if k not in spec or not spec[k]:
                 spec[k] = legacy_spec.get(k, {})
+
+        # Use curated ordered tags from user_openapi_spec
+        spec['tags'] = legacy_spec.get('tags', [])
 
         if lang == 'en':
             if 'info' in spec:
                 spec['info']['title'] = 'User Developer REST API (v1)'
                 spec['info']['description'] = 'Developer REST API for Voice Assistant, LiveKit WebRTC, and FastMCP tools.'
+            # Translate campaign tag on paths if English
+            for p_key, p_methods in spec.get('paths', {}).items():
+                for m_verb, m_data in p_methods.items():
+                    if isinstance(m_data, dict) and 'tags' in m_data:
+                        m_data['tags'] = [
+                            "10. Outbound Campaigns" if t == "10. حملات الاتصال والعملاء (Campaigns)" else t
+                            for t in m_data['tags']
+                        ]
 
         return JsonResponse(spec, json_dumps_params={'ensure_ascii': False, 'indent': 2})
 
