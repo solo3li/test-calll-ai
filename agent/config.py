@@ -31,7 +31,7 @@ OUT_SAMPLE_RATE = 24000         # Gemini output & LiveKit track sample rate
 OUT_NUM_CHANNELS = 1
 OUT_FRAME_SAMPLES = 480         # 20ms at 24kHz (24000 * 0.020)
 OUT_FRAME_BYTES = 960           # 480 samples * 2 bytes
-AUDIO_FRAME_INTERVAL = 0.019    # Sleep 19ms between 20ms frames for smooth playback
+AUDIO_FRAME_INTERVAL = 0.020    # Exact 20ms between 20ms frames (drift-compensated clock)
 AUDIO_SILENCE_THRESHOLD = 0.25  # Seconds of silence after turn_complete before marking agent stopped speaking
 
 # Default Gemini Models
