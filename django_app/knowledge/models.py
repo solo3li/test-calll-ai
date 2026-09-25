@@ -8,6 +8,8 @@ class Document(models.Model):
     file = models.FileField(upload_to='documents/%Y/%m/%d/')
     file_type = models.CharField(max_length=50, blank=True)
     file_size = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=20, default='ready', choices=[('pending', 'قيد الفهرسة'), ('ready', 'جاهز'), ('failed', 'فشل')])
+    error_message = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

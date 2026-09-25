@@ -15,6 +15,10 @@ from .rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 from agents.models import SystemSetting
 from common.auth import verify_internal_api_key
 
+import inngest
+from asgiref.sync import async_to_sync
+from common.inngest_client import inngest_client
+
 logger = logging.getLogger(__name__)
 
 @login_required(login_url='/login/')
@@ -28,6 +32,8 @@ def list_documents(request):
             "title": d.title,
             "file_type": d.file_type,
             "file_size": d.file_size,
+            "status": getattr(d, 'status', 'ready'),
+            "error_message": getattr(d, 'error_message', ''),
             "chunks_count": d.chunks.count(),
             "created_at": d.created_at.strftime("%Y-%m-%d %H:%M"),
         })
@@ -35,7 +41,10 @@ def list_documents(request):
 
 @login_required(login_url='/login/')
 def upload_document(request):
-    """Handle document upload, text extraction, chunking, and Gemini embedding generation."""
+    """
+    Handle document upload. Dispatches background extraction and embedding
+    to Inngest with graceful synchronous fallback if Inngest is offline.
+    """
     if request.method != 'POST':
         return JsonResponse({"status": "error", "message": "طريقة الطلب غير مسموحة"}, status=405)
 
@@ -53,30 +62,73 @@ def upload_document(request):
         }, status=400)
 
     try:
-        # 1. Extract text from uploaded file
-        text = extract_text_from_file(file_obj, filename)
-        if not text:
-            return JsonResponse({"status": "error", "message": "الملف فارغ أو يتعذر استخراج نص منه."}, status=400)
-
-        # 2. Chunk text
-        chunks = chunk_text(text, chunk_size=500, overlap=50)
-        if not chunks:
-            return JsonResponse({"status": "error", "message": "لم يتم العثور على محتوى صالح للتقطيع."}, status=400)
-
-        # 3. Create Document DB record
+        # Create Document record initially in 'pending' status
         doc = Document.objects.create(
             user=request.user,
             title=filename,
             file=file_obj,
             file_type=ext.lstrip('.'),
-            file_size=file_obj.size
+            file_size=file_obj.size,
+            status='pending',
+            error_message='',
         )
 
-        # 4. Generate embeddings with Gemini
-        client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
+        # Attempt to dispatch to Inngest for asynchronous background processing
+        dispatched_to_inngest = False
+        try:
+            async_to_sync(inngest_client.send)(
+                inngest.Event(
+                    name="knowledge/document.uploaded",
+                    data={
+                        "document_id": doc.id,
+                        "user_id": request.user.id,
+                        "filename": filename,
+                    }
+                )
+            )
+            dispatched_to_inngest = True
+            logger.info(f"Dispatched document {doc.id} ({filename}) to Inngest background job.")
+        except Exception as inngest_err:
+            logger.warning(f"Inngest dispatch failed ({inngest_err}), falling back to synchronous processing.")
+
+        if dispatched_to_inngest:
+            return JsonResponse({
+                "status": "success",
+                "message": f"تم استلام المستند '{filename}' بنجاح وجارٍ استخراج النصوص وفهرسته في الخلفية.",
+                "document": {
+                    "id": doc.id,
+                    "title": doc.title,
+                    "status": "pending",
+                    "chunks_count": 0,
+                    "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M"),
+                }
+            })
+
+        # Fallback: Synchronous processing if Inngest is unreachable
+        text = extract_text_from_file(doc.file, filename)
+        if not text:
+            doc.status = 'failed'
+            doc.error_message = "الملف فارغ أو يتعذر استخراج نص منه."
+            doc.save(update_fields=['status', 'error_message'])
+            return JsonResponse({"status": "error", "message": doc.error_message}, status=400)
+
+        chunks = chunk_text(text, chunk_size=500, overlap=50)
+        if not chunks:
+            doc.status = 'failed'
+            doc.error_message = "لم يتم العثور على محتوى صالح للتقطيع."
+            doc.save(update_fields=['status', 'error_message'])
+            return JsonResponse({"status": "error", "message": doc.error_message}, status=400)
+
+        api_key = SystemSetting.get_gemini_api_key()
+        if not api_key or api_key.startswith("your_"):
+            doc.status = 'failed'
+            doc.error_message = "لم يتم ضبط مفتاح Google Gemini API في لوحة تحكم النظام."
+            doc.save(update_fields=['status', 'error_message'])
+            return JsonResponse({"status": "error", "message": doc.error_message}, status=400)
+
+        client = genai.Client(api_key=api_key)
         embeddings = get_embeddings_batch(client, chunks, batch_size=50)
 
-        # 5. Bulk create DocumentChunks in pgvector
         chunk_objects = []
         for i, (chunk_text_content, emb) in enumerate(zip(chunks, embeddings)):
             chunk_objects.append(DocumentChunk(
@@ -88,7 +140,11 @@ def upload_document(request):
             ))
         DocumentChunk.objects.bulk_create(chunk_objects)
 
-        logger.info(f"Successfully processed document '{filename}' for user {request.user.username}: {len(chunks)} chunks embedded.")
+        doc.status = 'ready'
+        doc.error_message = ''
+        doc.save(update_fields=['status', 'error_message'])
+
+        logger.info(f"Synchronously processed document '{filename}' for user {request.user.username}: {len(chunks)} chunks embedded.")
 
         return JsonResponse({
             "status": "success",
@@ -96,6 +152,7 @@ def upload_document(request):
             "document": {
                 "id": doc.id,
                 "title": doc.title,
+                "status": "ready",
                 "chunks_count": len(chunks),
                 "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M"),
             }

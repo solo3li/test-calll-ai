@@ -9,19 +9,13 @@ from asgiref.sync import sync_to_async
 
 logger = logging.getLogger(__name__)
 
-# Initialize Inngest Client pointing to local dev container
-inngest_client = inngest.Inngest(
-    app_id="voice-ai-crm",
-    api_base_url="http://inngest:8288",
-    event_api_base_url="http://inngest:8288",
-    is_production=False,
-)
+from common.inngest_client import inngest_client
+from common.centrifugo import publish_to_centrifugo
 
 def broadcast_campaign_update(campaign_id: int, event_type: str, data: dict):
     """Broadcast real-time campaign update via Centrifugo if configured."""
     try:
-        from telephony.views import _publish_centrifugo_event
-        _publish_centrifugo_event(
+        publish_to_centrifugo(
             f"campaign:{campaign_id}",
             {
                 "type": event_type,

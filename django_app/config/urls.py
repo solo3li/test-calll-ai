@@ -3,10 +3,18 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 import inngest.django
-from crm.inngest_jobs import inngest_client, all_inngest_functions as crm_inngest_functions
+from common.inngest_client import inngest_client
+from crm.inngest_jobs import all_inngest_functions as crm_inngest_functions
 from call_center.inngest_jobs import all_call_center_inngest_functions
+from knowledge.inngest_jobs import all_knowledge_inngest_functions
+from partners.inngest_jobs import all_partner_inngest_functions
 
-combined_inngest_functions = list(crm_inngest_functions) + list(all_call_center_inngest_functions)
+combined_inngest_functions = (
+    list(crm_inngest_functions)
+    + list(all_call_center_inngest_functions)
+    + list(all_knowledge_inngest_functions)
+    + list(all_partner_inngest_functions)
+)
 
 urlpatterns = [
     inngest.django.serve(inngest_client, combined_inngest_functions, serve_path="/api/inngest/"),

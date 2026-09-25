@@ -3754,6 +3754,9 @@
         const data = await res.json();
         if (data.status === 'success') {
           renderDocuments(data.documents);
+          if (data.documents && data.documents.some(d => d.status === 'pending')) {
+            setTimeout(loadDocuments, 3000);
+          }
         }
       } catch (err) {
         console.error('Error fetching documents:', err);
@@ -3772,7 +3775,17 @@
         return;
       }
 
-      docsTbody.innerHTML = docs.map(d => `
+      docsTbody.innerHTML = docs.map(d => {
+        let statusBadge = '';
+        if (d.status === 'pending') {
+          statusBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">⏳ قيد الفهرسة</span>`;
+        } else if (d.status === 'failed') {
+          statusBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200" title="${d.error_message || ''}">❌ فشل</span>`;
+        } else {
+          statusBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">✅ جاهز</span>`;
+        }
+
+        return `
         <tr class="hover:bg-[#F5EFE6]/60 transition">
           <td class="py-3 px-3 font-medium text-[#1C1917] font-bold flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#6E645D] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3781,7 +3794,12 @@
             ${d.title}
           </td>
           <td class="py-3 px-3 text-[#6E645D] uppercase">${d.file_type}</td>
-          <td class="py-3 px-3 text-[#680E23] font-semibold">${d.chunks_count} مقطع</td>
+          <td class="py-3 px-3">
+            <div class="flex items-center gap-2">
+              <span class="text-[#680E23] font-semibold">${d.chunks_count} مقطع</span>
+              ${statusBadge}
+            </div>
+          </td>
           <td class="py-3 px-3 text-[#6E645D]">${d.created_at}</td>
           <td class="py-3 px-3 text-center">
             <button onclick="deleteDocument(${d.id})" class="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-950/40 transition">
@@ -3791,7 +3809,7 @@
             </button>
           </td>
         </tr>
-      `).join('');
+      `}).join('');
     }
 
     async function uploadDocument(e) {

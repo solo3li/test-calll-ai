@@ -13,30 +13,11 @@ import inngest
 
 logger = logging.getLogger(__name__)
 
-# Use shared Inngest client pointing to local dev container
-inngest_client = inngest.Inngest(
-    app_id="voice-ai-call-center",
-    api_base_url="http://inngest:8288",
-    event_api_base_url="http://inngest:8288",
-    is_production=False,
-)
+from common.inngest_client import inngest_client
+from common.centrifugo import publish_to_centrifugo
 
 def _get_redis():
     return redis.Redis.from_url(settings.REDIS_URL)
-
-def publish_to_centrifugo(channel: str, data: dict):
-    """Publish real-time notification to Centrifugo channel."""
-    try:
-        url = f"{settings.CENTRIFUGO_HTTP_API_URL}/publish"
-        headers = {
-            "Authorization": f"apikey {settings.CENTRIFUGO_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        res = requests.post(url, json={"channel": channel, "data": data}, headers=headers, timeout=2)
-        if res.status_code != 200:
-            logger.error(f"Centrifugo publish error ({res.status_code}): {res.text}")
-    except Exception as e:
-        logger.error(f"Failed to publish to Centrifugo: {e}")
 
 async def delete_livekit_room(room_name: str):
     """Cleanly delete and close LiveKit room on server."""

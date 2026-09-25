@@ -73,23 +73,7 @@ from call_center.views import (
 
 logger = logging.getLogger(__name__)
 
-def publish_to_centrifugo(channel: str, data: dict):
-    """Publish real-time notification to Centrifugo channel."""
-    try:
-        url = f"{settings.CENTRIFUGO_HTTP_API_URL}/publish"
-        headers = {
-            "Authorization": f"apikey {settings.CENTRIFUGO_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "channel": channel,
-            "data": data,
-        }
-        res = requests.post(url, json=payload, headers=headers, timeout=2)
-        if res.status_code != 200:
-            logger.error(f"Centrifugo publish error ({res.status_code}): {res.text}")
-    except Exception as e:
-        logger.error(f"Failed to publish to Centrifugo: {e}")
+from common.centrifugo import publish_to_centrifugo
 
 # ==================== Authentication Views ====================
 

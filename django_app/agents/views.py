@@ -501,11 +501,11 @@ def api_internal_agent_bootstrap(request):
     try:
         data = json.loads(request.body.decode('utf-8')) if request.body else {}
         user_id = data.get('user_id')
-        user = User.objects.filter(id=user_id).first() if user_id else None
+        if not user_id:
+            return JsonResponse({"status": "error", "message": "user_id is required"}, status=400)
+        user = User.objects.filter(id=user_id).first()
         if not user:
-            user = User.objects.first()
-        if not user:
-            return JsonResponse({"status": "error", "message": "No valid user found"}, status=404)
+            return JsonResponse({"status": "error", "message": f"User #{user_id} not found"}, status=404)
 
         # 1. Agent Profile
         profile = AgentProfile.objects.filter(user=user, is_active=True).first()

@@ -78,7 +78,7 @@ class CallSession(models.Model):
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='call_sessions')
-    room_name = models.CharField(max_length=120)
+    room_name = models.CharField(max_length=120, db_index=True)
     direction = models.CharField(max_length=32, choices=DIRECTION_CHOICES, default='inbound')
     caller_phone = models.CharField(max_length=64, blank=True, default='')
     destination_phone = models.CharField(max_length=64, blank=True, default='')
