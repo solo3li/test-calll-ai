@@ -473,6 +473,26 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                 "requestBody": {
                     "required": True,
                     "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "ملف المستند المراد رفعه وفهرسته للعميل (PDF, DOCX, TXT, MD)" if is_ar else "Document file for sub-client (PDF, DOCX, TXT, MD)"
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "description": "عنوان المستند (اختياري - يتم استخدام اسم الملف تلقائياً)" if is_ar else "Document title (optional - defaults to filename)"
+                                    },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف" if is_ar else "Raw text content as an alternative to file upload"
+                                    }
+                                }
+                            }
+                        },
                         "application/json": {
                             "schema": {
                                 "type": "object",

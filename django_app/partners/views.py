@@ -976,36 +976,66 @@ def api_partner_client_documents(request, client_id):
         })
     elif request.method == 'POST':
         file_obj = request.FILES.get('file')
-        raw_text = request.POST.get('text')
-        title = request.POST.get('title') or (file_obj.name if file_obj else "Direct Content")
+        title = request.POST.get('title', '').strip()
+        raw_text = (request.POST.get('content') or request.POST.get('text') or '').strip()
+
+        if not file_obj and not raw_text and request.body:
+            try:
+                body_data = json.loads(request.body.decode('utf-8'))
+                title = title or body_data.get('title', '').strip()
+                raw_text = (body_data.get('content') or body_data.get('text') or '').strip()
+            except Exception:
+                pass
 
         if not file_obj and not raw_text:
-            return JsonResponse({"status": "error", "message": "Either 'file' or 'text' must be provided"}, status=400)
+            return JsonResponse({
+                "status": "error",
+                "code": "missing_payload",
+                "message": "يجب إرفاق ملف مستند (file) بصيغة PDF, DOCX, TXT, MD أو إرسال نص مباشر (content)."
+            }, status=400)
 
         try:
             if file_obj:
                 filename = file_obj.name
-                ext = os.path.splitext(filename)[1].lower().lstrip('.')
+                ext = os.path.splitext(filename)[1].lower()
+                allowed_exts = ['.pdf', '.docx', '.doc', '.txt', '.md']
+                if ext not in allowed_exts:
+                    return JsonResponse({
+                        "status": "error",
+                        "code": "unsupported_file_type",
+                        "message": f"صيغة الملف '{ext}' غير مدعومة. الصيغ المدعومة هي: PDF, DOCX, TXT, MD"
+                    }, status=400)
+
+                title = title or filename
                 text = extract_text_from_file(file_obj, filename)
                 file_size = file_obj.size
+                file_type = ext.lstrip('.')
+                saved_file = file_obj
             else:
+                title = title or "مستند نصي معرفي"
                 text = raw_text.strip()
-                ext = 'txt'
                 file_size = len(text.encode('utf-8'))
+                file_type = "txt"
+                saved_file = None
 
             if not text:
-                return JsonResponse({"status": "error", "message": "Extracted text is empty."}, status=400)
+                return JsonResponse({
+                    "status": "error",
+                    "code": "empty_document",
+                    "message": "لم يتم العثور على أي نصوص صالحة داخل المستند أو النص المدخل."
+                }, status=400)
 
             chunks = chunk_text(text, chunk_size=500, overlap=50)
             if not chunks:
-                return JsonResponse({"status": "error", "message": "No text chunks generated."}, status=400)
+                return JsonResponse({"status": "error", "message": "فشل تقطيع نصوص المستند."}, status=400)
 
             doc = Document.objects.create(
                 user=request.client_user,
                 title=title,
-                file=file_obj if file_obj else None,
-                file_type=ext,
-                file_size=file_size
+                file=saved_file,
+                file_type=file_type,
+                file_size=file_size,
+                status='ready'
             )
 
             # Generate embeddings via Gemini
@@ -1026,17 +1056,21 @@ def api_partner_client_documents(request, client_id):
 
             return JsonResponse({
                 "status": "success",
-                "message": f"Document '{title}' uploaded and embedded successfully.",
+                "message": f"تم رفع المستند '{title}' وفهرسته بالمتجهات للعميل بنجاح.",
                 "client_id": client_id,
                 "document": {
                     "id": doc.id,
                     "title": doc.title,
+                    "file_type": doc.file_type,
+                    "file_size": doc.file_size,
+                    "status": "ready",
                     "chunks_count": len(chunks),
+                    "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M")
                 }
             }, status=201)
         except Exception as e:
             logger.error(f"Error in partner document upload for client {client_id}: {e}", exc_info=True)
-            return JsonResponse({"status": "error", "message": f"Failed to ingest document: {str(e)}"}, status=500)
+            return JsonResponse({"status": "error", "message": f"حدث خطأ أثناء فهرسة المستند: {str(e)}"}, status=500)
 
     elif request.method == 'DELETE':
         doc_id = request.GET.get('document_id')

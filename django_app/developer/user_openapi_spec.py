@@ -234,9 +234,30 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
             "post": {
                 "tags": [tag_map["tag_rag"]],
                 "summary": "رفع مستند وفهرسته بالمتجهات (Upload Document)" if is_ar else "Upload & Index Knowledge Document",
+                "description": "رفع ملف مستند حقيقي (PDF, DOCX, TXT, MD) أو إرسال نص مباشر ليتم استخراج النصوص وفهرستها دلالياً بالمتجهات عبر Gemini." if is_ar else "Upload a document file (PDF, DOCX, TXT, MD) or raw text for semantic vector chunking & indexing.",
                 "requestBody": {
                     "required": True,
                     "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "ملف المستند المراد رفعه وفهرسته (PDF, DOCX, TXT, MD)" if is_ar else "Document file (PDF, DOCX, TXT, MD)"
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "description": "عنوان المستند (اختياري - يتم استخدام اسم الملف تلقائياً)" if is_ar else "Document title (optional - defaults to filename)"
+                                    },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف" if is_ar else "Raw text content as an alternative to file upload"
+                                    }
+                                }
+                            }
+                        },
                         "application/json": {
                             "schema": {
                                 "type": "object",

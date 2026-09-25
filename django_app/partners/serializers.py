@@ -137,6 +137,12 @@ class PartnerClientDocumentSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True)
 
 
+class PartnerClientDocumentUploadRequestSerializer(serializers.Serializer):
+    file = serializers.FileField(required=False, help_text="ملف المستند المراد رفعه للعميل (PDF, DOCX, TXT, MD)")
+    title = serializers.CharField(required=False, help_text="عنوان مخصص للمستند (اختياري - يتم استخدام اسم الملف تلقائياً)")
+    content = serializers.CharField(required=False, help_text="نص مباشر كبديل في حال عدم إرفاق ملف")
+
+
 class PartnerClientRAGQueryRequestSerializer(serializers.Serializer):
     query = serializers.CharField(required=True)
     limit = serializers.IntegerField(default=4, required=False)

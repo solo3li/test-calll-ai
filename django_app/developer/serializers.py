@@ -119,6 +119,12 @@ class DocumentSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True)
 
 
+class DocumentUploadRequestSerializer(serializers.Serializer):
+    file = serializers.FileField(required=False, help_text="ملف المستند المراد فهرسته (PDF, DOCX, TXT, MD)")
+    title = serializers.CharField(required=False, help_text="عنوان مخصص للمستند (اختياري - يتم استخدام اسم الملف تلقائياً)")
+    content = serializers.CharField(required=False, help_text="نص مباشر كبديل في حال عدم رفع ملف")
+
+
 class RAGQueryRequestSerializer(serializers.Serializer):
     query = serializers.CharField(required=True, help_text="النص أو السؤال المراد البحث عنه دلالياً")
     limit = serializers.IntegerField(default=4, required=False, help_text="عدد المقاطع المطابقة")

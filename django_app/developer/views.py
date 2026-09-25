@@ -563,61 +563,106 @@ def api_user_documents(request):
 
     elif request.method == 'POST':
         try:
+            file_obj = request.FILES.get('file')
             title = request.POST.get('title', '').strip()
-            content = request.POST.get('content', '').strip()
-            if not content and request.body:
-                body_data = json.loads(request.body.decode('utf-8'))
-                title = body_data.get('title', '').strip()
-                content = body_data.get('content', '').strip()
+            content = request.POST.get('content', '').strip() or request.POST.get('text', '').strip()
 
-            if not content:
-                return JsonResponse({"status": "error", "message": "content is required"}, status=400)
+            if not file_obj and not content and request.body:
+                try:
+                    body_data = json.loads(request.body.decode('utf-8'))
+                    title = title or body_data.get('title', '').strip()
+                    content = body_data.get('content', '').strip() or body_data.get('text', '').strip()
+                except Exception:
+                    pass
 
-            title = title or "مستند معرفي جديد"
+            if not file_obj and not content:
+                return JsonResponse({
+                    "status": "error",
+                    "code": "missing_payload",
+                    "message": "يجب إرفاق ملف مستند (file) بصيغة PDF, DOCX, TXT, MD أو إرسال نص مباشر (content)."
+                }, status=400)
+
+            import os
+            from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
+            from agents.models import SystemSetting
+            from knowledge.models import Document, DocumentChunk
+
+            if file_obj:
+                filename = file_obj.name
+                ext = os.path.splitext(filename)[1].lower()
+                allowed_exts = ['.pdf', '.docx', '.doc', '.txt', '.md']
+                if ext not in allowed_exts:
+                    return JsonResponse({
+                        "status": "error",
+                        "code": "unsupported_file_type",
+                        "message": f"صيغة الملف '{ext}' غير مدعومة. الصيغ المدعومة هي: PDF, DOCX, TXT, MD"
+                    }, status=400)
+
+                title = title or filename
+                extracted_text = extract_text_from_file(file_obj, filename)
+                file_size = file_obj.size
+                file_type = ext.lstrip('.')
+                saved_file = file_obj
+            else:
+                title = title or "مستند نصي معرفي"
+                extracted_text = content.strip()
+                file_size = len(extracted_text.encode('utf-8'))
+                file_type = "txt"
+                saved_file = None
+
+            if not extracted_text:
+                return JsonResponse({
+                    "status": "error",
+                    "code": "empty_document",
+                    "message": "لم يتم العثور على أي نصوص صالحة داخل المستند أو النص المدخل."
+                }, status=400)
+
             doc = Document.objects.create(
                 user=request.user,
                 title=title,
-                file_type="text/plain",
-                file_size=len(content.encode('utf-8'))
+                file=saved_file,
+                file_type=file_type,
+                file_size=file_size,
+                status='ready'
             )
 
-            # Generate Gemini embedding & store chunk
-            chunks_created = 0
-            try:
-                client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
-                embed_res = client.models.embed_content(
-                    model="gemini-embedding-001",
-                    contents=content,
-                    config=types.EmbedContentConfig(output_dimensionality=768)
+            # Chunk text and generate embeddings
+            chunks = chunk_text(extracted_text, chunk_size=500, overlap=50)
+            if not chunks:
+                return JsonResponse({"status": "error", "message": "فشل تقطيع نصوص المستند."}, status=400)
+
+            client = genai.Client(api_key=SystemSetting.get_gemini_api_key())
+            embeddings = get_embeddings_batch(client, chunks, batch_size=50)
+
+            chunk_objs = [
+                DocumentChunk(
+                    document=doc,
+                    user=request.user,
+                    chunk_index=i,
+                    content=c,
+                    embedding=emb
                 )
-                if embed_res and embed_res.embeddings:
-                    emb = embed_res.embeddings[0].values
-                    DocumentChunk.objects.create(
-                        document=doc,
-                        user=request.user,
-                        content=content,
-                        chunk_index=0,
-                        embedding=emb
-                    )
-                    chunks_created = 1
-            except Exception as emb_err:
-                logger.warning(f"Failed to generate embedding for document {doc.id}: {emb_err}")
+                for i, (c, emb) in enumerate(zip(chunks, embeddings))
+            ]
+            DocumentChunk.objects.bulk_create(chunk_objs)
 
             return JsonResponse({
                 "status": "success",
-                "message": "Document indexed successfully",
+                "message": f"تم رفع المستند '{title}' وفهرسته بالمتجهات بنجاح.",
                 "document": {
                     "id": doc.id,
                     "title": doc.title,
                     "file_type": doc.file_type,
                     "file_size": doc.file_size,
-                    "chunks_count": chunks_created,
-                    "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else None
+                    "status": "ready",
+                    "chunks_count": len(chunks),
+                    "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M")
                 }
             }, status=201)
+
         except Exception as e:
             logger.error(f"Error creating user document: {e}", exc_info=True)
-            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+            return JsonResponse({"status": "error", "message": f"حدث خطأ أثناء فهرسة المستند: {str(e)}"}, status=500)
 
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
