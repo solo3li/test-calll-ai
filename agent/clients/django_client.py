@@ -154,8 +154,10 @@ def fetch_agent_bootstrap_sync(user_id: int, caller_phone: str = "web_dashboard"
 
 # ==================== Knowledge RAG API ====================
 
-async def query_knowledge_base_async(query: str, user_id: int, top_k: int = 4) -> str:
+async def query_knowledge_base_async(query: str, user_id: int, genai_client=None, top_k: int = 4) -> str:
     """Query user's documents semantically via Django Knowledge RAG API non-blockingly."""
+    if isinstance(genai_client, int) and top_k == 4:
+        top_k = genai_client
     if not user_id:
         return "لا توجد مستندات مرفوعة لهذا المستخدم."
     url = f"{DJANGO_API_URL}/api/knowledge/internal/rag/"
