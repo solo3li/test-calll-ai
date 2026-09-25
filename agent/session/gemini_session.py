@@ -359,54 +359,51 @@ async def run_agent_session(
                             logger.error(f"Error receiving from Gemini Live in room {room_name}: {ex}")
                             await asyncio.sleep(0.1)
 
-            # Worker 3: Audio Pacer (paces output to LiveKit track in smooth 20ms frames)
+            # Worker 3: Audio Pacer (paces output to LiveKit track with 80ms jitter buffer and drift-compensated clock)
             async def audio_pacer_worker():
                 buffer = bytearray()
+                prebuffered = False
+                JITTER_BUFFER_BYTES = OUT_FRAME_BYTES * 4  # 80ms jitter buffer (4 frames)
+                next_frame_time = time.monotonic()
+
                 while not stop_event.is_set():
                     try:
                         # If barge-in interruption occurred, dump local buffer immediately
                         if session_state.interrupted:
                             buffer.clear()
+                            prebuffered = False
                             session_state.interrupted = False
+                            next_frame_time = time.monotonic()
 
-                        while len(buffer) < OUT_FRAME_BYTES:
-                            chunk = await asyncio.wait_for(out_audio_queue.get(), timeout=0.02)
-                            if session_state.interrupted:
-                                buffer.clear()
-                                session_state.interrupted = False
-                                break
-                            buffer.extend(chunk)
+                        # Collect incoming audio chunks from Gemini
+                        # Pre-buffer up to 80ms on turn start to absorb network jitter, unless turn is already completed
+                        while len(buffer) < OUT_FRAME_BYTES or (not prebuffered and len(buffer) < JITTER_BUFFER_BYTES and not session_state.turn_complete):
+                            try:
+                                chunk = await asyncio.wait_for(out_audio_queue.get(), timeout=0.03)
+                                if session_state.interrupted:
+                                    buffer.clear()
+                                    prebuffered = False
+                                    session_state.interrupted = False
+                                    break
+                                buffer.extend(chunk)
+                            except asyncio.TimeoutError:
+                                if session_state.turn_complete or len(buffer) >= OUT_FRAME_BYTES:
+                                    break
+                                if out_audio_queue.empty() and session_state.turn_complete and len(buffer) == 0:
+                                    break
 
                         if session_state.interrupted:
                             buffer.clear()
+                            prebuffered = False
                             session_state.interrupted = False
                             continue
 
-                        if len(buffer) < OUT_FRAME_BYTES:
-                            continue
+                        # When at least one full 20ms frame is ready, capture and send to LiveKit
+                        if len(buffer) >= OUT_FRAME_BYTES:
+                            prebuffered = True
+                            frame_bytes = bytes(buffer[:OUT_FRAME_BYTES])
+                            del buffer[:OUT_FRAME_BYTES]
 
-                        frame_bytes = bytes(buffer[:OUT_FRAME_BYTES])
-                        del buffer[:OUT_FRAME_BYTES]
-
-                        frame = rtc.AudioFrame(
-                            data=frame_bytes,
-                            sample_rate=OUT_SAMPLE_RATE,
-                            num_channels=1,
-                            samples_per_channel=OUT_FRAME_SAMPLES
-                        )
-                        await audio_source.capture_frame(frame)
-                        session_state.agent_last_audio_time = time.time()
-                        await asyncio.sleep(AUDIO_FRAME_INTERVAL)
-                    except asyncio.TimeoutError:
-                        if session_state.interrupted:
-                            buffer.clear()
-                            session_state.interrupted = False
-                            continue
-
-                        if buffer:
-                            pad = OUT_FRAME_BYTES - len(buffer)
-                            frame_bytes = bytes(buffer + b'\x00' * pad)
-                            buffer.clear()
                             frame = rtc.AudioFrame(
                                 data=frame_bytes,
                                 sample_rate=OUT_SAMPLE_RATE,
@@ -415,12 +412,41 @@ async def run_agent_session(
                             )
                             await audio_source.capture_frame(frame)
                             session_state.agent_last_audio_time = time.time()
+
+                            # Drift-compensated clock pacing
+                            next_frame_time += AUDIO_FRAME_INTERVAL
+                            now = time.monotonic()
+                            sleep_duration = next_frame_time - now
+                            if sleep_duration > 0:
+                                await asyncio.sleep(sleep_duration)
+                            elif sleep_duration < -0.05:
+                                next_frame_time = now
+
+                        elif len(buffer) > 0 and session_state.turn_complete and out_audio_queue.empty():
+                            # Only pad trailing remaining bytes at the very end of a completed speech turn
+                            pad = OUT_FRAME_BYTES - len(buffer)
+                            frame_bytes = bytes(buffer + b'\x00' * pad)
+                            buffer.clear()
+                            prebuffered = False
+                            frame = rtc.AudioFrame(
+                                data=frame_bytes,
+                                sample_rate=OUT_SAMPLE_RATE,
+                                num_channels=1,
+                                samples_per_channel=OUT_FRAME_SAMPLES
+                            )
+                            await audio_source.capture_frame(frame)
+                            session_state.agent_last_audio_time = time.time()
+
                         else:
+                            # Idle / between speech turns
+                            prebuffered = False
+                            next_frame_time = time.monotonic()
                             if session_state.is_agent_speaking and session_state.turn_complete and (time.time() - session_state.agent_last_audio_time > AUDIO_SILENCE_THRESHOLD):
                                 session_state.is_agent_speaking = False
                                 logger.info(f"Agent playback finished for room {room_name}. Mic listening active.")
                                 await notify_centrifugo_async(channel_name, "agent_listening", "المساعدة تستمع إليكِ الآن...")
-                        continue
+                            await asyncio.sleep(0.01)
+
                     except Exception as ex:
                         if not stop_event.is_set():
                             logger.error(f"Error in audio pacer for room {room_name}: {ex}")
