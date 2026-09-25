@@ -1,6 +1,13 @@
+import os
+import io
+import time
 import json
 import logging
 import secrets
+import requests
+import jwt
+from urllib.parse import urlparse, unquote
+from django.core.files.base import ContentFile
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
@@ -46,6 +53,7 @@ from .serializers import (
     CustomerMemorySerializer,
     CustomerMemoryCreateRequestSerializer,
     DocumentSerializer,
+    DocumentUploadRequestSerializer,
     RAGQueryRequestSerializer,
     RAGQueryResponseSerializer,
     MCPServerSerializer,
@@ -84,6 +92,7 @@ from telephony.models import OutboundSIPTrunk, InboundPBXTrunk
 from telephony.services import initiate_outbound_call
 from django.utils import timezone
 from crm.file_parser import parse_leads_file, normalize_phone, is_valid_phone
+from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
 
@@ -539,12 +548,35 @@ def api_user_memory_detail(request, memory_id):
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
 
-@csrf_exempt
+@extend_schema(
+    methods=['GET'],
+    operation_id="list_user_documents",
+    summary="استعراض قائمة المستندات المعرفية المفهرسة بالـ RAG",
+    description="استعراض قائمة المستندات والمقاطع المفهرسة بالمتجهات في قاعدة المعرفة.",
+    tags=["4. قواعد المعرفة والاستعلام الدلالي (RAG)"]
+)
+@extend_schema(
+    methods=['POST'],
+    operation_id="upload_user_document",
+    summary="رفع مستند أو رابط وتوليد المتجهات (RAG Ingestion)",
+    description="فهرسة مستند جديد عبر رفع ملف مباشر، رابط خارجي (file_url)، أو نص مباشر، وتقطيعه وتوليد Embeddings بالمتجهات عبر Gemini.",
+    request=DocumentUploadRequestSerializer,
+    tags=["4. قواعد المعرفة والاستعلام الدلالي (RAG)"]
+)
+@extend_schema(
+    methods=['DELETE'],
+    operation_id="delete_user_document",
+    summary="حذف مستند من قاعدة المعرفة",
+    description="حذف المستند وكافة المتجهات التابعة له من قاعدة المعرفة.",
+    tags=["4. قواعد المعرفة والاستعلام الدلالي (RAG)"]
+)
+@api_view(['GET', 'POST', 'DELETE'])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 @user_api_key_required
 def api_user_documents(request):
     """
-    GET & POST /api/v1/documents/
-    List indexed documents or upload new knowledge content.
+    GET, POST & DELETE /api/v1/documents/
+    List indexed documents, upload new knowledge content (via file, file_url, or text), or delete a document.
     """
     if request.method == 'GET':
         docs = Document.objects.filter(user=request.user).order_by('-created_at')
@@ -566,39 +598,32 @@ def api_user_documents(request):
 
     elif request.method == 'POST':
         try:
+            data = request.data if hasattr(request, 'data') and request.data else {}
             file_obj = request.FILES.get('file')
-            title = request.POST.get('title', '').strip()
-            content = request.POST.get('content', '').strip() or request.POST.get('text', '').strip()
+            file_url = str(data.get('file_url') or '').strip()
+            title = str(data.get('title') or '').strip()
+            content = str(data.get('content') or data.get('text') or '').strip()
 
-            if not file_obj and not content and request.body:
-                try:
-                    body_data = json.loads(request.body.decode('utf-8'))
-                    title = title or body_data.get('title', '').strip()
-                    content = body_data.get('content', '').strip() or body_data.get('text', '').strip()
-                except Exception:
-                    pass
-
-            if not file_obj and not content:
+            if not file_obj and not file_url and not content:
                 return JsonResponse({
                     "status": "error",
                     "code": "missing_payload",
-                    "message": "يجب إرفاق ملف مستند (file) بصيغة PDF, DOCX, TXT, MD أو إرسال نص مباشر (content)."
+                    "message": "يجب إرفاق ملف مستند (file)، أو تزويد رابط مباشر (file_url)، أو إرسال نص مباشر (content)."
                 }, status=400)
 
-            import os
-            from knowledge.rag_utils import extract_text_from_file, chunk_text, get_embeddings_batch
             from agents.models import SystemSetting
             from knowledge.models import Document, DocumentChunk
+
+            allowed_exts = ['.pdf', '.docx', '.doc', '.txt', '.md', '.csv', '.json']
 
             if file_obj:
                 filename = file_obj.name
                 ext = os.path.splitext(filename)[1].lower()
-                allowed_exts = ['.pdf', '.docx', '.doc', '.txt', '.md']
                 if ext not in allowed_exts:
                     return JsonResponse({
                         "status": "error",
                         "code": "unsupported_file_type",
-                        "message": f"صيغة الملف '{ext}' غير مدعومة. الصيغ المدعومة هي: PDF, DOCX, TXT, MD"
+                        "message": f"صيغة الملف '{ext}' غير مدعومة. الصيغ المدعومة هي: PDF, DOCX, TXT, MD, CSV, JSON"
                     }, status=400)
 
                 title = title or filename
@@ -606,6 +631,62 @@ def api_user_documents(request):
                 file_size = file_obj.size
                 file_type = ext.lstrip('.')
                 saved_file = file_obj
+
+            elif file_url:
+                try:
+                    parsed_url = urlparse(file_url)
+                    url_path = unquote(parsed_url.path)
+                    filename = os.path.basename(url_path) or f"document_{secrets.token_hex(4)}"
+                    ext = os.path.splitext(filename)[1].lower()
+
+                    resp = requests.get(file_url, stream=True, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
+                    if resp.status_code != 200:
+                        return JsonResponse({
+                            "status": "error",
+                            "message": f"فشل تحميل الملف من الرابط (رمز الاستجابة: {resp.status_code})"
+                        }, status=400)
+
+                    content_bytes = bytearray()
+                    max_bytes = 25 * 1024 * 1024
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        content_bytes.extend(chunk)
+                        if len(content_bytes) > max_bytes:
+                            return JsonResponse({
+                                "status": "error",
+                                "message": "حجم الملف يتجاوز الحد الأقصى المسموح به (25 ميجابايت)"
+                            }, status=400)
+
+                    if not ext:
+                        ct = resp.headers.get('Content-Type', '').lower()
+                        if 'pdf' in ct:
+                            ext = '.pdf'
+                        elif 'csv' in ct:
+                            ext = '.csv'
+                        elif 'json' in ct:
+                            ext = '.json'
+                        elif 'word' in ct or 'docx' in ct:
+                            ext = '.docx'
+                        else:
+                            ext = '.txt'
+                        filename = f"{filename}{ext}"
+
+                    if ext not in allowed_exts:
+                        return JsonResponse({
+                            "status": "error",
+                            "code": "unsupported_file_type",
+                            "message": f"صيغة الملف المسترجع '{ext}' غير مدعومة. الصيغ المدعومة هي: PDF, DOCX, TXT, MD, CSV, JSON"
+                        }, status=400)
+
+                    file_bytes_io = io.BytesIO(bytes(content_bytes))
+                    title = title or filename
+                    extracted_text = extract_text_from_file(file_bytes_io, filename)
+                    file_size = len(content_bytes)
+                    file_type = ext.lstrip('.')
+                    saved_file = ContentFile(bytes(content_bytes), name=filename)
+                except Exception as dl_err:
+                    logger.error(f"Error downloading document from file_url {file_url}: {dl_err}", exc_info=True)
+                    return JsonResponse({"status": "error", "message": f"تعذر تحميل الملف من الرابط: {str(dl_err)}"}, status=400)
+
             else:
                 title = title or "مستند نصي معرفي"
                 extracted_text = content.strip()
@@ -667,7 +748,16 @@ def api_user_documents(request):
             logger.error(f"Error creating user document: {e}", exc_info=True)
             return JsonResponse({"status": "error", "message": f"حدث خطأ أثناء فهرسة المستند: {str(e)}"}, status=500)
 
-    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+    elif request.method == 'DELETE':
+        data = request.data if hasattr(request, 'data') and request.data else {}
+        doc_id = request.GET.get('document_id') or data.get('document_id')
+        if not doc_id:
+            return JsonResponse({"status": "error", "message": "document_id is required"}, status=400)
+        doc = Document.objects.filter(id=doc_id, user=request.user).first()
+        if not doc:
+            return JsonResponse({"status": "error", "message": "Document not found"}, status=404)
+        doc.delete()
+        return JsonResponse({"status": "success", "message": "تم حذف المستند من قاعدة المعرفة بنجاح."})
 
 
 @csrf_exempt
@@ -1268,17 +1358,23 @@ def api_user_queue_members(request, queue_id):
     return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
 
-@csrf_exempt
+@extend_schema(
+    methods=['POST'],
+    operation_id="generate_user_webrtc_token",
+    summary="بدء مكالمة WebRTC وإصدار توكنات LiveKit و Centrifugo",
+    description="ينشئ غرفة LiveKit وتوكن JWT مشفر مع رابط خادم LiveKit ورابط خادم Centrifugo WebSocket لبدء الاتصال الصوتي المباشر واستقبال نصوص المحادثة الحية.",
+    responses={200: WebRTCTokenResponseSerializer},
+    tags=["9. بدء مكالمة WebRTC"]
+)
+@api_view(['POST'])
+@parser_classes([JSONParser, FormParser, MultiPartParser])
 @user_api_key_required
 def api_user_token(request):
     """
     POST /api/v1/token/
     Generates an ephemeral JWT token for connecting a client (browser or mobile)
-    directly to a LiveKit voice session with this user's active AI agent.
+    directly to a LiveKit voice session with this user's active AI agent, along with Centrifugo WebSocket credentials.
     """
-    if request.method != 'POST':
-        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
-
     wallet, _ = UserWallet.objects.get_or_create(user=request.user)
     if wallet.balance < 0.05:
         return JsonResponse({
@@ -1288,15 +1384,13 @@ def api_user_token(request):
         }, status=402)
 
     participant_name = "مستخدم التطبيق"
-    if request.body:
-        try:
-            data = json.loads(request.body.decode('utf-8'))
-            participant_name = data.get('participant_name', participant_name).strip() or participant_name
-        except Exception:
-            pass
+    data = request.data if hasattr(request, 'data') and request.data else {}
+    if data:
+        participant_name = str(data.get('participant_name') or participant_name).strip() or participant_name
 
     room_name = f"user_{request.user.id}_{secrets.token_hex(4)}"
     identity = f"usr_{request.user.id}_{secrets.token_hex(2)}"
+    channel_name = room_name
 
     token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
         .with_identity(identity) \
@@ -1310,11 +1404,35 @@ def api_user_token(request):
 
     jwt_token = token.to_jwt()
 
+    centrifugo_jwt = ""
+    try:
+        centrifugo_payload = {
+            "sub": identity,
+            "exp": int(time.time()) + (24 * 3600),
+            "subs": {
+                channel_name: {}
+            }
+        }
+        centrifugo_jwt = jwt.encode(
+            centrifugo_payload,
+            getattr(settings, 'CENTRIFUGO_SECRET', 'centrifugo_secret_key_1234567890'),
+            algorithm="HS256"
+        )
+    except Exception as e:
+        logger.warning(f"Could not generate Centrifugo token: {e}")
+
+    livekit_url = getattr(settings, 'LIVEKIT_URL', 'wss://livekit.169.58.32.179.nip.io')
+    centrifugo_ws_url = getattr(settings, 'CENTRIFUGO_WS_URL', 'wss://centrifugo.169.58.32.179.nip.io/connection/websocket')
+
     return JsonResponse({
         "status": "success",
         "room_name": room_name,
         "token": jwt_token,
-        "livekit_url": getattr(settings, 'LIVEKIT_WS_URL', 'wss://app.localhost:7881'),
+        "livekit_token": jwt_token,
+        "livekit_url": livekit_url,
+        "centrifugo_ws_url": centrifugo_ws_url,
+        "centrifugo_token": centrifugo_jwt,
+        "channel": channel_name,
         "user_id": request.user.id
     })
 
@@ -1520,7 +1638,9 @@ def api_user_campaigns(request):
             except Exception:
                 pass
 
+        name = str(data.get('name') or '').strip()
         file_obj = request.FILES.get('file')
+        file_url = str(data.get('file_url') or '').strip()
         contacts_to_create = []
 
         if file_obj:
@@ -1535,6 +1655,37 @@ def api_user_campaigns(request):
                     "message": "لم يتم العثور على أي أرقام هواتف صالحة داخل الملف المرفوع. يرجى التأكد من محتوى الملف."
                 }, status=400)
             contacts_to_create = valid_contacts
+            if not name:
+                name = f"حملة {file_obj.name} - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
+        elif file_url:
+            try:
+                parsed_url = urlparse(file_url)
+                url_path = unquote(parsed_url.path)
+                url_filename = os.path.basename(url_path) or f"leads_{secrets.token_hex(4)}.csv"
+
+                resp = requests.get(file_url, stream=True, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
+                if resp.status_code != 200:
+                    return JsonResponse({"status": "error", "message": f"فشل تحميل ملف الحملة من الرابط (رمز الاستجابة: {resp.status_code})"}, status=400)
+
+                content_bytes = bytearray()
+                max_bytes = 25 * 1024 * 1024
+                for chunk in resp.iter_content(chunk_size=65536):
+                    content_bytes.extend(chunk)
+                    if len(content_bytes) > max_bytes:
+                        return JsonResponse({"status": "error", "message": "حجم ملف جهات الاتصال يتجاوز الحد الأقصى المسموح به (25 ميجابايت)"}, status=400)
+
+                parse_res = parse_leads_file(bytes(content_bytes), url_filename)
+                if parse_res.get("status") != "success":
+                    return JsonResponse({"status": "error", "message": parse_res.get("message", "فشل تحليل ملف جهات الاتصال من الرابط")}, status=400)
+                valid_contacts = parse_res.get("valid_contacts", [])
+                if not valid_contacts:
+                    return JsonResponse({"status": "error", "message": "لم يتم العثور على أي أرقام هواتف صالحة داخل الملف المسترجع من الرابط."}, status=400)
+                contacts_to_create = valid_contacts
+                if not name:
+                    name = f"حملة {url_filename} - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
+            except Exception as e:
+                logger.error(f"Error fetching campaign file from url {file_url}: {e}", exc_info=True)
+                return JsonResponse({"status": "error", "message": f"تعذر تحميل ملف الحملة من الرابط: {str(e)}"}, status=400)
         else:
             raw_contacts = data.get('contacts')
             if isinstance(raw_contacts, str):
@@ -1561,15 +1712,11 @@ def api_user_campaigns(request):
         if not contacts_to_create:
             return JsonResponse({
                 "status": "error",
-                "message": "يجب تزويد ملف جهات الاتصال (file) أو مصفوفة جهات الاتصال (contacts) تحتوي على أرقام هواتف صالحة."
+                "message": "يجب تزويد ملف جهات الاتصال (file)، أو رابط مباشر (file_url)، أو مصفوفة جهات الاتصال (contacts) تحتوي على أرقام هواتف صالحة."
             }, status=400)
 
-        name = str(data.get('name') or '').strip()
         if not name:
-            if file_obj:
-                name = f"حملة {file_obj.name} - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
-            else:
-                name = f"حملة جهات اتصال - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
+            name = f"حملة جهات اتصال - {timezone.now().strftime('%Y/%m/%d %H:%M')}"
 
         call_prompt = str(data.get('call_prompt') or '').strip()
         profile_id = data.get('agent_profile_id')

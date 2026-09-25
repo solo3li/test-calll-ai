@@ -120,9 +120,10 @@ class DocumentSerializer(serializers.Serializer):
 
 
 class DocumentUploadRequestSerializer(serializers.Serializer):
-    file = serializers.FileField(required=False, help_text="ملف المستند المراد فهرسته (PDF, DOCX, TXT, MD)")
+    file = serializers.FileField(required=False, help_text="ملف المستند المراد فهرسته (PDF, DOCX, TXT, MD, CSV, JSON)")
+    file_url = serializers.URLField(required=False, help_text="رابط مباشر لمستند خارجي (PDF, DOCX, CSV, TXT, MD, JSON)")
     title = serializers.CharField(required=False, help_text="عنوان مخصص للمستند (اختياري - يتم استخدام اسم الملف تلقائياً)")
-    content = serializers.CharField(required=False, help_text="نص مباشر كبديل في حال عدم رفع ملف")
+    content = serializers.CharField(required=False, help_text="نص مباشر كبديل في حال عدم رفع ملف أو تمرير رابط")
 
 
 class RAGQueryRequestSerializer(serializers.Serializer):
@@ -222,10 +223,13 @@ class QueueCreateRequestSerializer(serializers.Serializer):
 
 class WebRTCTokenResponseSerializer(serializers.Serializer):
     status = serializers.CharField(default="success")
-    token = serializers.CharField(help_text="LiveKit JWT Token for WebRTC browser connection")
-    room = serializers.CharField(help_text="LiveKit Room Name")
-    identity = serializers.CharField(help_text="Participant Identity")
-    livekit_url = serializers.CharField(help_text="LiveKit Server URL")
+    room_name = serializers.CharField(help_text="اسم غرفة المكالمة LiveKit Room")
+    token = serializers.CharField(help_text="LiveKit JWT Token لإنشاء اتصال WebRTC في المتصفح أو التطبيق")
+    livekit_url = serializers.CharField(help_text="رابط خادم LiveKit WebSocket للاتصال الصوتي")
+    centrifugo_ws_url = serializers.CharField(required=False, help_text="رابط اتصال Centrifugo WebSocket للأحداث الحية وتفريغ الصوت الفوري")
+    centrifugo_token = serializers.CharField(required=False, help_text="توكن اشتراك Centrifugo JWT")
+    channel = serializers.CharField(required=False, help_text="اسم قناة الأحداث الفورية الخاصة بالمكالمة")
+    user_id = serializers.IntegerField(required=False)
 
 
 class DialCallRequestSerializer(serializers.Serializer):
@@ -296,13 +300,14 @@ class CampaignContactSerializer(serializers.Serializer):
 class CampaignCreateRequestSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, help_text="اسم الحملة التسويقية أو التشغيلية (اختياري في حال رفع ملف، يتم استخدام اسم الملف تلقائياً)")
     file = serializers.FileField(required=False, help_text="ملف جهات الاتصال المراد رفعه (Excel: .xlsx, .xls أو CSV: .csv أو TXT أو JSON)")
+    file_url = serializers.URLField(required=False, help_text="رابط مباشر لملف جهات الاتصال (Excel: .xlsx, .xls أو CSV أو TXT أو JSON)")
     agent_profile_id = serializers.IntegerField(required=False, allow_null=True, help_text="معرف شخصية الذكاء الاصطناعي المنفذة للمكالمات")
     call_prompt = serializers.CharField(required=False, allow_blank=True, help_text="سيناريو وهدف المكالمة المخصص (Prompt) مع دعم المتغيرات مثل {name}")
     max_retries = serializers.IntegerField(default=1, required=False, help_text="محاولات إعادة الاتصال في حال عدم الرد (0-5)")
     retry_delay_minutes = serializers.IntegerField(default=15, required=False, help_text="الفارق الزمني بين محاولات الإعادة بالدقائق")
     gateway_type = serializers.CharField(default='auto', required=False, help_text="نوع بوابة الاتصال (auto, sip_trunk)")
     gateway_id = serializers.IntegerField(required=False, allow_null=True, help_text="معرف خط الاتصال المخصص")
-    contacts = CampaignContactItemSerializer(many=True, required=False, help_text="قائمة أرقام وبيانات العملاء المستهدفين كبديل في حال عدم رفع ملف")
+    contacts = CampaignContactItemSerializer(many=True, required=False, help_text="قائمة أرقام وبيانات العملاء المستهدفين كبديل في حال عدم رفع ملف أو تمرير رابط")
 
 
 class CampaignSerializer(serializers.Serializer):

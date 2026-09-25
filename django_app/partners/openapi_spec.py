@@ -467,8 +467,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
             },
             "post": {
                 "tags": [tag_map["tag_rag"]],
-                "summary": "رفع مستند جديد وفهرسته بالمتجهات (Upload Document)" if is_ar else "Upload & Index Knowledge Document",
-                "description": "رفع ملف PDF, DOCX, TXT أو تمرير نص مباشر ليتم تقطيعه وتوليد تضمينات Gemini وتخزينه في pgvector." if is_ar else "Uploads text or documents, automatically chunked and embedded via Gemini & pgvector.",
+                "summary": "رفع مستند أو رابط وفهرسته بالمتجهات (Upload Document)" if is_ar else "Upload & Index Knowledge Document",
+                "description": "فهرسة مستند حقيقي (PDF, DOCX, CSV, TXT, MD, JSON) عبر ملف مباشر، رابط خارجي (file_url)، أو نص مباشر ليتم استخراج النصوص وفهرستها دلالياً بالمتجهات عبر Gemini." if is_ar else "Upload a document file (PDF, DOCX, CSV, TXT, MD, JSON), pass a direct file_url, or raw text for semantic vector chunking & indexing.",
                 "parameters": [{"$ref": "#/components/parameters/ClientId"}],
                 "requestBody": {
                     "required": True,
@@ -480,7 +480,11 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                                     "file": {
                                         "type": "string",
                                         "format": "binary",
-                                        "description": "ملف المستند المراد رفعه وفهرسته للعميل (PDF, DOCX, TXT, MD)" if is_ar else "Document file for sub-client (PDF, DOCX, TXT, MD)"
+                                        "description": "ملف المستند المراد رفعه وفهرسته للعميل (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Document file for sub-client (PDF, DOCX, CSV, TXT, MD, JSON)"
+                                    },
+                                    "file_url": {
+                                        "type": "string",
+                                        "description": "رابط مباشر لمستند خارجي (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Direct public URL to document"
                                     },
                                     "title": {
                                         "type": "string",
@@ -488,7 +492,7 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                                     },
                                     "content": {
                                         "type": "string",
-                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف" if is_ar else "Raw text content as an alternative to file upload"
+                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف أو رابط" if is_ar else "Raw text content as an alternative to file upload"
                                     }
                                 }
                             }
@@ -496,10 +500,10 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": ["title", "content"],
                                 "properties": {
                                     "title": {"type": "string", "example": "سياسة الاسترجاع والشحن" if is_ar else "Return & Shipping Policy"},
-                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الاستلام بشرط حالتها الأصلية." if is_ar else "Products can be returned within 14 days of receipt."}
+                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الاستلام بشرط حالتها الأصلية." if is_ar else "Products can be returned within 14 days of receipt."},
+                                    "file_url": {"type": "string", "example": "https://example.com/company_policy.pdf"}
                                 }
                             }
                         }
@@ -759,9 +763,16 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                 "tags": [tag_map["tag_token"]],
                 "summary": "إصدار توكن اتصال WebRTC فوري (Generate Voice Token)" if is_ar else "Generate WebRTC Voice Session Token",
                 "description": (
-                    "ينشئ غرفة LiveKit وتوكن وصول JWT مشفر ليتصل المتصفح أو التطبيق مباشرة بالمساعد الذكي للعميل."
+                    "ينشئ غرفة LiveKit وتوكن وصول JWT مشفر ليتصل المتصفح أو التطبيق مباشرة بالمساعد الذكي للعميل مع روابط خادم LiveKit ورابط Centrifugo WebSocket.\n\n"
+                    "**طريقة الاتصال المباشر (LiveKit SDK Quickstart):**\n"
+                    "```javascript\n"
+                    "import { Room } from 'livekit-client';\n\n"
+                    "const room = new Room();\n"
+                    "await room.connect(response.livekit_url, response.token);\n"
+                    "await room.localParticipant.setMicrophoneEnabled(true);\n"
+                    "```"
                     if is_ar else
-                    "Generates an ephemeral JWT token for connecting browser or mobile client to a LiveKit voice room."
+                    "Generates an ephemeral JWT token and WebSocket connection URLs for connecting browser or mobile client to a LiveKit voice room."
                 ),
                 "parameters": [
                     {"$ref": "#/components/parameters/ClientId"}
@@ -782,14 +793,18 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                 },
                 "responses": {
                     "200": {
-                        "description": "تم إصدار التوكن بنجاح" if is_ar else "LiveKit token generated successfully",
+                        "description": "تم إصدار التوكن والروابط بنجاح" if is_ar else "LiveKit token & URLs generated successfully",
                         "content": {
                             "application/json": {
                                 "example": {
                                     "status": "success",
                                     "room_name": "partner_1_19_a8b7c6",
                                     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "livekit_url": "wss://app.localhost:7881",
+                                    "livekit_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                                    "livekit_url": "wss://livekit.169.58.32.179.nip.io",
+                                    "centrifugo_ws_url": "wss://centrifugo.169.58.32.179.nip.io/connection/websocket",
+                                    "centrifugo_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                                    "channel": "partner_1_19_a8b7c6",
                                     "client_id": 19
                                 }
                             }

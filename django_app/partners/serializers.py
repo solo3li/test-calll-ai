@@ -138,9 +138,10 @@ class PartnerClientDocumentSerializer(serializers.Serializer):
 
 
 class PartnerClientDocumentUploadRequestSerializer(serializers.Serializer):
-    file = serializers.FileField(required=False, help_text="ملف المستند المراد رفعه للعميل (PDF, DOCX, TXT, MD)")
+    file = serializers.FileField(required=False, help_text="ملف المستند المراد رفعه للعميل (PDF, DOCX, TXT, MD, CSV, JSON)")
+    file_url = serializers.URLField(required=False, help_text="رابط مباشر لمستند خارجي (PDF, DOCX, CSV, TXT, MD, JSON)")
     title = serializers.CharField(required=False, help_text="عنوان مخصص للمستند (اختياري - يتم استخدام اسم الملف تلقائياً)")
-    content = serializers.CharField(required=False, help_text="نص مباشر كبديل في حال عدم إرفاق ملف")
+    content = serializers.CharField(required=False, help_text="نص مباشر كبديل في حال عدم إرفاق ملف أو رابط")
 
 
 class PartnerClientRAGQueryRequestSerializer(serializers.Serializer):
@@ -251,6 +252,7 @@ class PartnerClientCampaignContactItemSerializer(serializers.Serializer):
 class PartnerClientCampaignCreateRequestSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, help_text="اسم الحملة التسويقية أو التشغيلية (اختياري في حال رفع ملف)")
     file = serializers.FileField(required=False, help_text="ملف جهات الاتصال المراد رفعه (Excel: .xlsx, .xls أو CSV: .csv أو TXT أو JSON)")
+    file_url = serializers.URLField(required=False, help_text="رابط مباشر لملف جهات الاتصال (Excel: .xlsx, .xls أو CSV: .csv أو TXT أو JSON)")
     agent_profile_id = serializers.IntegerField(required=False, allow_null=True)
     call_prompt = serializers.CharField(required=False, allow_blank=True)
     max_retries = serializers.IntegerField(default=1, required=False)

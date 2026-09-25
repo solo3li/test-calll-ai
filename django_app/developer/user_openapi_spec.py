@@ -233,8 +233,8 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
             },
             "post": {
                 "tags": [tag_map["tag_rag"]],
-                "summary": "رفع مستند وفهرسته بالمتجهات (Upload Document)" if is_ar else "Upload & Index Knowledge Document",
-                "description": "رفع ملف مستند حقيقي (PDF, DOCX, TXT, MD) أو إرسال نص مباشر ليتم استخراج النصوص وفهرستها دلالياً بالمتجهات عبر Gemini." if is_ar else "Upload a document file (PDF, DOCX, TXT, MD) or raw text for semantic vector chunking & indexing.",
+                "summary": "رفع مستند أو رابط وفهرسته بالمتجهات (Upload Document)" if is_ar else "Upload & Index Knowledge Document",
+                "description": "فهرسة مستند حقيقي (PDF, DOCX, CSV, TXT, MD, JSON) عبر رفع ملف مباشر، رابط خارجي (file_url)، أو نص مباشر ليتم استخراج النصوص وفهرستها دلالياً بالمتجهات عبر Gemini." if is_ar else "Upload a document file (PDF, DOCX, CSV, TXT, MD, JSON), pass a direct file_url, or raw text for semantic vector chunking & indexing.",
                 "requestBody": {
                     "required": True,
                     "content": {
@@ -245,7 +245,11 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                                     "file": {
                                         "type": "string",
                                         "format": "binary",
-                                        "description": "ملف المستند المراد رفعه وفهرسته (PDF, DOCX, TXT, MD)" if is_ar else "Document file (PDF, DOCX, TXT, MD)"
+                                        "description": "ملف المستند المراد رفعه وفهرسته (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Document file (PDF, DOCX, CSV, TXT, MD, JSON)"
+                                    },
+                                    "file_url": {
+                                        "type": "string",
+                                        "description": "رابط خارجي مباشر للمستند (PDF, DOCX, CSV, TXT, MD, JSON)" if is_ar else "Direct public URL to document"
                                     },
                                     "title": {
                                         "type": "string",
@@ -253,7 +257,7 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                                     },
                                     "content": {
                                         "type": "string",
-                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف" if is_ar else "Raw text content as an alternative to file upload"
+                                        "description": "نص مباشر كبديل في حال عدم إرفاق ملف أو رابط" if is_ar else "Raw text content as an alternative"
                                     }
                                 }
                             }
@@ -261,10 +265,10 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": ["content"],
                                 "properties": {
                                     "title": {"type": "string", "example": "سياسة الاسترجاع والشحن" if is_ar else "Return & Shipping Policy"},
-                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الشراء بحالتها الأصلية." if is_ar else "Products can be returned within 14 days of purchase."}
+                                    "content": {"type": "string", "example": "يمكن استرجاع المنتجات خلال 14 يوماً من الشراء بحالتها الأصلية." if is_ar else "Products can be returned within 14 days of purchase."},
+                                    "file_url": {"type": "string", "example": "https://example.com/company_policy.pdf"}
                                 }
                             }
                         }
@@ -531,9 +535,16 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 "tags": [tag_map["tag_token"]],
                 "summary": "إصدار توكن اتصال WebRTC فوري (Generate Voice Token)" if is_ar else "Generate WebRTC Voice Session Token",
                 "description": (
-                    "ينشئ غرفة LiveKit وتوكن JWT مشفر ليتمكن المتصفح أو التطبيق من الاتصال الصوتي المباشر بالذكاء الاصطناعي."
+                    "ينشئ غرفة LiveKit وتوكن JWT مشفر مع روابط خادم LiveKit ورابط Centrifugo WebSocket لبدء الاتصال الصوتي المباشر واستقبال نصوص المحادثة الحية في المتصفح أو التطبيق.\n\n"
+                    "**طريقة الاتصال المباشر (LiveKit SDK Quickstart):**\n"
+                    "```javascript\n"
+                    "import { Room } from 'livekit-client';\n\n"
+                    "const room = new Room();\n"
+                    "await room.connect(response.livekit_url, response.token);\n"
+                    "await room.localParticipant.setMicrophoneEnabled(true);\n"
+                    "```"
                     if is_ar else
-                    "Issues an ephemeral LiveKit JWT token for embedding direct real-time voice calls into web/mobile apps."
+                    "Issues an ephemeral LiveKit JWT token and WebSocket connection URLs for embedding direct real-time voice calls into web/mobile apps."
                 ),
                 "requestBody": {
                     "required": False,
@@ -550,14 +561,18 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 },
                 "responses": {
                     "200": {
-                        "description": "تم إصدار التوكن بنجاح" if is_ar else "LiveKit token generated successfully",
+                        "description": "تم إصدار التوكن والروابط بنجاح" if is_ar else "LiveKit token & URLs generated successfully",
                         "content": {
                             "application/json": {
                                 "example": {
                                     "status": "success",
                                     "room_name": "user_1_8f9e",
                                     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                                    "livekit_url": "wss://app.localhost:7881",
+                                    "livekit_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                                    "livekit_url": "wss://livekit.169.58.32.179.nip.io",
+                                    "centrifugo_ws_url": "wss://centrifugo.169.58.32.179.nip.io/connection/websocket",
+                                    "centrifugo_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                                    "channel": "user_1_8f9e",
                                     "user_id": 1
                                 }
                             }
