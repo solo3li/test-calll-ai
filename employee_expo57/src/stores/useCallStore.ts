@@ -510,6 +510,8 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
         await ensureAudioPermission();
 
+        const isAICall = data.call_type === "ai_test" || data.call_type === "ai_call";
+
         const room = new Room({
           adaptiveStream: true,
           dynacast: true,
@@ -567,7 +569,18 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             return;
           }
 
-          // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+          // AI agent identity — treat as call-ender for AI calls
+          const isAIAgent = participant.identity === "pipecat-agent" || participant.identity === "ai-agent";
+          if (isAIAgent) {
+            console.log("AI agent disconnected — ending call");
+            soundService.stopAll();
+            // Small delay so any final audio finishes playing
+            setTimeout(() => {
+              get().endCall();
+            }, 800);
+            return;
+          }
+
           const isHumanPeer =
             participant.identity.startsWith("employee_") ||
             participant.identity.startsWith("customer_") ||
@@ -602,17 +615,26 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
         await room.connect(data.livekit_url, data.livekit_token);
 
-        // Attach tracks on web
-        if (Platform.OS === "web") {
+        // Attach any already-published audio tracks (AI may have joined before employee)
+        const attachExistingAudioTracks = () => {
           room.remoteParticipants.forEach((p) => {
             p.trackPublications.forEach((pub) => {
-              if (pub.track && pub.track.kind === Track.Kind.Audio) {
-                const el = pub.track.attach();
-                el.play().catch((e) => console.log("Audio attach error:", e));
+              if (pub.isSubscribed && pub.track && pub.track.kind === Track.Kind.Audio) {
+                if (Platform.OS === "web") {
+                  try {
+                    const el = pub.track.attach();
+                    el.play().catch((e) => console.log("Audio attach error:", e));
+                  } catch (e) { console.log("attach err:", e); }
+                } else {
+                  try { pub.track.attach(); } catch (e) {}
+                }
               }
             });
           });
-        }
+        };
+        attachExistingAudioTracks();
+        // Also try again after a short delay in case tracks arrive slightly after connect
+        setTimeout(attachExistingAudioTracks, 1500);
 
         try {
           await room.localParticipant.setMicrophoneEnabled(true);
