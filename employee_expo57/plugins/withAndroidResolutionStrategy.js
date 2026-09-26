@@ -11,11 +11,6 @@ allprojects {
             force 'androidx.core:core-ktx:1.15.0'
         }
     }
-    afterEvaluate { project ->
-        project.tasks.matching { it.name.contains("AarMetadata") }.configureEach {
-            enabled = false
-        }
-    }
 }
 `;
       if (!config.modResults.contents.includes('androidx.core:core:1.15.0')) {
