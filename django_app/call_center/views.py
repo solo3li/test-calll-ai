@@ -176,13 +176,15 @@ def api_list_employees(request):
         return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
 
     if employee:
-        employees = EmployeeProfile.objects.filter(is_active=True).exclude(id=employee.id).order_by('extension')
+        employer = employee.employer or employee.user
+        employees = EmployeeProfile.objects.filter(employer=employer, is_active=True).exclude(id=employee.id).order_by('extension')
+        queues = CallQueue.objects.filter(user=employer, is_active=True).order_by('code')
         current_emp_data = employee.to_dict()
     else:
-        employees = EmployeeProfile.objects.filter(is_active=True).order_by('extension')
+        employer = request.user
+        employees = EmployeeProfile.objects.filter(employer=employer, is_active=True).order_by('extension')
+        queues = CallQueue.objects.filter(user=employer, is_active=True).order_by('code')
         current_emp_data = None
-
-    queues = CallQueue.objects.filter(is_active=True).order_by('code')
 
     return JsonResponse({
         "status": "success",
@@ -419,7 +421,8 @@ def list_call_queues(request):
         return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
 
     if employee:
-        queues = CallQueue.objects.filter(is_active=True).prefetch_related('memberships__employee')
+        employer = employee.employer or employee.user
+        queues = CallQueue.objects.filter(user=employer, is_active=True).prefetch_related('memberships__employee')
     else:
         queues = CallQueue.objects.filter(user=request.user, is_active=True).prefetch_related('memberships__employee')
     r = None
@@ -707,8 +710,12 @@ def api_dial_call(request):
                 "is_off_hours": is_off_hours
             })
 
+        employer = caller.employer or caller.user
+
         # 1. Check if target is a CallQueue
-        queue = CallQueue.objects.filter(code=target, is_active=True).first()
+        queue = CallQueue.objects.filter(user=employer, code=target, is_active=True).first()
+        if not queue:
+            queue = CallQueue.objects.filter(code=target, is_active=True).first()
         if queue:
             room_name = f"queue_{queue.code}_{uuid.uuid4().hex[:6]}"
 
@@ -756,7 +763,9 @@ def api_dial_call(request):
             })
 
         # 2. Check if target is an Employee Extension
-        callee = EmployeeProfile.objects.filter(extension=target, is_active=True).first()
+        callee = EmployeeProfile.objects.filter(employer=employer, extension=target, is_active=True).first()
+        if not callee:
+            callee = EmployeeProfile.objects.filter(extension=target, is_active=True).first()
         if callee:
             if callee.id == caller.id:
                 return JsonResponse({"status": "error", "message": "لا يمكنك الاتصال بتحويلتك الشخصية"}, status=400)
