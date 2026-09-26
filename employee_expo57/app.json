@@ -64,7 +64,8 @@
             "minSdkVersion": 24
           }
         }
-      ]
+      ],
+      "./plugins/withAndroidResolutionStrategy.js"
     ],
     "experiments": {
       "typedRoutes": true,
