@@ -1,5 +1,15 @@
 import * as React from "react";
-import { View, Text, StyleSheet, Modal, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  BackHandler,
+  StatusBar,
+  SafeAreaView,
+  Platform,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useCallStore } from "../stores/useCallStore";
@@ -10,232 +20,252 @@ export const IncomingCallModal: React.FC = () => {
   const answerCall = useCallStore((s) => s.answerCall);
   const declineCall = useCallStore((s) => s.declineCall);
 
+  // Intercept Android hardware back button while incoming call modal is visible
+  React.useEffect(() => {
+    if (!incomingModalVisible) return;
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      declineCall();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [incomingModalVisible, declineCall]);
+
   if (!incomingModalVisible || !incomingCall) return null;
 
+  const isQueue = incomingCall.callType === "queue";
+  const isTransfer = incomingCall.callType === "transfer";
+  const isRingBack = incomingCall.callType === "ring_back";
+
   return (
-    <Modal visible={incomingModalVisible} transparent animationType="slide">
-      <View style={styles.backdrop}>
-        <View style={styles.alertCard}>
-          {/* Avatar */}
-          <View style={styles.avatarCircle}>
-            <Ionicons name="person" size={32} color={Colors.primary} />
-          </View>
-
-          {/* Caller Name & Phone */}
-          <Text style={styles.callerName}>{incomingCall.callerName}</Text>
-          <Text style={styles.callerNumber}>
-            تحويلة: {incomingCall.callerExtension || "داخلي"}
-          </Text>
-
-          {/* Queue / Transfer Tag */}
-          <View style={styles.queueTag}>
-            <Text style={styles.queueTagText}>
-              {incomingCall.callType === "queue"
-                ? `🔔 وارد من ${incomingCall.queueName || "طابور المبيعات"}`
-                : incomingCall.callType === "transfer"
-                ? `🔄 مكالمة محولة إليك`
-                : incomingCall.callType === "ring_back"
-                ? `⚠️ استرجاع مكالمة: لم يتم الرد على التحويل`
-                : `🔔 مكالمة داخلية مباشرة (${incomingCall.callerDepartment || "زميل"})`}
+    <Modal
+      visible={incomingModalVisible}
+      transparent={false}
+      animationType="fade"
+      statusBarTranslucent={true}
+    >
+      <StatusBar barStyle="light-content" backgroundColor="#150207" translucent />
+      <SafeAreaView style={styles.fullScreenContainer}>
+        {/* Top Header / Caller Type Badge */}
+        <View style={styles.topHeader}>
+          <View style={styles.statusPill}>
+            <View style={styles.pulsingLiveDot} />
+            <Text style={styles.statusPillText}>
+              {isQueue
+                ? `طابور اتصال: ${incomingCall.queueName || "المبيعات"}`
+                : isTransfer
+                ? `تحويل وارد ${incomingCall.transferredBy ? `من ${incomingCall.transferredBy}` : ""}`
+                : isRingBack
+                ? "استرجاع مكالمة (لم يتم الرد على التحويل)"
+                : "مكالمة واردة..."}
             </Text>
           </View>
+        </View>
 
-          {/* AI / WebRTC Pre-Call Info Box */}
-          <View style={styles.aiSummaryBox}>
-            <View style={styles.aiSummaryHeader}>
-              <View style={styles.aiTitleGroup}>
-                <Ionicons name="sparkles" size={14} color={Colors.primary} />
-                <Text style={styles.aiSummaryTitle}>WebRTC Audio Stream</Text>
-              </View>
-              <View style={styles.sentimentBadge}>
-                <Text style={styles.sentimentText}>LiveKit HD</Text>
-              </View>
-            </View>
-
-            <View style={styles.bulletsList}>
-              <View style={styles.bulletRow}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>اتصال صوتي مباشر وفوري بدون وسطاء SIP</Text>
-              </View>
-              <View style={styles.bulletRow}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>جاهز للربط بغرفة LiveKit المشفرة</Text>
+        {/* Center Caller Profile */}
+        <View style={styles.centerProfile}>
+          {/* Animated Avatar Rings */}
+          <View style={styles.avatarRingOuter}>
+            <View style={styles.avatarRingMiddle}>
+              <View style={styles.avatarCircle}>
+                <Ionicons name="person" size={54} color="#f5f0e8" />
               </View>
             </View>
           </View>
 
-          {/* Decline & Answer Buttons */}
-          <View style={styles.actionsRow}>
-            <View style={styles.actionBtnCol}>
-              <TouchableOpacity style={[styles.callBtn, styles.declineBtn]} onPress={declineCall} activeOpacity={0.8}>
-                <Ionicons name="call" size={24} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
-              </TouchableOpacity>
-              <Text style={styles.btnLabel}>رفض</Text>
-            </View>
+          {/* Caller Name & Details */}
+          <Text style={styles.callerName} numberOfLines={2}>
+            {incomingCall.callerName}
+          </Text>
 
-            <View style={styles.actionBtnCol}>
-              <TouchableOpacity style={[styles.callBtn, styles.answerBtn]} onPress={answerCall} activeOpacity={0.8}>
-                <Ionicons name="call" size={24} color="#fff" />
-              </TouchableOpacity>
-              <Text style={styles.btnLabel}>رد (قبول)</Text>
-            </View>
+          <Text style={styles.callerSub}>
+            {incomingCall.callerDepartment
+              ? `${incomingCall.callerDepartment} • تحويلة #${incomingCall.callerExtension || "داخلي"}`
+              : `تحويلة #${incomingCall.callerExtension || "داخلي"}`}
+          </Text>
+
+          {/* Protocol / HD Voice Badge */}
+          <View style={styles.protocolBadge}>
+            <Ionicons name="shield-checkmark" size={13} color="#4ade80" />
+            <Text style={styles.protocolText}>WebRTC HD Voice • مشفر وفوري</Text>
           </View>
         </View>
-      </View>
+
+        {/* Bottom Call Actions */}
+        <View style={styles.bottomActions}>
+          {/* Decline Button */}
+          <View style={styles.actionCol}>
+            <TouchableOpacity
+              style={[styles.bigCallBtn, styles.declineBtn]}
+              onPress={declineCall}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="call"
+                size={34}
+                color="#ffffff"
+                style={{ transform: [{ rotate: "135deg" }] }}
+              />
+            </TouchableOpacity>
+            <Text style={styles.actionLabel}>رفض المكالمة</Text>
+          </View>
+
+          {/* Answer Button */}
+          <View style={styles.actionCol}>
+            <TouchableOpacity
+              style={[styles.bigCallBtn, styles.answerBtn]}
+              onPress={answerCall}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="call" size={34} color="#ffffff" />
+            </TouchableOpacity>
+            <Text style={styles.actionLabel}>رد (قبول)</Text>
+          </View>
+        </View>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  backdrop: {
+  fullScreenContainer: {
     flex: 1,
-    backgroundColor: "rgba(44, 10, 18, 0.70)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  alertCard: {
-    width: "100%",
-    maxWidth: 350,
-    backgroundColor: Colors.card,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    alignItems: "center",
-    padding: 22,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.2,
-    shadowRadius: 28,
-    elevation: 14,
-  },
-  avatarCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: Colors.primaryBg,
-    borderWidth: 1.5,
-    borderColor: Colors.primaryBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
-  },
-  callerName: {
-    color: Colors.textPrimary,
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 4,
-    textAlign: "center",
-  },
-  callerNumber: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    marginBottom: 10,
-  },
-  queueTag: {
-    backgroundColor: Colors.primaryBg,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-  },
-  queueTagText: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  aiSummaryBox: {
-    width: "100%",
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-    padding: 13,
-    marginBottom: 24,
-  },
-  aiSummaryHeader: {
-    flexDirection: "row",
+    backgroundColor: "#150207",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 16 : 20,
+    paddingBottom: 48,
   },
-  aiTitleGroup: {
+  topHeader: {
+    width: "100%",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  statusPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-  },
-  aiSummaryTitle: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  sentimentBadge: {
-    backgroundColor: Colors.liveGreenBg,
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 6,
-  },
-  sentimentText: {
-    color: Colors.liveGreen,
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  bulletsList: {
-    gap: 6,
-  },
-  bulletRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    backgroundColor: "rgba(139, 29, 54, 0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 240, 232, 0.2)",
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 24,
     gap: 8,
   },
-  bulletDot: {
-    width: 4.5,
-    height: 4.5,
-    borderRadius: 2.5,
-    backgroundColor: Colors.primary,
-    marginTop: 6,
+  pulsingLiveDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: "#22c55e",
   },
-  bulletText: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: "right",
+  statusPillText: {
+    color: "#f5f0e8",
+    fontSize: 13,
+    fontWeight: "600",
   },
-  actionsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    paddingHorizontal: 28,
-  },
-  actionBtnCol: {
+  centerProfile: {
     alignItems: "center",
-    gap: 6,
+    width: "100%",
+    marginVertical: "auto",
   },
-  callBtn: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+  avatarRingOuter: {
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: "rgba(139, 29, 54, 0.15)",
+    borderWidth: 1.5,
+    borderColor: "rgba(139, 29, 54, 0.35)",
     alignItems: "center",
     justifyContent: "center",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 5,
+    marginBottom: 26,
   },
-  answerBtn: {
-    backgroundColor: Colors.liveGreen,
-    shadowColor: Colors.liveGreen,
+  avatarRingMiddle: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: "rgba(139, 29, 54, 0.25)",
+    borderWidth: 1.5,
+    borderColor: "rgba(139, 29, 54, 0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "#8b1d36",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#8b1d36",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  callerName: {
+    color: "#ffffff",
+    fontSize: 30,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 8,
+    paddingHorizontal: 16,
+  },
+  callerSub: {
+    color: "rgba(245, 240, 232, 0.75)",
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 18,
+  },
+  protocolBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+  },
+  protocolText: {
+    color: "rgba(245, 240, 232, 0.85)",
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  bottomActions: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    width: "100%",
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  actionCol: {
+    alignItems: "center",
+    gap: 12,
+  },
+  bigCallBtn: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 10,
   },
   declineBtn: {
-    backgroundColor: Colors.endCallRed,
-    shadowColor: Colors.endCallRed,
+    backgroundColor: "#ef4444",
+    shadowColor: "#ef4444",
   },
-  btnLabel: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    fontWeight: "500",
+  answerBtn: {
+    backgroundColor: "#22c55e",
+    shadowColor: "#22c55e",
+  },
+  actionLabel: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

@@ -17,6 +17,17 @@ Notifications.setNotificationHandler({
   } as any),
 });
 
+export interface IncomingCallNotificationData {
+  roomName: string;
+  callerName: string;
+  callerExtension?: string;
+  callerDepartment?: string;
+  callType?: string;
+  queueName?: string;
+  transferId?: string;
+  transferredBy?: string;
+}
+
 class NotificationService {
   private isRegistered = false;
   private responseSubscription: any = null;
@@ -28,16 +39,30 @@ class NotificationService {
       return null;
     }
 
-    if (!Device.isDevice) {
-      console.log("[NotificationService] Must use physical device for Push Notifications.");
-      return null;
-    }
-
     try {
-      // 1. Android Notification Channel configuration for high priority incoming calls
+      // 1. Setup Interactive Notification Categories (Answer / Decline buttons)
+      await Notifications.setNotificationCategoryAsync("INCOMING_CALL", [
+        {
+          identifier: "ACTION_ANSWER",
+          buttonTitle: "رد (قبول)",
+          options: {
+            opensAppToForeground: true,
+          },
+        },
+        {
+          identifier: "ACTION_DECLINE",
+          buttonTitle: "رفض المكالمة",
+          options: {
+            isDestructive: true,
+            opensAppToForeground: false,
+          },
+        },
+      ]);
+
+      // 2. Android Notification Channel configuration for high priority incoming calls
       if (Platform.OS === "android") {
         await Notifications.setNotificationChannelAsync("call-notifications", {
-          name: "Call Notifications",
+          name: "مكالمات الموظف الواردة",
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 500, 250, 500],
           lightColor: "#8b1d36",
@@ -46,10 +71,11 @@ class NotificationService {
           enableVibrate: true,
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
           bypassDnd: true,
+          showBadge: true,
         });
       }
 
-      // 2. Request user permissions
+      // 3. Request user permissions
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
       if (existingStatus !== "granted") {
@@ -62,7 +88,13 @@ class NotificationService {
         return null;
       }
 
-      // 3. Resolve Project ID for Expo Push Service
+      if (!Device.isDevice) {
+        console.log("[NotificationService] Not running on physical device, skipping remote token acquisition.");
+        this.setupNotificationListeners();
+        return null;
+      }
+
+      // 4. Resolve Project ID for Expo Push Service
       const projectId =
         Constants?.expoConfig?.extra?.eas?.projectId ??
         Constants?.easConfig?.projectId;
@@ -73,16 +105,17 @@ class NotificationService {
       const pushToken = tokenData.data;
       console.log("[NotificationService] Expo Push Token obtained:", pushToken);
 
-      // 4. Send token to Django backend
+      // 5. Send token to Django backend
       await this.sendTokenToBackend(pushToken);
       this.isRegistered = true;
 
-      // 5. Setup event listeners
+      // 6. Setup event listeners
       this.setupNotificationListeners();
 
       return pushToken;
     } catch (e) {
       console.warn("[NotificationService] Error registering for push notifications:", e);
+      this.setupNotificationListeners();
       return null;
     }
   }
@@ -92,13 +125,64 @@ class NotificationService {
     if (!authToken || !pushToken) return;
 
     try {
-      await apiRequest("/api/call-center/employees/push-token/", {
-        method: "POST",
-        body: JSON.stringify({ push_token: pushToken }),
-      }, authToken);
+      await apiRequest(
+        "/api/call-center/employees/push-token/",
+        {
+          method: "POST",
+          body: JSON.stringify({ push_token: pushToken }),
+        },
+        authToken
+      );
       console.log("[NotificationService] Push token successfully synchronized with server.");
     } catch (err) {
       console.error("[NotificationService] Failed to send push token to backend:", err);
+    }
+  }
+
+  async presentIncomingCallNotification(callData: IncomingCallNotificationData) {
+    if (Platform.OS === "web") return;
+    try {
+      const title = callData.queueName
+        ? `طابور اتصال: ${callData.queueName}`
+        : `اتصال وارد من ${callData.callerName}`;
+
+      const body = callData.callerDepartment
+        ? `${callData.callerDepartment} • تحويلة #${callData.callerExtension || "داخلي"}`
+        : `تحويلة #${callData.callerExtension || "داخلي"}`;
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: {
+            event: "incoming_call",
+            room_name: callData.roomName,
+            caller_name: callData.callerName,
+            caller_extension: callData.callerExtension,
+            caller_department: callData.callerDepartment,
+            call_type: callData.callType,
+            queue_name: callData.queueName,
+            transfer_id: callData.transferId,
+            transferred_by: callData.transferredBy,
+          },
+          categoryIdentifier: "INCOMING_CALL",
+          sound: "default",
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          vibrate: [0, 500, 250, 500],
+        },
+        trigger: null, // deliver immediately
+      });
+    } catch (e) {
+      console.warn("[NotificationService] Error scheduling incoming call notification:", e);
+    }
+  }
+
+  async dismissCallNotifications() {
+    if (Platform.OS === "web") return;
+    try {
+      await Notifications.dismissAllNotificationsAsync();
+    } catch (e) {
+      // Ignore dismiss error
     }
   }
 
@@ -107,29 +191,46 @@ class NotificationService {
 
     // Triggered when notification is received while app is open
     this.receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
-      console.log("[NotificationService] Notification received:", notification.request.content.data);
+      const data = (notification.request.content.data || {}) as Record<string, any>;
+      console.log("[NotificationService] Notification received:", data);
     });
 
-    // Triggered when user clicks / taps on notification (even when app was closed/background)
+    // Triggered when user interacts with notification (clicks Answer, Decline, or taps the notification)
     this.responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = (response.notification.request.content.data || {}) as Record<string, any>;
-      console.log("[NotificationService] User tapped notification with data:", data);
+      const actionIdentifier = response.actionIdentifier;
+      console.log("[NotificationService] Notification action triggered:", actionIdentifier, data);
 
       if (data && data.room_name && data.event === "incoming_call") {
-        // Hydrate incoming call state into softphone store
-        useCallStore.setState({
-          incomingCall: {
-            roomName: String(data.room_name),
-            callerName: String(data.caller_name || "متصل وارد"),
-            callerExtension: String(data.caller_extension || ""),
-            callerDepartment: String(data.caller_department || ""),
-            callType: (data.call_type || "direct_internal") as any,
-            queueName: data.queue_name ? String(data.queue_name) : undefined,
-            transferId: data.transfer_id ? String(data.transfer_id) : undefined,
-            transferredBy: data.transferred_by ? String(data.transferred_by) : undefined,
-          },
-          incomingModalVisible: true,
-        });
+        const incomingCallData = {
+          roomName: String(data.room_name),
+          callerName: String(data.caller_name || "متصل وارد"),
+          callerExtension: String(data.caller_extension || ""),
+          callerDepartment: String(data.caller_department || ""),
+          callType: (data.call_type || "direct_internal") as any,
+          queueName: data.queue_name ? String(data.queue_name) : undefined,
+          transferId: data.transfer_id ? String(data.transfer_id) : undefined,
+          transferredBy: data.transferred_by ? String(data.transferred_by) : undefined,
+        };
+
+        if (actionIdentifier === "ACTION_DECLINE") {
+          useCallStore.setState({ incomingCall: incomingCallData });
+          useCallStore.getState().declineCall();
+          this.dismissCallNotifications();
+        } else if (actionIdentifier === "ACTION_ANSWER") {
+          useCallStore.setState({
+            incomingCall: incomingCallData,
+            incomingModalVisible: false,
+          });
+          useCallStore.getState().answerCall();
+          this.dismissCallNotifications();
+        } else {
+          // Default tap on notification banner -> open full-screen incoming call UI
+          useCallStore.setState({
+            incomingCall: incomingCallData,
+            incomingModalVisible: true,
+          });
+        }
       }
     });
   }

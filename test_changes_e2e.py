@@ -203,7 +203,7 @@ is_ai_test = (
     dial_data.get("call_type") == "ai_test" and
     "livekit_token" in dial_data and
     "room_name" in dial_data and
-    "المساعد" in dial_data.get("target_name", "")
+    "🤖" in dial_data.get("target_name", "")
 )
 log_test("Dialing '000' triggers AI Test Call (status: success, call_type: ai_test)", is_ai_test, f"Room: {dial_data.get('room_name')}")
 

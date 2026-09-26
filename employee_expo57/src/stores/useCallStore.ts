@@ -4,6 +4,7 @@ import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant } from "livekit-
 import { Centrifuge } from "centrifuge";
 import { apiRequest } from "../constants/api";
 import { soundService } from "../services/soundService";
+import { notificationService } from "../services/notificationService";
 import { useAuthStore } from "./useAuthStore";
 import { useDirectoryStore } from "./useDirectoryStore";
 import { MOCK_HISTORY, CallRecord, ContactItem, MOCK_CONTACTS } from "../constants/mockData";
@@ -203,19 +204,30 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
         if (payload.event === "incoming_call") {
           soundService.playIncomingRingtone();
+          const callInfo: IncomingCallData = {
+            roomName: payload.room_name,
+            callerName: payload.caller_name || "متصل غير معروف",
+            callerExtension: payload.caller_extension || "",
+            callerDepartment: payload.caller_department || "",
+            callType: payload.call_type || "direct_internal",
+            queueName: payload.queue_name,
+            transferId: payload.transfer_id,
+            transferredBy: payload.transferred_by,
+            ringTimeoutSeconds: payload.ring_timeout_seconds,
+          };
           set({
-            incomingCall: {
-              roomName: payload.room_name,
-              callerName: payload.caller_name || "متصل غير معروف",
-              callerExtension: payload.caller_extension || "",
-              callerDepartment: payload.caller_department || "",
-              callType: payload.call_type || "direct_internal",
-              queueName: payload.queue_name,
-              transferId: payload.transfer_id,
-              transferredBy: payload.transferred_by,
-              ringTimeoutSeconds: payload.ring_timeout_seconds,
-            },
+            incomingCall: callInfo,
             incomingModalVisible: true,
+          });
+          notificationService.presentIncomingCallNotification({
+            roomName: callInfo.roomName,
+            callerName: callInfo.callerName,
+            callerExtension: callInfo.callerExtension,
+            callerDepartment: callInfo.callerDepartment,
+            callType: callInfo.callType,
+            queueName: callInfo.queueName,
+            transferId: callInfo.transferId,
+            transferredBy: callInfo.transferredBy,
           });
         } else if (payload.event === "transfer_hold") {
           // Caller is put on local hold
@@ -652,6 +664,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
   answerCall: async () => {
     soundService.stopAll();
+    notificationService.dismissCallNotifications();
     const { incomingCall } = get();
     const token = useAuthStore.getState().token;
     if (!incomingCall || !token) return;
@@ -796,6 +809,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
   declineCall: () => {
     soundService.stopAll();
+    notificationService.dismissCallNotifications();
     const { incomingCall } = get();
     const token = useAuthStore.getState().token;
 
@@ -827,6 +841,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
 
   forceEndCall: () => {
     soundService.stopAll();
+    notificationService.dismissCallNotifications();
     isTransferring = false;
     stopHoldAudio();
     if (callTimerInterval) {

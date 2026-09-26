@@ -48,12 +48,12 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#8b1d36",
-          "sounds": ["default"]
+          "color": "#8b1d36"
         }
       ],
       "@livekit/react-native-expo-plugin",
-      "@config-plugins/react-native-webrtc"
+      "@config-plugins/react-native-webrtc",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

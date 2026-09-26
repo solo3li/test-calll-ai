@@ -211,8 +211,19 @@ def api_create_employee(request):
             first_name=display_name
         )
 
+        employer = None
+        if request.user.is_authenticated:
+            employer = request.user
+        else:
+            creator_emp = get_employee_from_token(request)
+            if creator_emp:
+                employer = creator_emp.employer or creator_emp.user
+        if not employer:
+            employer = User.objects.filter(is_superuser=True).order_by('id').first()
+
         employee = EmployeeProfile.objects.create(
             user=user,
+            employer=employer,
             extension=extension,
             display_name=display_name,
             department=department,
@@ -313,6 +324,7 @@ def send_expo_push_notification(push_token: str, title: str, body: str, data: di
             "data": data or {},
             "priority": "high",
             "channelId": "call-notifications",
+            "categoryId": "INCOMING_CALL",
         }
         res = requests.post(
             "https://exp.host/--/api/v2/push/send",
@@ -567,10 +579,20 @@ def api_dial_call(request):
         # 0. Check if target is AI Assistant Test
         if target.lower() in ['000', 'ai', 'assistant', 'bot', 'test_ai']:
             from agents.models import AgentProfile
-            tenant_user = caller.employer or caller.user
+            tenant_user = caller.employer
+            if not tenant_user:
+                # If employer not set, resolve to main admin/superuser who created the profiles
+                tenant_user = User.objects.filter(is_superuser=True).order_by('id').first() or caller.user
+
             active_profile = AgentProfile.objects.filter(user=tenant_user, is_active=True).first()
             if not active_profile:
                 active_profile = AgentProfile.objects.filter(user=tenant_user).first()
+            if not active_profile:
+                # Fallback to any active profile in system
+                active_profile = AgentProfile.objects.filter(is_active=True).first()
+                if active_profile:
+                    tenant_user = active_profile.user
+
             profile_dict = active_profile.to_dict() if active_profile else None
             ai_name = active_profile.name if active_profile else "المساعد الصوتي الذكي"
 

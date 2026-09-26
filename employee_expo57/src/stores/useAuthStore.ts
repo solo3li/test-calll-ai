@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { Platform } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import { apiRequest } from "../constants/api";
 
 export interface EmployeeProfile {
@@ -26,12 +27,13 @@ interface AuthState {
   employee: EmployeeProfile | null;
   centrifugoConfig: CentrifugoConfig | null;
   isAuthenticated: boolean;
+  isRestoring: boolean;
   isLoading: boolean;
   error: string | null;
 
   // Actions
   login: (identifier: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateStatus: (status: "ready" | "break" | "busy") => Promise<void>;
   restoreSession: () => Promise<void>;
   clearError: () => void;
@@ -41,58 +43,55 @@ const STORAGE_KEY_TOKEN = "employee_auth_token";
 const STORAGE_KEY_EMP = "employee_profile";
 const STORAGE_KEY_CENT = "centrifugo_config";
 
-function getStorageItem(key: string): string | null {
+async function getStorageItemAsync(key: string): Promise<string | null> {
   try {
-    if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
-      return window.localStorage.getItem(key);
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+      return null;
     }
+    return await SecureStore.getItemAsync(key);
   } catch (e) {
-    // Ignore storage errors
-  }
-  return null;
-}
-
-function setStorageItem(key: string, value: string): void {
-  try {
-    if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
-      window.localStorage.setItem(key, value);
-    }
-  } catch (e) {
-    // Ignore storage errors
+    console.warn(`[useAuthStore] Error reading key "${key}" from SecureStore:`, e);
+    return null;
   }
 }
 
-function removeStorageItem(key: string): void {
+async function setStorageItemAsync(key: string, value: string): Promise<void> {
   try {
-    if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
-      window.localStorage.removeItem(key);
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
+      return;
     }
+    await SecureStore.setItemAsync(key, value);
   } catch (e) {
-    // Ignore storage errors
+    console.warn(`[useAuthStore] Error saving key "${key}" to SecureStore:`, e);
+  }
+}
+
+async function removeStorageItemAsync(key: string): Promise<void> {
+  try {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
+      return;
+    }
+    await SecureStore.deleteItemAsync(key);
+  } catch (e) {
+    console.warn(`[useAuthStore] Error removing key "${key}" from SecureStore:`, e);
   }
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  token: getStorageItem(STORAGE_KEY_TOKEN),
-  employee: (() => {
-    const raw = getStorageItem(STORAGE_KEY_EMP);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  })(),
-  centrifugoConfig: (() => {
-    const raw = getStorageItem(STORAGE_KEY_CENT);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  })(),
-  isAuthenticated: !!getStorageItem(STORAGE_KEY_TOKEN),
+  token: null,
+  employee: null,
+  centrifugoConfig: null,
+  isAuthenticated: false,
+  isRestoring: true,
   isLoading: false,
   error: null,
 
@@ -113,18 +112,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (data.status === "success" && data.token) {
-        setStorageItem(STORAGE_KEY_TOKEN, data.token);
-        setStorageItem(STORAGE_KEY_EMP, JSON.stringify(data.employee));
-        setStorageItem(STORAGE_KEY_CENT, JSON.stringify(data.centrifugo));
+        await setStorageItemAsync(STORAGE_KEY_TOKEN, data.token);
+        await setStorageItemAsync(STORAGE_KEY_EMP, JSON.stringify(data.employee));
+        await setStorageItemAsync(STORAGE_KEY_CENT, JSON.stringify(data.centrifugo));
 
         set({
           token: data.token,
           employee: data.employee,
           centrifugoConfig: data.centrifugo,
           isAuthenticated: true,
+          isRestoring: false,
           isLoading: false,
           error: null,
         });
+
+        // Trigger push notification registration immediately upon successful login
+        try {
+          const { notificationService } = require("../services/notificationService");
+          notificationService.registerForPushNotifications();
+        } catch (e) {
+          console.warn("[useAuthStore] Push notification registration note:", e);
+        }
 
         return true;
       } else {
@@ -143,16 +151,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  logout: () => {
-    removeStorageItem(STORAGE_KEY_TOKEN);
-    removeStorageItem(STORAGE_KEY_EMP);
-    removeStorageItem(STORAGE_KEY_CENT);
+  logout: async () => {
+    await removeStorageItemAsync(STORAGE_KEY_TOKEN);
+    await removeStorageItemAsync(STORAGE_KEY_EMP);
+    await removeStorageItemAsync(STORAGE_KEY_CENT);
 
     set({
       token: null,
       employee: null,
       centrifugoConfig: null,
       isAuthenticated: false,
+      isRestoring: false,
       error: null,
     });
   },
@@ -181,7 +190,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
 
       if (data.status === "success") {
-        setStorageItem(STORAGE_KEY_EMP, JSON.stringify(data.employee));
+        await setStorageItemAsync(STORAGE_KEY_EMP, JSON.stringify(data.employee));
         set({ employee: data.employee });
       }
     } catch (err) {
@@ -190,35 +199,65 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   restoreSession: async () => {
-    const token = getStorageItem(STORAGE_KEY_TOKEN);
-    if (!token) {
-      set({ isAuthenticated: false, isLoading: false });
-      return;
-    }
-
+    set({ isRestoring: true, isLoading: true });
     try {
-      const data = await apiRequest<{
-        status: string;
-        employee: EmployeeProfile;
-        centrifugo: CentrifugoConfig;
-      }>("/api/call-center/auth/me/", { method: "GET" }, token);
-
-      if (data.status === "success") {
-        setStorageItem(STORAGE_KEY_EMP, JSON.stringify(data.employee));
-        setStorageItem(STORAGE_KEY_CENT, JSON.stringify(data.centrifugo));
-        set({
-          token,
-          employee: data.employee,
-          centrifugoConfig: data.centrifugo,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      } else {
-        get().logout();
+      const token = await getStorageItemAsync(STORAGE_KEY_TOKEN);
+      if (!token) {
+        set({ isAuthenticated: false, isRestoring: false, isLoading: false });
+        return;
       }
-    } catch {
-      // If network fails keep cached session or logout if 401
-      set({ isLoading: false });
+
+      const rawEmp = await getStorageItemAsync(STORAGE_KEY_EMP);
+      const rawCent = await getStorageItemAsync(STORAGE_KEY_CENT);
+      let cachedEmp: EmployeeProfile | null = null;
+      let cachedCent: CentrifugoConfig | null = null;
+      try { if (rawEmp) cachedEmp = JSON.parse(rawEmp); } catch {}
+      try { if (rawCent) cachedCent = JSON.parse(rawCent); } catch {}
+
+      // Fast optimistic hydration from encrypted local store
+      set({
+        token,
+        employee: cachedEmp,
+        centrifugoConfig: cachedCent,
+        isAuthenticated: true,
+        isRestoring: false,
+        isLoading: false,
+      });
+
+      // Background verification with backend
+      try {
+        const data = await apiRequest<{
+          status: string;
+          employee: EmployeeProfile;
+          centrifugo: CentrifugoConfig;
+        }>("/api/call-center/auth/me/", { method: "GET" }, token);
+
+        if (data.status === "success") {
+          await setStorageItemAsync(STORAGE_KEY_EMP, JSON.stringify(data.employee));
+          await setStorageItemAsync(STORAGE_KEY_CENT, JSON.stringify(data.centrifugo));
+          set({
+            token,
+            employee: data.employee,
+            centrifugoConfig: data.centrifugo,
+            isAuthenticated: true,
+            isRestoring: false,
+            isLoading: false,
+          });
+        } else {
+          await get().logout();
+        }
+      } catch (err: any) {
+        // If 401 Unauthorized, token has expired on server
+        if (err?.status === 401 || err?.message?.includes("401") || err?.message?.includes("Unauthorized")) {
+          await get().logout();
+        } else {
+          // If offline / network error, retain cached authenticated session
+          set({ isRestoring: false, isLoading: false });
+        }
+      }
+    } catch (e) {
+      console.warn("[useAuthStore] restoreSession unexpected error:", e);
+      set({ isRestoring: false, isLoading: false });
     }
   },
 }));

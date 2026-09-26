@@ -17,7 +17,7 @@ if (Platform.OS !== "web") {
 import { notificationService } from "../services/notificationService";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, restoreSession } = useAuthStore();
+  const { isAuthenticated, isRestoring, restoreSession } = useAuthStore();
   const initSignaling = useCallStore((s) => s.initSignaling);
   const router = useRouter();
   const segments = useSegments();
@@ -33,6 +33,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (isRestoring) return;
     const inLogin = segments[0] === "login";
     if (!isAuthenticated && !inLogin) {
       router.replace("/login");
@@ -40,7 +41,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace("/");
       notificationService.registerForPushNotifications();
     }
-  }, [isAuthenticated, segments]);
+  }, [isAuthenticated, isRestoring, segments]);
 
   return <>{children}</>;
 }
