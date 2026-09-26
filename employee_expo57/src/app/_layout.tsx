@@ -30,6 +30,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         initSignaling();
         checkActiveIncomingCall();
         notificationService.registerForPushNotifications();
+        if (auth.employee) {
+          notificationService.startPersistentServiceNotification(auth.employee.display_name, auth.employee.extension);
+        }
       }
     });
 
@@ -39,6 +42,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         if (auth.isAuthenticated) {
           initSignaling();
           checkActiveIncomingCall();
+          if (auth.employee) {
+            notificationService.startPersistentServiceNotification(auth.employee.display_name, auth.employee.extension);
+          }
         }
       }
     });
@@ -53,9 +59,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const inLogin = segments[0] === "login";
     if (!isAuthenticated && !inLogin) {
       router.replace("/login");
+      notificationService.stopPersistentServiceNotification();
     } else if (isAuthenticated && inLogin) {
       router.replace("/");
       notificationService.registerForPushNotifications();
+      const auth = useAuthStore.getState();
+      if (auth.employee) {
+        notificationService.startPersistentServiceNotification(auth.employee.display_name, auth.employee.extension);
+      }
     }
   }, [isAuthenticated, isRestoring, segments]);
 

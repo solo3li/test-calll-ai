@@ -21,9 +21,10 @@ allprojects {
     return config;
   });
 
-  // 2. AndroidManifest fix:
+  // 2. AndroidManifest fixes:
   // - Remove 'assetsPaths' from MainActivity configChanges (fails AAPT linking on SDK 35)
   // - Enable showWhenLocked and turnScreenOn so incoming calls wake screen & show on lock screen
+  // - Register BOOT_COMPLETED receiver so softphone wakes up automatically on phone start
   config = withAndroidManifest(config, (config) => {
     const mainApplication = config.modResults.manifest.application?.[0];
     if (mainApplication?.activity) {
@@ -41,6 +42,33 @@ allprojects {
         }
       }
     }
+
+    if (mainApplication) {
+      if (!mainApplication.receiver) {
+        mainApplication.receiver = [];
+      }
+      const hasBootReceiver = mainApplication.receiver.some(
+        (r) => r.$?.['android:name'] === 'expo.modules.notifications.service.NotificationsService'
+      );
+      if (!hasBootReceiver) {
+        mainApplication.receiver.push({
+          $: {
+            'android:name': 'expo.modules.notifications.service.NotificationsService',
+            'android:exported': 'true',
+          },
+          'intent-filter': [
+            {
+              action: [
+                { $: { 'android:name': 'android.intent.action.BOOT_COMPLETED' } },
+                { $: { 'android:name': 'android.intent.action.QUICKBOOT_POWERON' } },
+                { $: { 'android:name': 'com.htc.intent.action.QUICKBOOT_POWERON' } },
+              ],
+            },
+          ],
+        });
+      }
+    }
+
     return config;
   });
 

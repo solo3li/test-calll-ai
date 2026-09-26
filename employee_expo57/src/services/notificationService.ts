@@ -44,14 +44,14 @@ class NotificationService {
       await Notifications.setNotificationCategoryAsync("INCOMING_CALL", [
         {
           identifier: "ACTION_ANSWER",
-          buttonTitle: "رد (قبول)",
+          buttonTitle: "🟢 رد (قبول المكالمة)",
           options: {
             opensAppToForeground: true,
           },
         },
         {
           identifier: "ACTION_DECLINE",
-          buttonTitle: "رفض المكالمة",
+          buttonTitle: "🔴 رفض المكالمة",
           options: {
             isDestructive: true,
             opensAppToForeground: false,
@@ -62,9 +62,9 @@ class NotificationService {
       // 2. Android Notification Channel configuration for high priority incoming calls
       if (Platform.OS === "android") {
         await Notifications.setNotificationChannelAsync("call-notifications", {
-          name: "مكالمات الموظف الواردة",
+          name: "مكالمات الموظف الفورية (VoIP)",
           importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 500, 250, 500],
+          vibrationPattern: [0, 600, 300, 600, 300, 1000],
           lightColor: "#8b1d36",
           sound: "default",
           enableLights: true,
@@ -72,6 +72,16 @@ class NotificationService {
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
           bypassDnd: true,
           showBadge: true,
+        });
+
+        await Notifications.setNotificationChannelAsync("softphone-service", {
+          name: "خدمة الاتصال الدائمة (24/7)",
+          importance: Notifications.AndroidImportance.LOW,
+          sound: null,
+          enableLights: false,
+          enableVibrate: false,
+          showBadge: false,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
         });
       }
 
@@ -142,18 +152,23 @@ class NotificationService {
   async presentIncomingCallNotification(callData: IncomingCallNotificationData) {
     if (Platform.OS === "web") return;
     try {
-      const title = callData.queueName
-        ? `طابور اتصال: ${callData.queueName}`
-        : `اتصال وارد من ${callData.callerName}`;
+      let title = "📞 مكالمة صوتية واردة";
+      if (callData.queueName) {
+        title = `📥 مكالمة طابور: ${callData.queueName}`;
+      } else if (callData.callType === "transfer") {
+        title = `🔄 مكالمة محولة ${callData.transferredBy ? `من ${callData.transferredBy}` : ""}`;
+      } else if (callData.callerName) {
+        title = `📞 مكالمة واردة من ${callData.callerName}`;
+      }
 
-      const body = callData.callerDepartment
-        ? `${callData.callerDepartment} • تحويلة #${callData.callerExtension || "داخلي"}`
-        : `تحويلة #${callData.callerExtension || "داخلي"}`;
+      const body = `👤 ${callData.callerName || "متصل"} • 🏢 ${callData.callerDepartment || "داخلي"} • تحويلة #${callData.callerExtension || "داخلي"}`;
 
       await Notifications.scheduleNotificationAsync({
         content: {
           title,
           body,
+          subtitle: "⚡ صوت فوري WebRTC HD",
+          color: "#8b1d36",
           data: {
             event: "incoming_call",
             room_name: callData.roomName,
@@ -168,7 +183,9 @@ class NotificationService {
           categoryIdentifier: "INCOMING_CALL",
           sound: "default",
           priority: Notifications.AndroidNotificationPriority.MAX,
-          vibrate: [0, 500, 250, 500],
+          vibrate: [0, 600, 300, 600, 300, 1000],
+          sticky: true,
+          autoDismiss: false,
         },
         trigger: null, // deliver immediately
       });
@@ -177,10 +194,43 @@ class NotificationService {
     }
   }
 
+  async startPersistentServiceNotification(employeeName: string, extension: string) {
+    if (Platform.OS === "web") return;
+    try {
+      await Notifications.scheduleNotificationAsync({
+        identifier: "PERSISTENT_SOFTPHONE_SERVICE",
+        content: {
+          title: "🟢 بوابة الموظف | الخط متاح (24/7)",
+          body: `الموظف: ${employeeName} • تحويلة #${extension} • جاهز للمكالمات`,
+          color: "#8b1d36",
+          sticky: true,
+          autoDismiss: false,
+          priority: Notifications.AndroidNotificationPriority.LOW,
+          data: { event: "persistent_service" },
+        },
+        trigger: null,
+      });
+    } catch (e) {
+      console.warn("[NotificationService] Error setting persistent service notification:", e);
+    }
+  }
+
+  async stopPersistentServiceNotification() {
+    if (Platform.OS === "web") return;
+    try {
+      await Notifications.dismissNotificationAsync("PERSISTENT_SOFTPHONE_SERVICE");
+    } catch (e) {}
+  }
+
   async dismissCallNotifications() {
     if (Platform.OS === "web") return;
     try {
       await Notifications.dismissAllNotificationsAsync();
+      // Re-schedule persistent service notification if authenticated
+      const auth = useAuthStore.getState();
+      if (auth.isAuthenticated && auth.employee) {
+        this.startPersistentServiceNotification(auth.employee.display_name, auth.employee.extension);
+      }
     } catch (e) {
       // Ignore dismiss error
     }

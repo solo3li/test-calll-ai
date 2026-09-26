@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, Linking, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useCall } from "../context/CallContext";
@@ -34,6 +34,23 @@ export const DialpadView: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      {/* 24/7 Always-on Softphone Banner */}
+      <TouchableOpacity
+        style={styles.batteryPill}
+        onPress={() => {
+          if (Platform.OS === "android") {
+            Linking.openSettings().catch(() => {});
+          }
+        }}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="shield-checkmark" size={13} color="#10b981" />
+        <Text style={styles.batteryPillText}>
+          الخدمة تعمل في الخلفية (24/7) • اضغط لضبط توفير الطاقة
+        </Text>
+        <Ionicons name="chevron-forward" size={11} color={Colors.textMuted} />
+      </TouchableOpacity>
+
       {/* Phone Number Display */}
       <View style={styles.displayRow}>
         <TextInput
@@ -117,6 +134,26 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingBottom: 16,
     backgroundColor: Colors.background,
+  },
+  batteryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(16, 185, 129, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginBottom: 8,
+  },
+  batteryPillText: {
+    color: Colors.textMuted,
+    fontSize: 10.5,
+    fontWeight: "500",
+    flex: 1,
+    marginHorizontal: 6,
+    textAlign: "right",
   },
   displayRow: {
     flexDirection: "row",

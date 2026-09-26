@@ -195,6 +195,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     try {
       const centrifuge = new Centrifuge(config.ws_url, {
         token: config.token,
+        timeout: 5000,
+        minReconnectDelay: 500,
+        maxReconnectDelay: 5000,
+        maxServerPingDelay: 10000,
       });
 
       // 1. Personal Employee Channel for direct incoming calls & transfers
