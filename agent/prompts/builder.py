@@ -90,6 +90,7 @@ def build_dynamic_system_instruction(
         style_text = style_map["friendly"]
 
     custom_text = f"\nتعليمات خاصة إضافية من المستخدم:\n{custom}\n" if custom else ""
+    welcome_text = f"\nرسالة الترحيب المحددة لك لبدء الحديث:\n\"{profile['welcome_message'].strip()}\"\n" if profile.get("welcome_message") else ""
 
     # 5. Verbosity
     verbosity_instruction = VERBOSITY_INSTRUCTIONS.get(verbosity, VERBOSITY_INSTRUCTIONS["balanced"])
@@ -110,7 +111,7 @@ def build_dynamic_system_instruction(
 3. أدوات الـ API وخوادم الأدوات (MCP): أنت مزود بمجموعة من الأدوات البرمجية الخاصة بأنشطة وخدمات المؤسسة. اقرأ وصف كل أداة ومدخلاتها بدقة، واستدعِ الأداة المناسبة فوراً بناءً على ما يطلبه المتصل وسياق وظيفته دون أي تخمين أو افتراضات مسبقة.
 4. أدوات المستندات (RAG): لما يسألك المتصل عن أي معلومة تخص مستندات أو سياسات أو خدمات النشاط المرفوعة، استدعِ أداة search_knowledge_base.
 5. الإجابة من نتائج الأدوات: لخص نتائج الأداة للمستخدم بأسلوبك ولهجتك المحددة، بوضوح وأرقام دقيقة ومباشرة.
-6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات ولا تخص طوابير وأقسام الدعم المتاحة (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{custom_text}
+6. الاعتذار الإجباري الصارم: لو سألك عن أي حاجة عامة ملهاش أداة ولا موجودة في المستندات ولا تخص طوابير وأقسام الدعم المتاحة (زي أسئلة عامة خارج الشغل): اعتذر فوراً بصيغة الاعتذار المحددة أعلاه، وممنوع تفتي أو تخمن.{welcome_text}{custom_text}
 {verbosity_instruction}{memory_text}"""
 
     queues_instruction = ""
@@ -133,3 +134,36 @@ def build_dynamic_system_instruction(
         )
 
     return (outbound_header + fallback_header + prompt + queues_instruction).strip()
+
+
+def generate_welcome_greeting(
+    profile: Dict[str, Any],
+    is_outbound: bool = False,
+    outbound_context: Optional[Dict[str, Any]] = None
+) -> str:
+    """Generate the exact proactive greeting message based on profile or outbound context."""
+    custom_welcome = (profile.get("welcome_message") or "").strip()
+    if custom_welcome:
+        return custom_welcome
+
+    if is_outbound and outbound_context:
+        goal = (outbound_context.get("call_goal") or "").strip()
+        name = profile.get("name", "المساعد")
+        if goal:
+            return f"مرحباً بك، معك {name}. أتصل بحضرتك بخصوص {goal}."
+        return f"مرحباً بك، معك {name}، أتمنى أن تكون بخير."
+
+    name = profile.get("name") or "المساعد"
+    dialect = (profile.get("dialect") or "egyptian").lower()
+    role = profile.get("persona_role") or "خدمة العملاء"
+
+    if "saudi" in dialect or "gulf" in dialect or "khaliji" in dialect:
+        return f"أهلاً وسهلاً بك، معك {name}، كيف أقدر أخدمك اليوم؟"
+    elif "levantine" in dialect or "shami" in dialect or "syrian" in dialect or "lebanese" in dialect:
+        return f"أهلاً وسهلاً، معك {name}، كيف بقدر ساعدك اليوم؟"
+    elif "moroccan" in dialect or "maghrebi" in dialect:
+        return f"أهلاً بك، معاك {name}، كيفاش نقدر نعاونك اليوم؟"
+    elif "egyptian" in dialect:
+        return f"أهلاً بحضرتك، معاك {name}، أقدر أساعدك إزاي النهاردة؟"
+    else:
+        return f"مرحباً بك، معك {name} من {role}، كيف يمكنني مساعدتك اليوم؟"

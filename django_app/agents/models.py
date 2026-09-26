@@ -93,6 +93,12 @@ class AgentProfile(models.Model):
     speaking_style = models.TextField(blank=True, default='ودود ولطيف ومرح')
     verbosity = models.CharField(max_length=20, choices=VERBOSITY_CHOICES, default='balanced')
     custom_instructions = models.TextField(blank=True, default='')
+    welcome_message = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="رسالة الترحيب الافتتاحية",
+        help_text="الرسالة الترحيبية التي يبدأ بها المساعد فور فتح المكالمة (مثال: أهلاً بك، معك أحمد، كيف أقدر أساعدك؟)"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -153,6 +159,7 @@ class AgentProfile(models.Model):
             "verbosity": self.verbosity or "balanced",
             "verbosity_display": self.get_verbosity_display(),
             "custom_instructions": self.custom_instructions,
+            "welcome_message": self.welcome_message or "",
             "is_active": self.is_active,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M"),

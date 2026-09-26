@@ -172,7 +172,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
             # Ring candidate
             async def step_ring_candidate():
                 r.set(f"transfer:{transfer_id}:current_candidate", cand_id, ex=ring_timeout_seconds + 5)
-                publish_to_centrifugo(f"employee:{cand_id}", {
+                call_payload = {
                     "event": "incoming_call",
                     "call_type": "transfer",
                     "transfer_id": transfer_id,
@@ -181,7 +181,19 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                     "caller_extension": caller_ext,
                     "transferred_by": from_emp_name,
                     "ring_timeout_seconds": ring_timeout_seconds,
-                })
+                }
+                publish_to_centrifugo(f"employee:{cand_id}", call_payload)
+                if getattr(cand, 'push_token', None):
+                    try:
+                        from .views import send_expo_push_notification
+                        send_expo_push_notification(
+                            cand.push_token,
+                            "مكالمة محولة واردة",
+                            f"مكالمة واردة ومحولة من {from_emp_name} لـ {caller_name}",
+                            call_payload
+                        )
+                    except Exception as pe:
+                        logger.warning(f"Error sending push on transfer: {pe}")
                 return {"status": "ringing", "candidate_id": cand_id}
 
             await ctx.step.run(f"ring-{step_tag}", step_ring_candidate)

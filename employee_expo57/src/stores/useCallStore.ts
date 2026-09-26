@@ -3,6 +3,7 @@ import { Platform, PermissionsAndroid } from "react-native";
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant } from "livekit-client";
 import { Centrifuge } from "centrifuge";
 import { apiRequest } from "../constants/api";
+import { soundService } from "../services/soundService";
 import { useAuthStore } from "./useAuthStore";
 import { useDirectoryStore } from "./useDirectoryStore";
 import { MOCK_HISTORY, CallRecord, ContactItem, MOCK_CONTACTS } from "../constants/mockData";
@@ -201,6 +202,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         console.log("[Centrifugo Event]", payload.event, payload);
 
         if (payload.event === "incoming_call") {
+          soundService.playIncomingRingtone();
           set({
             incomingCall: {
               roomName: payload.room_name,
@@ -341,6 +343,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   connectLiveKitRoom: async (livekitUrl: string, livekitToken: string, roomName: string, partnerName?: string) => {
+    soundService.stopAll();
     const existing = get().livekitRoom;
     if (existing) {
       try { existing.disconnect(); } catch (e) {}
@@ -493,6 +496,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       }, token);
 
       if (data.status === "success") {
+        soundService.playOutgoingRingback();
         set((state) => ({
           callState: "RINGING",
           activeCall: {
@@ -510,6 +514,10 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         });
 
         room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+          soundService.stopAll();
+          if (get().callState === "RINGING" || get().callState === "DIALING") {
+            set({ callState: "CONNECTED" });
+          }
           if (track.kind === Track.Kind.Audio) {
             if (Platform.OS === "web") {
               const audioElement = track.attach();
@@ -519,6 +527,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         });
 
         room.on(RoomEvent.ParticipantConnected, () => {
+          soundService.stopAll();
           set({ callState: "CONNECTED" });
           if (!callTimerInterval) {
             callTimerInterval = setInterval(() => {
@@ -563,6 +572,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         });
 
         room.on(RoomEvent.Disconnected, () => {
+          soundService.stopAll();
           if (isTransferring || get().callState === "HOLD" || get().callState === "TRANSFERRING") {
             console.log("Ignoring room disconnect during transfer/hold");
             return;
@@ -599,6 +609,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   answerCall: async () => {
+    soundService.stopAll();
     const { incomingCall } = get();
     const token = useAuthStore.getState().token;
     if (!incomingCall || !token) return;
@@ -742,6 +753,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   declineCall: () => {
+    soundService.stopAll();
     const { incomingCall } = get();
     const token = useAuthStore.getState().token;
 
@@ -772,6 +784,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   },
 
   forceEndCall: () => {
+    soundService.stopAll();
     isTransferring = false;
     stopHoldAudio();
     if (callTimerInterval) {

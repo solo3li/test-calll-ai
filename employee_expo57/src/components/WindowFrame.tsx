@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, Platform, StatusBar, TouchableOpacity, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "../constants/theme";
 import { useAuthStore } from "../stores/useAuthStore";
 import { useCallStore } from "../stores/useCallStore";
@@ -11,6 +12,9 @@ interface WindowFrameProps {
 
 export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
   const isWeb = Platform.OS === "web";
+  const insets = useSafeAreaInsets();
+  const topInset = isWeb ? 0 : Math.max(insets.top, Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 0);
+
   const { employee, updateStatus, logout } = useAuthStore();
   const disconnectSignaling = useCallStore((s) => s.disconnectSignaling);
 
@@ -44,7 +48,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
       <View style={[styles.windowContainer, isWeb && styles.webCardContainer]}>
         {/* Window title bar */}
-        <View style={styles.windowHeader}>
+        <View style={[styles.windowHeader, !isWeb && { paddingTop: topInset, height: 44 + topInset }]}>
           {/* Mac window dots & Brand Logo */}
           <View style={styles.dotsRow}>
             <View style={[styles.dot, { backgroundColor: Colors.dotRed }]} />
@@ -91,7 +95,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
 
         {/* Status Dropdown Menu */}
         {statusMenuOpen && (
-          <View style={styles.statusDropdown}>
+          <View style={[styles.statusDropdown, !isWeb && { top: 48 + topInset }]}>
             <TouchableOpacity style={styles.dropdownOption} onPress={() => { updateStatus("ready"); setStatusMenuOpen(false); }}>
               <View style={[styles.statusIndicatorDot, { backgroundColor: Colors.liveGreen }]} />
               <Text style={styles.dropdownOptionText}>🟢 متاح (جاهز لاستقبال المكالمات)</Text>

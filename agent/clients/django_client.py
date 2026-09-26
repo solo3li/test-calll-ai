@@ -88,6 +88,7 @@ def parse_active_profile_from_bootstrap(bootstrap: dict) -> dict:
         "persona_role": "customer_support",
         "speaking_style": "friendly",
         "verbosity": "balanced",
+        "welcome_message": "",
         "custom_instructions": ""
     }
     if not bootstrap:
@@ -102,6 +103,7 @@ def parse_active_profile_from_bootstrap(bootstrap: dict) -> dict:
             "persona_role": prof.get("persona_role") or "customer_support",
             "speaking_style": prof.get("speaking_style") or "friendly",
             "verbosity": prof.get("verbosity") or "balanced",
+            "welcome_message": prof.get("welcome_message") or "",
             "custom_instructions": prof.get("custom_instructions") or "",
             "name": prof.get("name") or "المساعد"
         }

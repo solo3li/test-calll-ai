@@ -367,6 +367,7 @@ def api_user_profiles(request):
             speaking_style=data.get('speaking_style', 'ودود ولطيف ومرح').strip(),
             verbosity=data.get('verbosity', 'balanced').strip(),
             custom_instructions=data.get('custom_instructions', '').strip(),
+            welcome_message=data.get('welcome_message', '').strip(),
             is_active=bool(data.get('is_active', True))
         )
         return JsonResponse({
@@ -396,7 +397,7 @@ def api_user_profile_detail(request, profile_id):
         except Exception:
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
-        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity', 'custom_instructions']:
+        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity', 'custom_instructions', 'welcome_message']:
             if field in data:
                 setattr(profile, field, str(data[field]).strip())
         if 'is_active' in data:

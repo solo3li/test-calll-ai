@@ -299,6 +299,64 @@ def api_update_employee_status(request):
         logger.error(f"Error in api_update_employee_status: {e}", exc_info=True)
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
+
+def send_expo_push_notification(push_token: str, title: str, body: str, data: dict = None) -> bool:
+    """Send an Expo push notification to wake up the employee mobile app."""
+    if not push_token or not (push_token.startswith("ExponentPushToken") or push_token.startswith("ExpoPushToken")):
+        return False
+    try:
+        payload = {
+            "to": push_token,
+            "sound": "default",
+            "title": title,
+            "body": body,
+            "data": data or {},
+            "priority": "high",
+            "channelId": "call-notifications",
+        }
+        res = requests.post(
+            "https://exp.host/--/api/v2/push/send",
+            json=payload,
+            headers={
+                "Accept": "application/json",
+                "Accept-encoding": "gzip, deflate",
+                "Content-Type": "application/json",
+            },
+            timeout=4.0
+        )
+        logger.info(f"Expo push notification sent to {push_token[:15]}...: status={res.status_code}")
+        return res.status_code == 200
+    except Exception as e:
+        logger.warning(f"Failed to send Expo push notification: {e}")
+        return False
+
+
+@csrf_exempt
+def api_update_push_token(request):
+    """Update or register Expo Push Token for the logged-in employee."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        token = str(data.get('push_token', '')).strip()
+        employee.push_token = token
+        employee.save(update_fields=['push_token'])
+        logger.info(f"Updated push token for employee #{employee.id} ({employee.display_name})")
+        return JsonResponse({
+            "status": "success",
+            "message": "Push token updated successfully",
+            "push_token": token
+        })
+    except Exception as e:
+        logger.error(f"Error updating employee push token: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
 # ==================== Call Queues Management ====================
 
 async def _async_create_queue_trunk_and_rule(queue_name, queue_code, user_id):
@@ -586,7 +644,7 @@ def api_dial_call(request):
             notified_count = 0
             for m in members:
                 if m.employee and m.employee.id != caller.id and m.employee.status == 'ready':
-                    publish_to_centrifugo(f"employee:{m.employee.id}", {
+                    call_payload = {
                         "event": "incoming_call",
                         "room_name": room_name,
                         "caller_name": caller.display_name,
@@ -595,7 +653,15 @@ def api_dial_call(request):
                         "queue_name": queue.name,
                         "queue_code": queue.code,
                         "call_type": "queue"
-                    })
+                    }
+                    publish_to_centrifugo(f"employee:{m.employee.id}", call_payload)
+                    if m.employee.push_token:
+                        send_expo_push_notification(
+                            m.employee.push_token,
+                            f"مكالمة واردة: {queue.name}",
+                            f"اتصال وارد من {caller.display_name} ({caller.extension})",
+                            call_payload
+                        )
                     notified_count += 1
 
             return JsonResponse({
@@ -624,14 +690,22 @@ def api_dial_call(request):
                 .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
             caller_jwt = token.to_jwt()
 
-            publish_to_centrifugo(f"employee:{callee.id}", {
+            callee_payload = {
                 "event": "incoming_call",
                 "room_name": room_name,
                 "caller_name": caller.display_name,
                 "caller_extension": caller.extension,
                 "caller_department": caller.department,
                 "call_type": "direct_internal"
-            })
+            }
+            publish_to_centrifugo(f"employee:{callee.id}", callee_payload)
+            if callee.push_token:
+                send_expo_push_notification(
+                    callee.push_token,
+                    "مكالمة واردة",
+                    f"اتصال وارد من {caller.display_name} (#{caller.extension})",
+                    callee_payload
+                )
 
             # ── Log outbound for caller ──
             EmployeeCallLog.objects.create(

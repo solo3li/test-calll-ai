@@ -46,6 +46,7 @@ class AgentProfileSerializer(serializers.Serializer):
     persona_role = serializers.CharField(required=False, allow_blank=True)
     speaking_style = serializers.CharField(required=False, allow_blank=True)
     verbosity = serializers.ChoiceField(choices=[('concise', 'موجز'), ('balanced', 'متوازن'), ('detailed', 'مفصل')])
+    welcome_message = serializers.CharField(required=False, allow_blank=True, help_text="رسالة الترحيب الافتتاحية للمساعد")
     custom_instructions = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(default=True)
     created_at = serializers.DateTimeField(read_only=True)
@@ -61,6 +62,7 @@ class AgentProfileCreateRequestSerializer(serializers.Serializer):
     persona_role = serializers.CharField(required=False, default="خدمة عملاء ومبيعات المتجر")
     speaking_style = serializers.CharField(required=False, default="ودود ولطيف ومرح")
     verbosity = serializers.ChoiceField(choices=[('concise', 'موجز'), ('balanced', 'متوازن'), ('detailed', 'مفصل')], default='balanced')
+    welcome_message = serializers.CharField(required=False, allow_blank=True, help_text="رسالة الترحيب الافتتاحية للمساعد")
     custom_instructions = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(default=True)
 

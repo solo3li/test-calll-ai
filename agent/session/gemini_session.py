@@ -26,7 +26,7 @@ from agent.clients.django_client import (
     parse_customer_memory_from_bootstrap,
     parse_active_profile_from_bootstrap,
 )
-from agent.prompts import build_dynamic_system_instruction
+from agent.prompts import build_dynamic_system_instruction, generate_welcome_greeting
 from agent.audio.stream_handler import setup_room_audio_listeners
 from agent.session.state import AgentSessionState
 from agent.session.tool_dispatcher import build_gemini_tools, handle_gemini_tool_call
@@ -197,36 +197,40 @@ async def run_agent_session(
             logger.info(f"Gemini Live session connected for room '{room_name}'!")
             await notify_centrifugo_async(channel_name, "agent_ready", "المساعدة الصوتية وقاعدة المستندات جاهزة للاستماع إليك الآن!")
 
-            # Outbound AI proactive greeting trigger
+            # Proactive greeting trigger for human callers (inbound, ai_test, and outbound)
             greeting_triggered = False
-            async def trigger_outbound_greeting():
+            async def trigger_proactive_greeting():
                 nonlocal greeting_triggered
+                # Poll for up to 20 seconds waiting for the human participant to connect
                 for _ in range(40):
                     if stop_event.is_set() or greeting_triggered:
                         return
                     humans = [p for p in room.remote_participants.values() if p.identity != "pipecat-agent"]
                     if humans:
+                        # Allow 1.0s for audio tracks, WebRTC subscriptions and media pipelines to settle
                         await asyncio.sleep(1.0)
                         if not greeting_triggered and not stop_event.is_set():
                             greeting_triggered = True
-                            logger.info(f"Human customer detected in outbound room {room_name}. Triggering initial greeting.")
+                            is_outbound = bool(outbound_context and outbound_context.get("is_outbound_ai"))
+                            welcome_msg = generate_welcome_greeting(active_profile, is_outbound, outbound_context)
+                            logger.info(f"Human participant detected in room {room_name}. Triggering proactive greeting: '{welcome_msg}'")
                             try:
+                                prompt = f"المتصل قام بالرد أو الاتصال للتو وهو ينتظر سماعك الآن. ابدأ المحادثة فوراً وتحدث بهذه الجملة الترحيبية: '{welcome_msg}'"
                                 await session.send_client_content(
                                     turns=[
                                         types.Content(
                                             role="user",
-                                            parts=[types.Part(text="العميل فتح الخط وقام بالرد للتو. ابدأ بالتحية فوراً وعرف باسمك واشرح سبب اتصالك وفقاً للهدف المحدد.")]
+                                            parts=[types.Part(text=prompt)]
                                         )
                                     ],
                                     turn_complete=True
                                 )
                             except Exception as ge:
-                                logger.warning(f"Error triggering outbound greeting: {ge}")
+                                logger.warning(f"Error triggering proactive greeting: {ge}")
                         return
                     await asyncio.sleep(0.5)
 
-            if outbound_context and outbound_context.get("is_outbound_ai"):
-                session_state.track_task(asyncio.create_task(trigger_outbound_greeting()))
+            session_state.track_task(asyncio.create_task(trigger_proactive_greeting()))
 
             # Worker 1: Stream user PCM audio frames to Gemini Live (continuous full-duplex streaming)
             async def send_audio_worker():
@@ -464,7 +468,12 @@ async def run_agent_session(
 
     except Exception as e:
         logger.error(f"Gemini Live session error in room {room_name}: {e}")
-        await notify_centrifugo_async(channel_name, "agent_error", f"خطأ في جلسة Gemini Live: {e}")
+        err_str = str(e)
+        if "1008" in err_str or "API_KEY" in err_str or "policy violation" in err_str.lower() or "aborted" in err_str.lower():
+            friendly_err = "فشل الاتصال بـ Gemini Live: يرجى التحقق من صلاحية مفتاح Gemini API Key في إعدادات النظام في لوحة التحكم (SystemSetting)."
+        else:
+            friendly_err = f"خطأ في جلسة Gemini Live: {e}"
+        await notify_centrifugo_async(channel_name, "agent_error", friendly_err)
     finally:
         logger.info(f"Cleaning up and disconnecting from room '{room_name}'...")
         await session_state.cancel_all_tasks()

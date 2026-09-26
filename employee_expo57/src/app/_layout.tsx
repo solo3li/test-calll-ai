@@ -14,6 +14,8 @@ if (Platform.OS !== "web") {
   }
 }
 
+import { notificationService } from "../services/notificationService";
+
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, restoreSession } = useAuthStore();
   const initSignaling = useCallStore((s) => s.initSignaling);
@@ -25,6 +27,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       const auth = useAuthStore.getState();
       if (auth.isAuthenticated) {
         initSignaling();
+        notificationService.registerForPushNotifications();
       }
     });
   }, []);
@@ -35,18 +38,24 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace("/login");
     } else if (isAuthenticated && inLogin) {
       router.replace("/");
+      notificationService.registerForPushNotifications();
     }
   }, [isAuthenticated, segments]);
 
   return <>{children}</>;
 }
 
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
 export default function RootLayout() {
   return (
-    <CallProvider>
-      <AuthGate>
-        <Stack screenOptions={{ headerShown: false }} />
-      </AuthGate>
-    </CallProvider>
+    <SafeAreaProvider>
+      <CallProvider>
+        <AuthGate>
+          <Stack screenOptions={{ headerShown: false }} />
+        </AuthGate>
+      </CallProvider>
+    </SafeAreaProvider>
   );
 }
+

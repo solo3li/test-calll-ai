@@ -516,6 +516,7 @@ def api_internal_agent_bootstrap(request):
             "dialect": "egyptian",
             "persona_role": "customer_support",
             "speaking_style": "friendly",
+            "welcome_message": "",
             "custom_instructions": "",
             "is_active": True
         }

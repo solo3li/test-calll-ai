@@ -16,6 +16,7 @@ class EmployeeProfile(models.Model):
     department = models.CharField(max_length=100, default='المبيعات')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ready')
     avatar_url = models.CharField(max_length=500, blank=True, default='')
+    push_token = models.CharField(max_length=255, blank=True, default='', verbose_name="Expo Push Token", help_text="رمز إشعارات الدفع المباشر لجهاز الموظف")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -44,6 +45,7 @@ class EmployeeProfile(models.Model):
             "status": self.status,
             "status_display": self.get_status_display(),
             "avatar_url": self.avatar_url or f"https://api.dicebear.com/7.x/bottts/png?seed={self.extension}",
+            "push_token": self.push_token,
             "is_active": self.is_active,
         }
 

@@ -85,6 +85,7 @@ class PartnerClientProfileSerializer(serializers.Serializer):
     persona_role = serializers.CharField(required=False, allow_blank=True)
     speaking_style = serializers.CharField(required=False, allow_blank=True)
     verbosity = serializers.ChoiceField(choices=[('concise', 'موجز'), ('balanced', 'متوازن'), ('detailed', 'مفصل')])
+    welcome_message = serializers.CharField(required=False, allow_blank=True)
     custom_instructions = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(default=True)
 
@@ -98,6 +99,7 @@ class PartnerClientProfileCreateRequestSerializer(serializers.Serializer):
     persona_role = serializers.CharField(required=False, default="خدمة عملاء ومبيعات")
     speaking_style = serializers.CharField(required=False, default="ودود ومهذب")
     verbosity = serializers.ChoiceField(choices=[('concise', 'موجز'), ('balanced', 'متوازن'), ('detailed', 'مفصل')], default='balanced')
+    welcome_message = serializers.CharField(required=False, allow_blank=True)
     custom_instructions = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(default=True)
 

@@ -613,6 +613,7 @@ def api_partner_client_profile(request, client_id):
         persona_role = str(data.get('persona_role', 'خدمة عملاء ومبيعات المتجر')).strip()
         speaking_style = str(data.get('speaking_style', 'ودود ولطيف ومرح')).strip()
         verbosity = str(data.get('verbosity', 'balanced')).strip()
+        welcome_message = str(data.get('welcome_message', '')).strip()
         custom_instructions = data.get('custom_instructions') or data.get('system_prompt', '')
         is_active = data.get('is_active', True)
 
@@ -626,6 +627,7 @@ def api_partner_client_profile(request, client_id):
             persona_role=persona_role,
             speaking_style=speaking_style,
             verbosity=verbosity,
+            welcome_message=welcome_message,
             custom_instructions=custom_instructions,
             is_active=is_active
         )
@@ -671,7 +673,7 @@ def api_partner_client_profile_detail(request, client_id, profile_id):
         except Exception:
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
-        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity']:
+        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity', 'welcome_message']:
             if field in data:
                 setattr(profile, field, str(data[field]).strip())
         if 'custom_instructions' in data or 'system_prompt' in data:
