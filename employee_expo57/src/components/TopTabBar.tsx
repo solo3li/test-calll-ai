@@ -3,13 +3,21 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useCall, TabKey } from "../context/CallContext";
+import { useCallStore } from "../stores/useCallStore";
 
 export const TopTabBar: React.FC = () => {
   const { activeTab, setActiveTab } = useCall();
+  const missedCallsCount = useCallStore((s) => s.missedCallsCount);
+  const clearMissedCalls = useCallStore((s) => s.clearMissedCalls);
 
   const tabs: { key: TabKey; label: string; icon: any; badge?: number }[] = [
     { key: "dialpad",  label: "Dialpad",  icon: "dialpad" },
-    { key: "history",  label: "History",  icon: "history", badge: 3 },
+    {
+      key: "history",
+      label: "History",
+      icon: "history",
+      badge: activeTab === "history" || missedCallsCount <= 0 ? undefined : missedCallsCount,
+    },
     { key: "contacts", label: "Contacts", icon: "contacts" },
   ];
 
@@ -21,7 +29,12 @@ export const TopTabBar: React.FC = () => {
           <TouchableOpacity
             key={tab.key}
             style={[styles.tabItem, isActive && styles.activeTabItem]}
-            onPress={() => setActiveTab(tab.key)}
+            onPress={() => {
+              setActiveTab(tab.key);
+              if (tab.key === "history") {
+                clearMissedCalls();
+              }
+            }}
             activeOpacity={0.7}
           >
             <View style={styles.iconWrapper}>

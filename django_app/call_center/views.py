@@ -983,6 +983,13 @@ def api_dial_call(request):
             except Exception as e:
                 logger.error(f"Failed to dial external customer via SIP trunk: {e}")
 
+            # Trigger Egress recording for external PSTN call
+            try:
+                from voice_assistant.egress_service import start_room_recording
+                start_room_recording(room_name)
+            except Exception as eg_err:
+                logger.warning(f"Could not trigger egress recording for PSTN room {room_name}: {eg_err}")
+
             return JsonResponse({
                 "status": "success",
                 "call_type": "external_pstn",
@@ -1066,6 +1073,13 @@ def api_get_call_token(request):
                 room_name=room_name,
                 call_type='inbound',
             )
+
+        # Trigger Egress recording for this answered call
+        try:
+            from voice_assistant.egress_service import start_room_recording
+            start_room_recording(room_name)
+        except Exception as eg_err:
+            logger.warning(f"Could not trigger egress recording for answered room {room_name}: {eg_err}")
 
         # Mark answering employee as busy
         if employee.status != 'busy':

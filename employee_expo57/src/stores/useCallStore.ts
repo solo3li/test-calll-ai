@@ -48,6 +48,7 @@ interface CallStoreState {
   transferModalVisible: boolean;
   incomingModalVisible: boolean;
   playingAudioId: string | null;
+  missedCallsCount: number;
 
   // Transfer State
   transferId: string | null;
@@ -65,6 +66,8 @@ interface CallStoreState {
   setTransferModalVisible: (visible: boolean) => void;
   setIncomingModalVisible: (visible: boolean) => void;
   setPlayingAudioId: (id: string | null) => void;
+  setMissedCallsCount: (count: number) => void;
+  clearMissedCalls: () => void;
 
   // Call Lifecycle
   initSignaling: () => void;
@@ -166,6 +169,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   transferModalVisible: false,
   incomingModalVisible: false,
   playingAudioId: null,
+  missedCallsCount: 0,
 
   transferId: null,
   transferTargetName: "",
@@ -180,6 +184,8 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   setTransferModalVisible: (visible: boolean) => set({ transferModalVisible: visible }),
   setIncomingModalVisible: (visible: boolean) => set({ incomingModalVisible: visible }),
   setPlayingAudioId: (id: string | null) => set({ playingAudioId: id }),
+  setMissedCallsCount: (count: number) => set({ missedCallsCount: count }),
+  clearMissedCalls: () => set({ missedCallsCount: 0 }),
 
   initSignaling: () => {
     const auth = useAuthStore.getState();
