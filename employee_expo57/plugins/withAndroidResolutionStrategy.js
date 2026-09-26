@@ -21,8 +21,9 @@ allprojects {
     return config;
   });
 
-  // 2. AndroidManifest fix: Remove 'assetsPaths' from MainActivity configChanges
-  // 'assetsPaths' is an Android 16 (API 36) flag that fails AAPT resource linking on SDK 35
+  // 2. AndroidManifest fix:
+  // - Remove 'assetsPaths' from MainActivity configChanges (fails AAPT linking on SDK 35)
+  // - Enable showWhenLocked and turnScreenOn so incoming calls wake screen & show on lock screen
   config = withAndroidManifest(config, (config) => {
     const mainApplication = config.modResults.manifest.application?.[0];
     if (mainApplication?.activity) {
@@ -32,6 +33,11 @@ allprojects {
             .replace('|assetsPaths', '')
             .replace('assetsPaths|', '')
             .replace('assetsPaths', '');
+        }
+        if (activity.$ && activity.$['android:name'] === '.MainActivity') {
+          activity.$['android:showWhenLocked'] = 'true';
+          activity.$['android:turnScreenOn'] = 'true';
+          activity.$['android:showForAllUsers'] = 'true';
         }
       }
     }

@@ -383,6 +383,36 @@ def api_update_push_token(request):
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 
+@csrf_exempt
+def api_get_active_incoming_call(request):
+    """Query Redis for any active incoming call currently ringing for this employee."""
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        r = redis.Redis.from_url(settings.REDIS_URL)
+        raw = r.get(f"call_center:ringing:employee:{employee.id}")
+        if raw:
+            if isinstance(raw, bytes):
+                raw = raw.decode('utf-8')
+            call_payload = json.loads(raw)
+            return JsonResponse({
+                "status": "ringing",
+                "incoming_call": call_payload
+            })
+        return JsonResponse({
+            "status": "idle",
+            "incoming_call": None
+        })
+    except Exception as e:
+        logger.error(f"Error checking active incoming call for employee #{employee.id}: {e}", exc_info=True)
+        return JsonResponse({"status": "idle", "incoming_call": None})
+
+
 # ==================== Call Queues Management ====================
 
 async def _async_create_queue_trunk_and_rule(queue_name, queue_code, user_id):
@@ -729,6 +759,7 @@ def api_dial_call(request):
             # Broadcast incoming call to queue members
             members = queue.memberships.filter(is_active=True).select_related('employee')
             notified_count = 0
+            ringing_emp_ids = []
             for m in members:
                 if m.employee and m.employee.id != caller.id and m.employee.status == 'ready':
                     call_payload = {
@@ -742,6 +773,13 @@ def api_dial_call(request):
                         "call_type": "queue"
                     }
                     publish_to_centrifugo(f"employee:{m.employee.id}", call_payload)
+                    ringing_emp_ids.append(m.employee.id)
+                    try:
+                        r = redis.Redis.from_url(settings.REDIS_URL)
+                        r.set(f"call_center:ringing:employee:{m.employee.id}", json.dumps(call_payload), ex=45)
+                    except Exception as re:
+                        logger.warning(f"Redis queue ringing set error: {re}")
+
                     if m.employee.push_token:
                         send_expo_push_notification(
                             m.employee.push_token,
@@ -750,6 +788,13 @@ def api_dial_call(request):
                             call_payload
                         )
                     notified_count += 1
+
+            if ringing_emp_ids:
+                try:
+                    r = redis.Redis.from_url(settings.REDIS_URL)
+                    r.set(f"call_center:ringing:room:{room_name}", json.dumps(ringing_emp_ids), ex=60)
+                except Exception as re:
+                    pass
 
             return JsonResponse({
                 "status": "success",
@@ -788,6 +833,13 @@ def api_dial_call(request):
                 "call_type": "direct_internal"
             }
             publish_to_centrifugo(f"employee:{callee.id}", callee_payload)
+            try:
+                r = redis.Redis.from_url(settings.REDIS_URL)
+                r.set(f"call_center:ringing:employee:{callee.id}", json.dumps(callee_payload), ex=45)
+                r.set(f"call_center:ringing:room:{room_name}", json.dumps([callee.id]), ex=60)
+            except Exception as re:
+                logger.warning(f"Redis direct ringing set error: {re}")
+
             if callee.push_token:
                 send_expo_push_notification(
                     callee.push_token,
@@ -920,6 +972,19 @@ def api_get_call_token(request):
             "accepted_by": employee.to_dict()
         })
 
+        # Clear ringing records from Redis for answering employee and room
+        try:
+            r = redis.Redis.from_url(settings.REDIS_URL)
+            r.delete(f"call_center:ringing:employee:{employee.id}")
+            room_ringing = r.get(f"call_center:ringing:room:{room_name}")
+            if room_ringing:
+                emp_ids = json.loads(room_ringing.decode('utf-8'))
+                for eid in emp_ids:
+                    r.delete(f"call_center:ringing:employee:{eid}")
+                r.delete(f"call_center:ringing:room:{room_name}")
+        except Exception as re:
+            logger.warning(f"Error clearing ringing state on answer: {re}")
+
         # ── Determine caller info from room_name and log inbound for the answering employee ──
         caller_name = "عميل / طابور"
         caller_ext = ""
@@ -1023,10 +1088,22 @@ def api_hangup_call(request):
             except Exception as inngest_err:
                 logger.warning(f"Error cancelling Inngest transfer: {inngest_err}")
 
-        # Always clear transferring keys when hangup is requested
+        # Always clear transferring keys and ringing keys when hangup is requested
         if room_name:
             r.delete(f"room:{room_name}:is_transferring")
             r.delete(f"room:{room_name}:transfer_id")
+            room_ringing = r.get(f"call_center:ringing:room:{room_name}")
+            if room_ringing:
+                try:
+                    emp_ids = json.loads(room_ringing.decode('utf-8'))
+                    for eid in emp_ids:
+                        r.delete(f"call_center:ringing:employee:{eid}")
+                    r.delete(f"call_center:ringing:room:{room_name}")
+                except Exception as re:
+                    pass
+
+        if employee:
+            r.delete(f"call_center:ringing:employee:{employee.id}")
 
         # 1. Direct peer employee channel notification if explicitly provided
         if target_employee_id:
@@ -1424,6 +1501,12 @@ def api_transfer_action(request):
                 }
             )
         )
+
+        try:
+            r = redis.Redis.from_url(settings.REDIS_URL)
+            r.delete(f"call_center:ringing:employee:{employee.id}")
+        except Exception:
+            pass
 
         return JsonResponse({"status": "success", "action": action})
 

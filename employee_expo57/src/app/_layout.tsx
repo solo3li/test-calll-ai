@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, AppState, AppStateStatus } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { CallProvider } from "../context/CallContext";
 import { useAuthStore } from "../stores/useAuthStore";
@@ -19,6 +19,7 @@ import { notificationService } from "../services/notificationService";
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isRestoring, restoreSession } = useAuthStore();
   const initSignaling = useCallStore((s) => s.initSignaling);
+  const checkActiveIncomingCall = useCallStore((s) => s.checkActiveIncomingCall);
   const router = useRouter();
   const segments = useSegments();
 
@@ -27,9 +28,24 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       const auth = useAuthStore.getState();
       if (auth.isAuthenticated) {
         initSignaling();
+        checkActiveIncomingCall();
         notificationService.registerForPushNotifications();
       }
     });
+
+    const subscription = AppState.addEventListener("change", (nextAppState: AppStateStatus) => {
+      if (nextAppState === "active") {
+        const auth = useAuthStore.getState();
+        if (auth.isAuthenticated) {
+          initSignaling();
+          checkActiveIncomingCall();
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {

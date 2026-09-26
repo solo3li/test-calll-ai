@@ -69,6 +69,7 @@ interface CallStoreState {
   // Call Lifecycle
   initSignaling: () => void;
   disconnectSignaling: () => void;
+  checkActiveIncomingCall: () => Promise<void>;
   startCall: (targetNumberOrExt?: string, targetName?: string) => Promise<void>;
   answerCall: () => Promise<void>;
   declineCall: () => void;
@@ -339,6 +340,11 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
       });
       queueSub.subscribe();
 
+      centrifuge.on("connected", () => {
+        console.log("[Centrifugo] Connected. Checking active incoming call...");
+        get().checkActiveIncomingCall();
+      });
+
       centrifuge.connect();
       set({ centrifuge });
     } catch (e) {
@@ -352,6 +358,57 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
     if (centrifuge) centrifuge.disconnect();
     if (livekitRoom) livekitRoom.disconnect();
     set({ centrifuge: null, livekitRoom: null });
+  },
+
+  checkActiveIncomingCall: async () => {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const currentState = get().callState;
+    if (currentState !== "IDLE" && currentState !== "RINGING") return;
+
+    try {
+      const res = await apiRequest("/api/call-center/employees/active-incoming/", { method: "GET" }, token);
+      if (res && res.status === "ringing" && res.incoming_call) {
+        const call = res.incoming_call;
+        if (get().incomingCall?.roomName === call.room_name) return;
+
+        console.log("[useCallStore] Recovered active ringing call from server:", call);
+        soundService.playIncomingRingtone();
+        const callInfo: IncomingCallData = {
+          roomName: call.room_name,
+          callerName: call.caller_name || "متصل غير معروف",
+          callerExtension: call.caller_extension || "",
+          callerDepartment: call.caller_department || "",
+          callType: call.call_type || "direct_internal",
+          queueName: call.queue_name,
+          transferId: call.transfer_id,
+          transferredBy: call.transferred_by,
+          ringTimeoutSeconds: call.ring_timeout_seconds,
+        };
+        set({
+          incomingCall: callInfo,
+          incomingModalVisible: true,
+        });
+        notificationService.presentIncomingCallNotification({
+          roomName: callInfo.roomName,
+          callerName: callInfo.callerName,
+          callerExtension: callInfo.callerExtension,
+          callerDepartment: callInfo.callerDepartment,
+          callType: callInfo.callType,
+          queueName: callInfo.queueName,
+          transferId: callInfo.transferId,
+          transferredBy: callInfo.transferredBy,
+        });
+      } else if (res && res.status === "idle") {
+        if (get().incomingCall && get().callState === "IDLE") {
+          soundService.stopAll();
+          notificationService.dismissCallNotifications();
+          set({ incomingCall: null, incomingModalVisible: false });
+        }
+      }
+    } catch (err) {
+      console.warn("[useCallStore] Error checking active incoming call:", err);
+    }
   },
 
   connectLiveKitRoom: async (livekitUrl: string, livekitToken: string, roomName: string, partnerName?: string) => {

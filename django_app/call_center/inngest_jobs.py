@@ -182,6 +182,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                     "transferred_by": from_emp_name,
                     "ring_timeout_seconds": ring_timeout_seconds,
                 }
+                r.set(f"call_center:ringing:employee:{cand_id}", json.dumps(call_payload), ex=ring_timeout_seconds + 5)
                 publish_to_centrifugo(f"employee:{cand_id}", call_payload)
                 if getattr(cand, 'push_token', None):
                     try:
@@ -214,6 +215,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                 # Timeout on this candidate
                 logger.info(f"[Inngest Transfer {transfer_id}] Candidate {cand_id} timed out after {ring_timeout_seconds}s in pass {pass_num}.")
                 async def step_timeout_candidate():
+                    r.delete(f"call_center:ringing:employee:{cand_id}")
                     publish_to_centrifugo(f"employee:{cand_id}", {
                         "event": "call_ended",
                         "transfer_id": transfer_id,
@@ -238,6 +240,7 @@ async def fn_transfer_call_queue(ctx: inngest.Context) -> dict:
                     else:
                         new_room = f"call_ext_{caller_ext}_{cand.extension}_tr_{uuid.uuid4().hex[:6]}"
                     
+                    r.delete(f"call_center:ringing:employee:{cand_id}")
                     # Tokens
                     cand_token = generate_livekit_token(
                         new_room,

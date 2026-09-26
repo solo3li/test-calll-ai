@@ -15,6 +15,7 @@ urlpatterns = [
     path('employees/<int:employee_id>/delete/', views.api_delete_employee, name='api_delete_employee'),
     path('employees/status/', views.api_update_employee_status, name='api_update_employee_status'),
     path('employees/push-token/', views.api_update_push_token, name='api_update_push_token'),
+    path('employees/active-incoming/', views.api_get_active_incoming_call, name='api_get_active_incoming_call'),
 
     # Queues
     path('queues/', views.list_call_queues, name='list_call_queues'),
