@@ -3593,7 +3593,7 @@
 
         livekitRoom.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
           console.log('[LiveKit] Participant connected:', participant.identity);
-          if (participant.identity === 'pipecat-agent') {
+          if (participant.identity === 'ai-agent' || participant.identity === 'pipecat-agent') {
             callStatus.innerText = 'المساعد متصل في الغرفة!';
             subStatus.innerText = 'تحدث الآن بصوتك، المساعد يستمع إليك ويجيب من مستنداتك';
           }
@@ -3604,6 +3604,7 @@
           const rem = Array.from(livekitRoom.remoteParticipants.values());
           const remHumans = rem.filter(p => 
             p.identity !== participant.identity && 
+            !p.identity.startsWith('ai-') && 
             !p.identity.startsWith('pipecat-') && 
             !p.identity.startsWith('transfer-') && 
             !p.identity.startsWith('queue-')

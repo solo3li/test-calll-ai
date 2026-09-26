@@ -39,10 +39,10 @@ async def run_off_hours_session(
     channel_name = f"rooms:{room_name}"
     logger.info(f"[OFF-HOURS] Starting off-hours handling in room '{room_name}' (action: {action_type}, caller: {caller_phone})")
 
-    # 1. Connect to LiveKit Room as pipecat-agent
+    # 1. Connect to LiveKit Room as ai-agent
     token = (
         api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
-        .with_identity("pipecat-agent")
+        .with_identity("ai-agent")
         .with_name("المساعد الآلي (خارج الدوام)")
         .with_grants(
             api.VideoGrants(

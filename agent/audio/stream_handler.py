@@ -31,14 +31,16 @@ def setup_room_audio_listeners(
 ) -> Set[str]:
     """Register all participant and track listeners on the LiveKit room with employee guardrails."""
     subscribed_sids: Set[str] = set()
+    is_ai_test_call = room_name.startswith("ai_test_")
 
     def subscribe_track(track: rtc.Track, publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
         p_identity = participant.identity or ""
         # Never subscribe to hold music or queue announcement bots
         if p_identity.startswith("transfer-") or p_identity.startswith("queue-"):
             return
-        # Strict Human Employee Guardrail: If an employee is present or joins, AI must immediately disconnect!
-        if p_identity.startswith("employee_"):
+        # Strict Human Employee Guardrail: If an employee joins in a regular customer call, AI must immediately disconnect!
+        # BUT if this is an AI test call (ai_test_*), the employee IS the caller testing the agent!
+        if p_identity.startswith("employee_") and not is_ai_test_call:
             logger.info(f"Human employee '{p_identity}' detected in room '{room_name}'. Immediately terminating AI Voice Agent session.")
             stop_event.set()
             return
@@ -48,7 +50,7 @@ def setup_room_audio_listeners(
             return
         if track and track.kind == rtc.TrackKind.KIND_AUDIO:
             subscribed_sids.add(sid)
-            logger.info(f"Subscribing to audio track {sid} from customer {participant.identity}")
+            logger.info(f"Subscribing to audio track {sid} from participant {participant.identity} (test_call={is_ai_test_call})")
             audio_stream = rtc.AudioStream(track, sample_rate=IN_SAMPLE_RATE, num_channels=1)
             asyncio.create_task(stream_user_audio_to_queue(audio_stream, in_audio_queue, stop_event, participant.identity))
 
@@ -56,14 +58,14 @@ def setup_room_audio_listeners(
     def on_participant_connected(participant: rtc.RemoteParticipant):
         p_identity = participant.identity or ""
         logger.info(f"Participant connected: {p_identity} in room {room_name}")
-        if p_identity.startswith("employee_"):
+        if p_identity.startswith("employee_") and not is_ai_test_call:
             logger.info(f"Human employee '{p_identity}' joined room '{room_name}'! Immediately disconnecting AI Voice Agent.")
             stop_event.set()
 
     @room.on("track_published")
     def on_track_published(publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
         p_identity = participant.identity or ""
-        if p_identity.startswith("employee_"):
+        if p_identity.startswith("employee_") and not is_ai_test_call:
             logger.info(f"Human employee '{p_identity}' published track in room '{room_name}'. Disconnecting AI.")
             stop_event.set()
             return
@@ -80,21 +82,29 @@ def setup_room_audio_listeners(
     @room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
         logger.info(f"Participant disconnected: {participant.identity} from room {room_name}")
-        remaining_humans = [
-            p for p in room.remote_participants.values()
-            if p.identity != "pipecat-agent"
-            and not p.identity.startswith("transfer-")
-            and not p.identity.startswith("queue-")
-            and not p.identity.startswith("employee_")
-        ]
+        if is_ai_test_call:
+            remaining_humans = [
+                p for p in room.remote_participants.values()
+                if p.identity not in ("ai-agent", "pipecat-agent")
+                and not p.identity.startswith("transfer-")
+                and not p.identity.startswith("queue-")
+            ]
+        else:
+            remaining_humans = [
+                p for p in room.remote_participants.values()
+                if p.identity not in ("ai-agent", "pipecat-agent")
+                and not p.identity.startswith("transfer-")
+                and not p.identity.startswith("queue-")
+                and not p.identity.startswith("employee_")
+            ]
         if not remaining_humans:
-            logger.info(f"No human customer participants left in room '{room_name}'. Terminating agent session.")
+            logger.info(f"No human participants left in room '{room_name}'. Terminating agent session.")
             stop_event.set()
 
     # Subscribe to already present participants
     for participant in room.remote_participants.values():
         p_identity = participant.identity or ""
-        if p_identity.startswith("employee_"):
+        if p_identity.startswith("employee_") and not is_ai_test_call:
             logger.info(f"Human employee '{p_identity}' already present in room '{room_name}'. Terminating AI Voice Agent session.")
             stop_event.set()
             break

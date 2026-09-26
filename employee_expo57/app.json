@@ -19,7 +19,8 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#f5f0e8",
@@ -41,6 +42,14 @@
           "backgroundColor": "#f5f0e8",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 120
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#8b1d36",
+          "sounds": ["default"]
         }
       ],
       "@livekit/react-native-expo-plugin",

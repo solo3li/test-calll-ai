@@ -59,7 +59,7 @@ async def run_agent_session(
 
     # 1. Create LiveKit Access Token for Agent
     token = api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET) \
-        .with_identity("pipecat-agent") \
+        .with_identity("ai-agent") \
         .with_name("Gemini Voice Assistant") \
         .with_grants(api.VideoGrants(
             room_join=True,
@@ -205,7 +205,7 @@ async def run_agent_session(
                 for _ in range(40):
                     if stop_event.is_set() or greeting_triggered:
                         return
-                    humans = [p for p in room.remote_participants.values() if p.identity != "pipecat-agent"]
+                    humans = [p for p in room.remote_participants.values() if p.identity not in ("ai-agent", "pipecat-agent")]
                     if humans:
                         # Allow 1.0s for audio tracks, WebRTC subscriptions and media pipelines to settle
                         await asyncio.sleep(1.0)
@@ -374,6 +374,11 @@ async def run_agent_session(
                     except Exception as ex:
                         if not stop_event.is_set():
                             logger.error(f"Error receiving from Gemini Live in room {room_name}: {ex}")
+                            err_str = str(ex)
+                            if "1008" in err_str or "aborted" in err_str.lower() or "policy violation" in err_str.lower():
+                                logger.warning(f"Fatal error from Gemini Live in room {room_name}. Terminating session cleanly.")
+                                stop_event.set()
+                                break
                             await asyncio.sleep(0.1)
 
             # Worker 3: Audio Pacer (paces output to LiveKit track with 250ms jitter buffer and drift-compensated clock)

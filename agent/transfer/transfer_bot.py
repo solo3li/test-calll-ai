@@ -65,6 +65,7 @@ async def execute_ai_transfer_and_hold(
                 not p.identity.startswith("transfer-")
                 and not p.identity.startswith("queue-")
                 and not p.identity.startswith("agent_")
+                and not p.identity.startswith("ai-")
                 and not p.identity.startswith("pipecat-")
                 for p in remote_parts
             )

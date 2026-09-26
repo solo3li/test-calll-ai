@@ -268,8 +268,8 @@ def livekit_webhook(request):
 
     if event_type == "participant_joined":
         participant_identity = event.participant.identity
-        if participant_identity == "pipecat-agent":
-            logger.info(f"pipecat-agent joined room {room_name}.")
+        if participant_identity in ("ai-agent", "pipecat-agent"):
+            logger.info(f"AI agent ({participant_identity}) joined room {room_name}.")
             publish_to_centrifugo(channel, {
                 "event": "agent_connected",
                 "message": "المساعد الصوتي متصل وجاهز للاستماع الآن",
@@ -479,7 +479,7 @@ def livekit_webhook(request):
 
     elif event_type == "participant_left":
         participant_identity = event.participant.identity
-        if participant_identity != "pipecat-agent":
+        if participant_identity not in ("ai-agent", "pipecat-agent"):
             publish_to_centrifugo(channel, {
                 "event": "user_left",
                 "message": "المستخدم غادر الغرفة",

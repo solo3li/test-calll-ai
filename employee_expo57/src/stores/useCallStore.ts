@@ -400,7 +400,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         return;
       }
 
-      // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+      // Ignore bots, ai-agent, queue workers, and transfer helpers
       const isHumanPeer =
         participant.identity.startsWith("employee_") ||
         participant.identity.startsWith("customer_") ||
@@ -570,7 +570,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
           }
 
           // AI agent identity — treat as call-ender for AI calls
-          const isAIAgent = participant.identity === "pipecat-agent" || participant.identity === "ai-agent";
+          const isAIAgent = participant.identity === "ai-agent" || participant.identity === "pipecat-agent";
           if (isAIAgent) {
             console.log("AI agent disconnected — ending call");
             soundService.stopAll();
@@ -736,7 +736,7 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             return;
           }
 
-          // Ignore bots, pipecat-agent, queue workers, and transfer helpers
+          // Ignore bots, ai-agent, queue workers, and transfer helpers
           const isHumanPeer =
             participant.identity.startsWith("employee_") ||
             participant.identity.startsWith("customer_") ||
