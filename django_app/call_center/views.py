@@ -576,50 +576,89 @@ def api_dial_call(request):
         if not target:
             return JsonResponse({"status": "error", "message": "يرجى تحديد رقم التحويلة أو كود الطابور للاتصال"}, status=400)
 
-        # 0. Check if target is AI Assistant Test
+        # 0. Check if target is AI Assistant (Linked 1:1 to Employer Voice Room)
         if target.lower() in ['000', 'ai', 'assistant', 'bot', 'test_ai']:
             from agents.models import AgentProfile
-            tenant_user = caller.employer
-            if not tenant_user:
-                # If employer not set, resolve to main admin/superuser who created the profiles
-                tenant_user = User.objects.filter(is_superuser=True).order_by('id').first() or caller.user
+            from telephony.models import BusinessHoursSchedule
 
-            active_profile = AgentProfile.objects.filter(user=tenant_user, is_active=True).first()
+            # 1. Resolve Employer / Owner
+            owner_user = caller.employer
+            if not owner_user:
+                # If employer not set, resolve to main admin/superuser who created the profiles
+                owner_user = User.objects.filter(is_superuser=True).order_by('id').first() or caller.user
+
+            # 2. Resolve Active Profile belonging to the owner
+            active_profile = AgentProfile.objects.filter(user=owner_user, is_active=True).first()
             if not active_profile:
-                active_profile = AgentProfile.objects.filter(user=tenant_user).first()
+                active_profile = AgentProfile.objects.filter(user=owner_user).first()
             if not active_profile:
                 # Fallback to any active profile in system
                 active_profile = AgentProfile.objects.filter(is_active=True).first()
                 if active_profile:
-                    tenant_user = active_profile.user
+                    owner_user = active_profile.user
 
             profile_dict = active_profile.to_dict() if active_profile else None
             ai_name = active_profile.name if active_profile else "المساعد الصوتي الذكي"
 
+            # 3. Check Business Hours Schedule of the employer
+            is_off_hours = False
+            off_hours_data = None
+            if owner_user:
+                try:
+                    b_sched = BusinessHoursSchedule.objects.filter(user=owner_user).first()
+                    if b_sched and b_sched.is_enabled and not b_sched.is_within_business_hours():
+                        is_off_hours = True
+                        off_hours_data = {
+                            "action_type": b_sched.action_type,
+                            "ai_message": b_sched.ai_message,
+                            "audio_file_url": b_sched.get_audio_url(request),
+                            "voice_name": (profile_dict.get("voice_name") if profile_dict else "Aoede") or "Aoede"
+                        }
+                        logger.info(f"AI call from employee #{caller.id} ({caller.extension}) is OUTSIDE business hours for owner #{owner_user.id}. Action: {b_sched.action_type}")
+                except Exception as b_err:
+                    logger.warning(f"Error checking business hours for owner #{owner_user.id}: {b_err}")
+
             room_name = f"ai_test_{caller.id}_{uuid.uuid4().hex[:6]}"
+            channel_name = f"rooms:{room_name}"
 
             token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
                 .with_identity(f"employee_{caller.id}_{caller.extension}") \
                 .with_name(caller.display_name) \
-                .with_metadata(json.dumps({"role": "caller", "employee_id": caller.id})) \
+                .with_metadata(json.dumps({"role": "caller", "employee_id": caller.id, "owner_user_id": owner_user.id})) \
                 .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
             caller_jwt = token.to_jwt()
 
-            # Dispatch AI agent job to Redis
+            # 4. Dispatch AI agent job to Redis matching web voice assistant room 1:1
             try:
                 r = redis.Redis.from_url(settings.REDIS_URL)
                 job_payload = json.dumps({
                     "room_name": room_name,
-                    "user_id": tenant_user.id,
-                    "caller_phone": f"ext_{caller.extension}",
+                    "user_id": owner_user.id,
+                    "caller_phone": "web_dashboard",
                     "profile": profile_dict,
                     "is_queue": False,
-                    "participant_identity": f"employee_{caller.id}_{caller.extension}"
+                    "participant_identity": f"employee_{caller.id}_{caller.extension}",
+                    "is_off_hours": is_off_hours,
+                    "off_hours_data": off_hours_data
                 })
                 r.rpush("agent_jobs", job_payload)
-                logger.info(f"Dispatched AI test call room '{room_name}' to Redis for employee {caller.display_name}")
+                logger.info(f"Dispatched AI room '{room_name}' to Redis for employee {caller.display_name} mirrored to owner {owner_user.username} (off_hours={is_off_hours})")
             except Exception as ex:
                 logger.error(f"Failed to dispatch AI test call room '{room_name}' to Redis: {ex}")
+
+            # Notify Centrifugo room channel
+            if is_off_hours:
+                publish_to_centrifugo(channel_name, {
+                    "event": "off_hours_call",
+                    "message": "المكالمة واردة خارج أوقات العمل الرسمية للمنشأة. جاري تطبيق خطة الرد المحددة...",
+                    "timestamp": time.time(),
+                })
+            else:
+                publish_to_centrifugo(channel_name, {
+                    "event": "agent_queued",
+                    "message": f"تم استدعاء المساعد الصوتي ({ai_name}) وتجهيز مستندات وقواعد معرفة المنشأة...",
+                    "timestamp": time.time(),
+                })
 
             # Log outbound call for employee
             EmployeeCallLog.objects.create(
@@ -646,7 +685,8 @@ def api_dial_call(request):
                 "target_name": f"🤖 {ai_name}",
                 "target_number": "000",
                 "livekit_url": settings.LIVEKIT_URL,
-                "livekit_token": caller_jwt
+                "livekit_token": caller_jwt,
+                "is_off_hours": is_off_hours
             })
 
         # 1. Check if target is a CallQueue
