@@ -1,13 +1,15 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, Linking, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useCall } from "../context/CallContext";
 import { useAuthStore } from "../stores/useAuthStore";
+import { AutoStartGuideModal } from "./AutoStartGuideModal";
 
 export const DialpadView: React.FC = () => {
   const { dialpadInput, setDialpadInput, startCall } = useCall();
   const employee = useAuthStore((s) => s.employee);
+  const [autoStartModalVisible, setAutoStartModalVisible] = useState(false);
 
   const keys = [
     { num: "1", sub: "" },
@@ -37,11 +39,7 @@ export const DialpadView: React.FC = () => {
       {/* 24/7 Always-on Softphone Banner */}
       <TouchableOpacity
         style={styles.batteryPill}
-        onPress={() => {
-          if (Platform.OS === "android") {
-            Linking.openSettings().catch(() => {});
-          }
-        }}
+        onPress={() => setAutoStartModalVisible(true)}
         activeOpacity={0.8}
       >
         <Ionicons name="shield-checkmark" size={13} color="#10b981" />
@@ -122,6 +120,11 @@ export const DialpadView: React.FC = () => {
           <Ionicons name="call" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      <AutoStartGuideModal
+        visible={autoStartModalVisible}
+        onClose={() => setAutoStartModalVisible(false)}
+      />
     </View>
   );
 };

@@ -15,6 +15,7 @@ if (Platform.OS !== "web") {
 }
 
 import { notificationService } from "../services/notificationService";
+import { watchdogService } from "../services/watchdogService";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isRestoring, restoreSession } = useAuthStore();
@@ -29,6 +30,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       if (auth.isAuthenticated) {
         initSignaling();
         checkActiveIncomingCall();
+        watchdogService.start();
         notificationService.registerForPushNotifications();
         if (auth.employee) {
           notificationService.startPersistentServiceNotification(auth.employee.display_name, auth.employee.extension);
@@ -42,6 +44,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         if (auth.isAuthenticated) {
           initSignaling();
           checkActiveIncomingCall();
+          watchdogService.start();
           if (auth.employee) {
             notificationService.startPersistentServiceNotification(auth.employee.display_name, auth.employee.extension);
           }
@@ -59,9 +62,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const inLogin = segments[0] === "login";
     if (!isAuthenticated && !inLogin) {
       router.replace("/login");
+      watchdogService.stop();
       notificationService.stopPersistentServiceNotification();
     } else if (isAuthenticated && inLogin) {
       router.replace("/");
+      watchdogService.start();
       notificationService.registerForPushNotifications();
       const auth = useAuthStore.getState();
       if (auth.employee) {

@@ -413,6 +413,62 @@ def api_get_active_incoming_call(request):
         return JsonResponse({"status": "idle", "incoming_call": None})
 
 
+@csrf_exempt
+def api_employee_heartbeat(request):
+    """
+    Heartbeat and Keep-Alive watchdog endpoint for mobile softphone apps.
+    Refreshes employee presence in Redis (TTL: 90s) and returns any pending active call.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    employee = get_employee_from_token(request)
+    if not employee:
+        return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
+    try:
+        body = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        body = {}
+
+    try:
+        r = redis.Redis.from_url(settings.REDIS_URL)
+        now_ts = timezone.now().isoformat()
+        heartbeat_data = {
+            "employee_id": employee.id,
+            "extension": employee.extension,
+            "status": employee.status,
+            "last_heartbeat": now_ts,
+            "device": body.get("device", {}),
+        }
+        r.setex(
+            f"call_center:employee:{employee.id}:alive",
+            90,
+            json.dumps(heartbeat_data)
+        )
+
+        # Check for any active ringing call
+        active_call = None
+        raw_ringing = r.get(f"call_center:ringing:employee:{employee.id}")
+        if raw_ringing:
+            if isinstance(raw_ringing, bytes):
+                raw_ringing = raw_ringing.decode('utf-8')
+            try:
+                active_call = json.loads(raw_ringing)
+            except Exception:
+                pass
+
+        return JsonResponse({
+            "status": "ok",
+            "employee_id": employee.id,
+            "server_time": now_ts,
+            "active_call": active_call,
+        })
+    except Exception as e:
+        logger.error(f"Error in employee heartbeat for #{employee.id}: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
 # ==================== Call Queues Management ====================
 
 async def _async_create_queue_trunk_and_rule(queue_name, queue_code, user_id):
