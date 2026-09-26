@@ -211,6 +211,10 @@ async def run_agent_session(
                         await asyncio.sleep(1.0)
                         if not greeting_triggered and not stop_event.is_set():
                             greeting_triggered = True
+                            is_welcome_enabled = active_profile.get("is_welcome_message_enabled", True) if active_profile.get("is_welcome_message_enabled") is not None else True
+                            if not is_welcome_enabled:
+                                logger.info(f"Welcome message is disabled for profile '{active_profile.get('name')}'. Waiting for caller to speak first.")
+                                return
                             is_outbound = bool(outbound_context and outbound_context.get("is_outbound_ai"))
                             welcome_msg = generate_welcome_greeting(active_profile, is_outbound, outbound_context)
                             logger.info(f"Human participant detected in room {room_name}. Triggering proactive greeting: '{welcome_msg}'")

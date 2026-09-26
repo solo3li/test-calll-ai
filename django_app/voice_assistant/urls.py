@@ -69,6 +69,10 @@ urlpatterns = [
     path('api/calls/hangup/', views.api_hangup_call, name='api_hangup_call'),
     path('api/calls/recordings/<path:filename>', views.stream_call_recording, name='stream_call_recording'),
 
+    # Business Hours Schedule APIs
+    path('api/business-hours/', views.get_business_hours, name='get_business_hours'),
+    path('api/business-hours/save/', views.save_business_hours, name='save_business_hours'),
+
     # Dedicated Modular Section Pages
     path('calls/', views.calls_page_view, name='calls_page'),
     path('billing/', views.billing_page_view, name='billing_page'),
@@ -76,6 +80,7 @@ urlpatterns = [
     path('documents/', views.rag_page_view, name='rag_page'),
     path('personas/', views.personas_page_view, name='personas_page'),
     path('campaigns/', views.campaigns_page_view, name='campaigns_page'),
+    path('business-hours/', views.business_hours_page_view, name='business_hours_page'),
     path('tools/', views.store_page_view, name='store_page'),
     path('developer/', views.developer_page_view, name='developer_page'),
     path('call-center/', views.callcenter_page_view, name='callcenter_page'),

@@ -60,6 +60,13 @@
       <span class="nav-text" data-i18n="nav_telephony">الربط الهاتفي والسنترال</span>
     </a>
 
+    <!-- 5.5. Business Hours (Dedicated Page) -->
+    <a href="{% url 'voice_assistant:business_hours_page' %}" id="nav-btn-business-hours" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'business_hours' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
+      <span class="text-base shrink-0">⏰</span>
+      <span class="nav-text">مواعيد العمل والخطة البديلة</span>
+      <span class="px-2 py-0.5 text-[9px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">جديد</span>
+    </a>
+
     <!-- 6. CRM (Dedicated Page) -->
     <a href="{% url 'voice_assistant:crm_page' %}" id="nav-btn-crm" class="nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-start {% if active_nav == 'crm' %}bg-white/15 text-white shadow-sm border border-[#D4AF37]/30{% else %}text-[#EADBC8] hover:text-white hover:bg-white/10{% endif %}">
       <span class="text-base shrink-0">🧠</span>

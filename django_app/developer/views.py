@@ -368,6 +368,7 @@ def api_user_profiles(request):
             verbosity=data.get('verbosity', 'balanced').strip(),
             custom_instructions=data.get('custom_instructions', '').strip(),
             welcome_message=data.get('welcome_message', '').strip(),
+            is_welcome_message_enabled=bool(data.get('is_welcome_message_enabled', True)),
             is_active=bool(data.get('is_active', True))
         )
         return JsonResponse({
@@ -400,6 +401,8 @@ def api_user_profile_detail(request, profile_id):
         for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity', 'custom_instructions', 'welcome_message']:
             if field in data:
                 setattr(profile, field, str(data[field]).strip())
+        if 'is_welcome_message_enabled' in data:
+            profile.is_welcome_message_enabled = bool(data['is_welcome_message_enabled'])
         if 'is_active' in data:
             profile.is_active = bool(data['is_active'])
 
@@ -1819,5 +1822,65 @@ def api_user_campaign_pause(request, campaign_id):
         "message": "تم إيقاف الحملة مؤقتاً بنجاح",
         "campaign": campaign.to_dict()
     })
+
+
+@api_view(['GET', 'POST', 'PUT', 'PATCH'])
+@authentication_classes([])
+@user_api_key_required
+def api_user_business_hours(request):
+    """
+    GET, POST, PUT, PATCH /api/v1/business-hours/
+    Retrieve or update business hours schedule and off-hours behavior.
+    API strictly accepts file_url or ai_message (no binary uploads).
+    """
+    from telephony.models import BusinessHoursSchedule
+    sched, _ = BusinessHoursSchedule.objects.get_or_create(user=request.user)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "status": "success",
+            "schedule": sched.to_dict(request)
+        })
+
+    # Reject binary multipart uploads
+    if request.FILES:
+        return JsonResponse({
+            "status": "error",
+            "message": "Binary file uploads are disabled in developer API. Please provide 'file_url' or 'audio_file_url' instead."
+        }, status=400)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+    if 'is_enabled' in data:
+        sched.is_enabled = bool(data['is_enabled'])
+
+    if 'timezone' in data and str(data['timezone']).strip():
+        sched.timezone = str(data['timezone']).strip()
+
+    if 'days_config' in data and isinstance(data['days_config'], dict):
+        sched.days_config = data['days_config']
+
+    if 'action_type' in data and data['action_type'] in ('ai_message', 'audio_file'):
+        sched.action_type = data['action_type']
+
+    if 'ai_message' in data:
+        sched.ai_message = str(data['ai_message']).strip()
+
+    # Accept file_url or audio_file_url
+    audio_url = data.get('audio_file_url') or data.get('file_url')
+    if audio_url is not None:
+        sched.audio_file_url = str(audio_url).strip()
+
+    sched.save()
+
+    return JsonResponse({
+        "status": "success",
+        "message": "Business hours schedule updated successfully",
+        "schedule": sched.to_dict(request)
+    })
+
 
 

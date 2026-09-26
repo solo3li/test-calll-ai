@@ -11,6 +11,7 @@ from agent.config import (
 )
 from agent.clients.centrifugo_client import notify_centrifugo
 from agent.session.gemini_session import run_agent_session
+from agent.session.off_hours_session import run_off_hours_session
 from agent.queue_manager import run_queue_session
 
 
@@ -51,6 +52,8 @@ async def run_agent_dispatcher_loop(
                     is_outbound_ai = parsed.get("is_outbound_ai", False)
                     call_goal = parsed.get("call_goal")
                     destination_phone = parsed.get("destination_phone")
+                    is_off_hours = parsed.get("is_off_hours", False)
+                    off_hours_data = parsed.get("off_hours_data") or {}
                     if is_outbound_ai and destination_phone:
                         caller_phone = destination_phone
                 except Exception:
@@ -94,7 +97,17 @@ async def run_agent_dispatcher_loop(
                         "destination_phone": destination_phone,
                     }
 
-                if is_queue:
+                if is_off_hours:
+                    task = asyncio.create_task(
+                        run_off_hours_session(
+                            room_name=room_name,
+                            user_id=user_id,
+                            caller_phone=caller_phone,
+                            off_hours_data=off_hours_data,
+                            profile_data=profile_data,
+                        )
+                    )
+                elif is_queue:
                     task = asyncio.create_task(
                         run_queue_session(
                             room_name=room_name,

@@ -1,14 +1,14 @@
 import { Platform } from "react-native";
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 
-// High quality, fast-loading phone sounds (fallback URLs)
-const INCOMING_RINGTONE_URL = "https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3"; // Melodic modern phone ring
-const OUTGOING_RINGBACK_URL = "https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3"; // Softphone PBX ringback tone
+// High quality phone sounds
+const INCOMING_RINGTONE_URL = "https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3";
+const OUTGOING_RINGBACK_URL = "https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3";
 
 class SoundService {
-  private incomingSound: Audio.Sound | null = null;
-  private outgoingSound: Audio.Sound | null = null;
+  private incomingPlayer: AudioPlayer | null = null;
+  private outgoingPlayer: AudioPlayer | null = null;
   private hapticsInterval: any = null;
   private webAudioCtx: any = null;
   private webOscGain: any = null;
@@ -20,16 +20,15 @@ class SoundService {
   }
 
   private async configureAudioMode() {
-    try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
-    } catch (e) {
-      console.log("[SoundService] configureAudioMode note:", e);
+    if (Platform.OS !== "web") {
+      try {
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          shouldPlayInBackground: true,
+        });
+      } catch (e) {
+        console.log("[SoundService] configureAudioMode note:", e);
+      }
     }
   }
 
@@ -57,12 +56,10 @@ class SoundService {
       osc2.connect(gainNode);
       gainNode.connect(this.webAudioCtx.destination);
 
-      // Pulse pattern
       const now = this.webAudioCtx.currentTime;
       gainNode.gain.setValueAtTime(0, now);
 
       const cycle = onDuration + offDuration;
-      // Schedule 30 cycles
       for (let i = 0; i < 30; i++) {
         const start = now + (i * cycle);
         gainNode.gain.setValueAtTime(0.12, start);
@@ -102,7 +99,7 @@ class SoundService {
     this.stopAll();
     this.isRingingIncoming = true;
 
-    // 1. Trigger repeated vibration on mobile
+    // 1. Repeated vibration on mobile
     if (Platform.OS !== "web") {
       try {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -116,17 +113,16 @@ class SoundService {
 
     // 2. Play Audio Ringtone
     if (Platform.OS === "web") {
-      // Use clean standard dual ring cadence (440Hz + 480Hz, 1.5s on, 2s off)
       this.startWebTone(440, 480, 1.5, 2.0);
     } else {
       try {
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: INCOMING_RINGTONE_URL },
-          { shouldPlay: true, isLooping: true, volume: 1.0 }
-        );
-        this.incomingSound = sound;
+        const player = createAudioPlayer(INCOMING_RINGTONE_URL);
+        player.loop = true;
+        player.volume = 1.0;
+        player.play();
+        this.incomingPlayer = player;
       } catch (e) {
-        console.warn("[SoundService] Failed to load incoming sound:", e);
+        console.warn("[SoundService] Failed to play incoming sound:", e);
       }
     }
   }
@@ -139,17 +135,16 @@ class SoundService {
     this.isRingingOutgoing = true;
 
     if (Platform.OS === "web") {
-      // Standard PBX ringback tone (400Hz + 450Hz, 1.2s on, 2.5s off)
       this.startWebTone(400, 450, 1.2, 2.5);
     } else {
       try {
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: OUTGOING_RINGBACK_URL },
-          { shouldPlay: true, isLooping: true, volume: 0.6 }
-        );
-        this.outgoingSound = sound;
+        const player = createAudioPlayer(OUTGOING_RINGBACK_URL);
+        player.loop = true;
+        player.volume = 0.6;
+        player.play();
+        this.outgoingPlayer = player;
       } catch (e) {
-        console.warn("[SoundService] Failed to load outgoing sound:", e);
+        console.warn("[SoundService] Failed to play outgoing sound:", e);
       }
     }
   }
@@ -170,22 +165,22 @@ class SoundService {
     this.stopWebTone();
 
     // Stop Native Incoming Sound
-    if (this.incomingSound) {
-      const s = this.incomingSound;
-      this.incomingSound = null;
+    if (this.incomingPlayer) {
+      const p = this.incomingPlayer;
+      this.incomingPlayer = null;
       try {
-        await s.stopAsync();
-        await s.unloadAsync();
+        p.pause();
+        p.remove();
       } catch (e) {}
     }
 
     // Stop Native Outgoing Sound
-    if (this.outgoingSound) {
-      const s = this.outgoingSound;
-      this.outgoingSound = null;
+    if (this.outgoingPlayer) {
+      const p = this.outgoingPlayer;
+      this.outgoingPlayer = null;
       try {
-        await s.stopAsync();
-        await s.unloadAsync();
+        p.pause();
+        p.remove();
       } catch (e) {}
     }
   }

@@ -202,3 +202,116 @@ class InboundPBXTrunk(models.Model):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
             "issabel_config": config,
         }
+
+
+def get_default_business_days_config():
+    return {
+        "saturday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+        "sunday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+        "monday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+        "tuesday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+        "wednesday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+        "thursday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+        "friday": {"is_workday": False, "start_time": "09:00", "end_time": "17:00"},
+    }
+
+
+class BusinessHoursSchedule(models.Model):
+    ACTION_CHOICES = [
+        ('ai_message', 'نطق رسالة نصية بالذكاء الاصطناعي (AI Message)'),
+        ('audio_file', 'تشغيل ملف صوتي مسجل مسبقاً (Audio File)'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='business_hours_schedule')
+    is_enabled = models.BooleanField(default=False, verbose_name="تفعيل جدول مواعيد العمل")
+    timezone = models.CharField(max_length=64, default="Africa/Cairo", verbose_name="المنطقة الزمنية")
+    days_config = models.JSONField(default=get_default_business_days_config, verbose_name="جدول الأيام وساعات العمل")
+    action_type = models.CharField(max_length=20, choices=ACTION_CHOICES, default='ai_message', verbose_name="إجراء خارج أوقات العمل")
+    ai_message = models.TextField(
+        blank=True,
+        default="مرحباً بك، نتأسف لاتصالك خارج أوقات العمل الرسمية. نسعد بتواصلك معنا مجدداً خلال أوقات العمل الرسمية من التاسعة صباحاً وحتى الخامسة مساءً.",
+        verbose_name="رسالة الذكاء الاصطناعي خارج أوقات العمل"
+    )
+    audio_file = models.FileField(upload_to='off_hours_audio/', blank=True, null=True, verbose_name="ملف صوتي خارج أوقات العمل")
+    audio_file_url = models.URLField(max_length=500, blank=True, default='', verbose_name="رابط الملف الصوتي")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'voice_assistant_businesshoursschedule'
+        verbose_name = "جدول مواعيد العمل"
+        verbose_name_plural = "جداول مواعيد العمل"
+
+    def __str__(self):
+        status = " [مفعل]" if self.is_enabled else " [معطل]"
+        return f"مواعيد عمل {self.user.username} ({self.timezone}){status}"
+
+    def is_within_business_hours(self, dt=None) -> bool:
+        """
+        Check if the current moment (or provided datetime) is within active business hours.
+        If schedule is disabled, returns True (always accessible).
+        """
+        if not self.is_enabled:
+            return True
+
+        from zoneinfo import ZoneInfo
+        from datetime import datetime, time
+        try:
+            tz = ZoneInfo(self.timezone)
+        except Exception:
+            tz = ZoneInfo("UTC")
+
+        now = dt or datetime.now(tz)
+        day_key = now.strftime('%A').lower()  # saturday, sunday, monday, etc.
+
+        cfg = self.days_config or get_default_business_days_config()
+        day_info = cfg.get(day_key)
+        if not day_info or not day_info.get("is_workday", False):
+            return False
+
+        start_str = day_info.get("start_time", "09:00")
+        end_str = day_info.get("end_time", "17:00")
+
+        try:
+            sh, sm = map(int, start_str.split(":"))
+            eh, em = map(int, end_str.split(":"))
+            start_time = time(sh, sm)
+            end_time = time(eh, em)
+        except Exception:
+            start_time = time(9, 0)
+            end_time = time(17, 0)
+
+        current_time = now.time()
+        if start_time <= end_time:
+            return start_time <= current_time <= end_time
+        else:
+            # Shift spans midnight e.g. 20:00 to 04:00
+            return current_time >= start_time or current_time <= end_time
+
+    def get_audio_url(self, request=None) -> str:
+        """Return accessible URL for off-hours audio file."""
+        if self.audio_file:
+            try:
+                url = self.audio_file.url
+                if request and url.startswith("/"):
+                    return request.build_absolute_uri(url)
+                return url
+            except Exception:
+                pass
+        return self.audio_file_url or ""
+
+    def to_dict(self, request=None):
+        return {
+            "id": self.id,
+            "is_enabled": self.is_enabled,
+            "timezone": self.timezone,
+            "days_config": self.days_config or get_default_business_days_config(),
+            "action_type": self.action_type,
+            "action_type_display": self.get_action_type_display(),
+            "ai_message": self.ai_message or "",
+            "audio_file": self.audio_file.url if self.audio_file else None,
+            "audio_file_url": self.get_audio_url(request),
+            "is_open_now": self.is_within_business_hours(),
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M") if self.created_at else None,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M") if self.updated_at else None,
+        }

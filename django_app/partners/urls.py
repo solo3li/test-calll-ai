@@ -45,5 +45,8 @@ urlpatterns = [
     path('clients/<int:client_id>/campaigns/<int:campaign_id>/', views.api_partner_client_campaign_detail, name='api_partner_client_campaign_detail'),
     path('clients/<int:client_id>/campaigns/<int:campaign_id>/start/', views.api_partner_client_campaign_start, name='api_partner_client_campaign_start'),
     path('clients/<int:client_id>/campaigns/<int:campaign_id>/pause/', views.api_partner_client_campaign_pause, name='api_partner_client_campaign_pause'),
+
+    # Managed Client Business Hours & Off-Hours Schedule
+    path('clients/<int:client_id>/business-hours/', views.api_partner_client_business_hours, name='api_partner_client_business_hours'),
 ]
 

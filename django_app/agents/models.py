@@ -99,6 +99,11 @@ class AgentProfile(models.Model):
         verbose_name="رسالة الترحيب الافتتاحية",
         help_text="الرسالة الترحيبية التي يبدأ بها المساعد فور فتح المكالمة (مثال: أهلاً بك، معك أحمد، كيف أقدر أساعدك؟)"
     )
+    is_welcome_message_enabled = models.BooleanField(
+        default=True,
+        verbose_name="تفعيل رسالة الترحيب الافتتاحية",
+        help_text="تفعيل أو إيقاف الترحيب التلقائي عند بدء المكالمة. عند التعطيل، ينتظر المساعد حتى يتحدث المتصل أولاً."
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -160,6 +165,7 @@ class AgentProfile(models.Model):
             "verbosity_display": self.get_verbosity_display(),
             "custom_instructions": self.custom_instructions,
             "welcome_message": self.welcome_message or "",
+            "is_welcome_message_enabled": self.is_welcome_message_enabled,
             "is_active": self.is_active,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M"),

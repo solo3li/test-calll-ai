@@ -420,12 +420,38 @@ def livekit_webhook(request):
             elif participant_identity.startswith("customer_"):
                 caller_phone = participant_identity.replace("customer_", "")
 
-            logger.info(f"Human participant '{participant_identity}' (user_id={user_id}, caller_phone={caller_phone}, is_queue={is_queue}) joined room {room_name}. Queuing Voice Agent...")
-            publish_to_centrifugo(channel, {
-                "event": "agent_queued",
-                "message": f"تم رصد انضمام متصل لطابور الانتظار (كود: {queue_code})..." if is_queue else "تم رصد انضمام المستخدم. جاري استدعاء المساعد الصوتي وتجهيز قاعدة المستندات...",
-                "timestamp": time.time(),
-            })
+            # Check Business Hours Schedule
+            is_off_hours = False
+            off_hours_data = None
+            if user_id:
+                try:
+                    from telephony.models import BusinessHoursSchedule
+                    b_sched = BusinessHoursSchedule.objects.filter(user_id=user_id).first()
+                    if b_sched and b_sched.is_enabled and not b_sched.is_within_business_hours():
+                        is_off_hours = True
+                        off_hours_data = {
+                            "action_type": b_sched.action_type,
+                            "ai_message": b_sched.ai_message,
+                            "audio_file_url": b_sched.get_audio_url(request),
+                            "voice_name": (profile.get("voice_name") if profile else "Aoede") or "Aoede"
+                        }
+                        logger.info(f"Incoming call in room '{room_name}' is OUTSIDE business hours for user #{user_id}. Action: {b_sched.action_type}")
+                except Exception as b_err:
+                    logger.warning(f"Error checking business hours for user #{user_id}: {b_err}")
+
+            logger.info(f"Human participant '{participant_identity}' (user_id={user_id}, caller_phone={caller_phone}, is_queue={is_queue}, is_off_hours={is_off_hours}) joined room {room_name}. Queuing Voice Agent...")
+            if is_off_hours:
+                publish_to_centrifugo(channel, {
+                    "event": "off_hours_call",
+                    "message": "المكالمة واردة خارج أوقات العمل الرسمية. جاري الرد بالخطة المحددة...",
+                    "timestamp": time.time(),
+                })
+            else:
+                publish_to_centrifugo(channel, {
+                    "event": "agent_queued",
+                    "message": f"تم رصد انضمام متصل لطابور الانتظار (كود: {queue_code})..." if is_queue else "تم رصد انضمام المستخدم. جاري استدعاء المساعد الصوتي وتجهيز قاعدة المستندات...",
+                    "timestamp": time.time(),
+                })
 
             try:
                 r = redis.Redis.from_url(settings.REDIS_URL)
@@ -437,7 +463,9 @@ def livekit_webhook(request):
                     "is_queue": is_queue,
                     "queue_code": queue_code,
                     "queue_data": queue_data,
-                    "participant_identity": participant_identity
+                    "participant_identity": participant_identity,
+                    "is_off_hours": is_off_hours,
+                    "off_hours_data": off_hours_data
                 })
                 r.rpush("agent_jobs", job_payload)
                 if participant_identity.startswith("sip_"):
@@ -689,6 +717,89 @@ def partner_page_view(request):
         'active_nav': 'partner',
     }
     return render(request, 'voice_assistant/pages/partner.html', context)
+
+
+@login_required
+def business_hours_page_view(request):
+    """Render dedicated Business Hours & Off-Hours Schedule page."""
+    context = {
+        'page_title': 'مواعيد العمل والخطة البديلة',
+        'page_icon': '⏰',
+        'active_nav': 'business_hours',
+    }
+    return render(request, 'voice_assistant/pages/business_hours.html', context)
+
+
+@login_required
+def get_business_hours(request):
+    """GET /api/business-hours/ - Retrieve user business hours configuration."""
+    from telephony.models import BusinessHoursSchedule
+    sched, _ = BusinessHoursSchedule.objects.get_or_create(user=request.user)
+    return JsonResponse({
+        "status": "success",
+        "schedule": sched.to_dict(request)
+    })
+
+
+@login_required
+def save_business_hours(request):
+    """POST /api/business-hours/save/ - Save business hours configuration with optional audio upload."""
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    from telephony.models import BusinessHoursSchedule
+    sched, _ = BusinessHoursSchedule.objects.get_or_create(user=request.user)
+
+    is_json = request.content_type == 'application/json'
+    if is_json:
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+    else:
+        data = request.POST
+
+    if 'is_enabled' in data:
+        val = data['is_enabled']
+        sched.is_enabled = val in (True, 'true', 'True', '1', 1)
+
+    if 'timezone' in data and str(data['timezone']).strip():
+        sched.timezone = str(data['timezone']).strip()
+
+    if 'days_config' in data:
+        cfg = data['days_config']
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except Exception:
+                cfg = None
+        if isinstance(cfg, dict):
+            sched.days_config = cfg
+
+    if 'action_type' in data and data['action_type'] in ('ai_message', 'audio_file'):
+        sched.action_type = data['action_type']
+
+    if 'ai_message' in data:
+        sched.ai_message = str(data['ai_message']).strip()
+
+    if 'audio_file_url' in data:
+        sched.audio_file_url = str(data['audio_file_url']).strip()
+
+    # Handle audio file upload (Dashboard only)
+    if 'audio_file' in request.FILES:
+        uploaded_file = request.FILES['audio_file']
+        ext = os.path.splitext(uploaded_file.name)[1].lower()
+        if ext not in ('.mp3', '.wav', '.ogg', '.m4a'):
+            return JsonResponse({"status": "error", "message": "يجب رفع ملف صوتي بصيغة MP3 أو WAV أو OGG أو M4A"}, status=400)
+        sched.audio_file = uploaded_file
+
+    sched.save()
+
+    return JsonResponse({
+        "status": "success",
+        "message": "تم حفظ جدول مواعيد العمل بنجاح",
+        "schedule": sched.to_dict(request)
+    })
 
 
 

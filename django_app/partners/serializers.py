@@ -86,6 +86,7 @@ class PartnerClientProfileSerializer(serializers.Serializer):
     speaking_style = serializers.CharField(required=False, allow_blank=True)
     verbosity = serializers.ChoiceField(choices=[('concise', 'موجز'), ('balanced', 'متوازن'), ('detailed', 'مفصل')])
     welcome_message = serializers.CharField(required=False, allow_blank=True)
+    is_welcome_message_enabled = serializers.BooleanField(default=True, required=False)
     custom_instructions = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(default=True)
 
@@ -100,6 +101,7 @@ class PartnerClientProfileCreateRequestSerializer(serializers.Serializer):
     speaking_style = serializers.CharField(required=False, default="ودود ومهذب")
     verbosity = serializers.ChoiceField(choices=[('concise', 'موجز'), ('balanced', 'متوازن'), ('detailed', 'مفصل')], default='balanced')
     welcome_message = serializers.CharField(required=False, allow_blank=True)
+    is_welcome_message_enabled = serializers.BooleanField(default=True, required=False)
     custom_instructions = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(default=True)
 

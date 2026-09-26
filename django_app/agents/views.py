@@ -158,6 +158,8 @@ def create_profile(request):
         speaking_style = str(data.get('speaking_style', 'ودود ولطيف ومرح')).strip()
         verbosity = str(data.get('verbosity', 'balanced')).strip() or 'balanced'
         custom_instructions = data.get('custom_instructions', '').strip()
+        welcome_message = str(data.get('welcome_message', '')).strip()
+        is_welcome_message_enabled = bool(data.get('is_welcome_message_enabled', True))
         is_active = bool(data.get('is_active', True))
 
         profile = AgentProfile.objects.create(
@@ -171,6 +173,8 @@ def create_profile(request):
             speaking_style=speaking_style,
             verbosity=verbosity,
             custom_instructions=custom_instructions,
+            welcome_message=welcome_message,
+            is_welcome_message_enabled=is_welcome_message_enabled,
             is_active=is_active
         )
         return JsonResponse({
@@ -209,6 +213,10 @@ def update_profile(request, profile_id):
             profile.verbosity = str(data['verbosity']).strip()
         if 'custom_instructions' in data:
             profile.custom_instructions = data['custom_instructions'].strip()
+        if 'welcome_message' in data:
+            profile.welcome_message = str(data['welcome_message']).strip()
+        if 'is_welcome_message_enabled' in data:
+            profile.is_welcome_message_enabled = bool(data['is_welcome_message_enabled'])
         if 'is_active' in data:
             profile.is_active = bool(data['is_active'])
 
@@ -517,6 +525,7 @@ def api_internal_agent_bootstrap(request):
             "persona_role": "customer_support",
             "speaking_style": "friendly",
             "welcome_message": "",
+            "is_welcome_message_enabled": True,
             "custom_instructions": "",
             "is_active": True
         }

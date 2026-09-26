@@ -17,6 +17,9 @@ let fieldVoice = null;
 let fieldRole = null;
 let fieldStyle = null;
 let fieldVerbosity = null;
+let fieldWelcome = null;
+let fieldWelcomeEnabled = null;
+let welcomeToggleStatus = null;
 let fieldCustom = null;
 let voiceTagBadge = null;
 let profileStatusMsg = null;
@@ -27,6 +30,28 @@ let newProfGender = null;
 let newProfLanguage = null;
 let newProfDialect = null;
 let newProfVerbosity = null;
+let newProfWelcome = null;
+let newProfWelcomeEnabled = null;
+
+function toggleWelcomeInput(target) {
+  if (target === 'active') {
+    const isChecked = fieldWelcomeEnabled ? fieldWelcomeEnabled.checked : true;
+    if (welcomeToggleStatus) {
+      welcomeToggleStatus.innerText = isChecked ? 'مفعلة' : 'معطلة';
+      welcomeToggleStatus.className = isChecked ? 'ms-2 text-xs font-semibold text-[#680E23]' : 'ms-2 text-xs font-semibold text-[#8C827A]';
+    }
+    if (fieldWelcome) {
+      fieldWelcome.disabled = !isChecked;
+      fieldWelcome.classList.toggle('opacity-50', !isChecked);
+    }
+  } else {
+    const isChecked = newProfWelcomeEnabled ? newProfWelcomeEnabled.checked : true;
+    if (newProfWelcome) {
+      newProfWelcome.disabled = !isChecked;
+      newProfWelcome.classList.toggle('opacity-50', !isChecked);
+    }
+  }
+}
 
 async function loadProfiles() {
   try {
@@ -99,6 +124,12 @@ function renderProfileCards() {
           <div class="flex justify-between items-center">
             <span class="text-[#8C827A]">الأسلوب:</span>
             <span class="text-[#2D2825] font-medium">${escapeHtml(p.style_display || p.style || p.speaking_style)}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-[#8C827A]">الترحيب الافتتاحي:</span>
+            <span class="text-[11px] font-semibold ${p.is_welcome_message_enabled !== false ? 'text-[#680E23]' : 'text-[#8C827A]'}">
+              ${p.is_welcome_message_enabled !== false ? (p.welcome_message ? `💬 "${escapeHtml(p.welcome_message.substring(0, 30))}${p.welcome_message.length > 30 ? '...' : ''}"` : '✨ ترحيب تلقائي ذكي') : '🤫 انتظار المتصل أولاً'}
+            </span>
           </div>
           ${p.custom_instructions ? `
             <div class="pt-1.5 border-t border-[#EAE3D9] text-[11px] text-[#6E645D] italic line-clamp-2">
@@ -224,6 +255,9 @@ function populateProfileForm(p) {
   if (fieldRole) fieldRole.value = p.persona_role || p.role || '';
   if (fieldStyle) fieldStyle.value = p.speaking_style || p.style || '';
   if (fieldVerbosity) fieldVerbosity.value = p.verbosity || 'balanced';
+  if (fieldWelcomeEnabled) fieldWelcomeEnabled.checked = p.is_welcome_message_enabled !== false;
+  if (fieldWelcome) fieldWelcome.value = p.welcome_message || '';
+  toggleWelcomeInput('active');
   if (fieldCustom) fieldCustom.value = p.custom_instructions || '';
   updateVoiceTag();
 
@@ -304,6 +338,8 @@ async function saveActiveProfileChanges() {
     persona_role: fieldRole ? fieldRole.value : '',
     speaking_style: fieldStyle ? fieldStyle.value : '',
     verbosity: fieldVerbosity ? fieldVerbosity.value : 'balanced',
+    welcome_message: fieldWelcome ? fieldWelcome.value.trim() : '',
+    is_welcome_message_enabled: fieldWelcomeEnabled ? fieldWelcomeEnabled.checked : true,
     custom_instructions: fieldCustom ? fieldCustom.value.trim() : ''
   };
 
@@ -341,6 +377,9 @@ function openNewProfileModal() {
   if (newProfLanguage) newProfLanguage.value = 'arabic';
   populateDialectSelect(newProfDialect, 'arabic', 'egyptian');
   syncNewProfileVoices();
+  if (newProfWelcomeEnabled) newProfWelcomeEnabled.checked = true;
+  if (newProfWelcome) newProfWelcome.value = '';
+  toggleWelcomeInput('new');
   if (profileModal) profileModal.classList.remove('hidden');
 }
 
@@ -358,6 +397,8 @@ async function createNewProfile(e) {
   const persona_role = document.getElementById('new-prof-role').value;
   const speaking_style = document.getElementById('new-prof-style').value;
   const verbosity = newProfVerbosity ? newProfVerbosity.value : 'balanced';
+  const welcome_message = newProfWelcome ? newProfWelcome.value.trim() : '';
+  const is_welcome_message_enabled = newProfWelcomeEnabled ? newProfWelcomeEnabled.checked : true;
 
   const btn = document.getElementById('btn-create-prof');
   if (btn) {
@@ -381,6 +422,8 @@ async function createNewProfile(e) {
         persona_role,
         speaking_style,
         verbosity,
+        welcome_message,
+        is_welcome_message_enabled,
         is_active: true
       })
     });
@@ -436,6 +479,9 @@ document.addEventListener('DOMContentLoaded', () => {
   fieldRole = document.getElementById('field-role');
   fieldStyle = document.getElementById('field-style');
   fieldVerbosity = document.getElementById('field-verbosity');
+  fieldWelcome = document.getElementById('field-welcome');
+  fieldWelcomeEnabled = document.getElementById('field-welcome-enabled');
+  welcomeToggleStatus = document.getElementById('welcome-toggle-status');
   fieldCustom = document.getElementById('field-custom');
   voiceTagBadge = document.getElementById('voice-tag-badge');
   profileStatusMsg = document.getElementById('profile-status-msg');
@@ -446,6 +492,8 @@ document.addEventListener('DOMContentLoaded', () => {
   newProfLanguage = document.getElementById('new-prof-language');
   newProfDialect = document.getElementById('new-prof-dialect');
   newProfVerbosity = document.getElementById('new-prof-verbosity');
+  newProfWelcome = document.getElementById('new-prof-welcome');
+  newProfWelcomeEnabled = document.getElementById('new-prof-welcome-enabled');
 
   loadProfiles();
 });

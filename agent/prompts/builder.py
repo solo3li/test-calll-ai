@@ -90,7 +90,13 @@ def build_dynamic_system_instruction(
         style_text = style_map["friendly"]
 
     custom_text = f"\nتعليمات خاصة إضافية من المستخدم:\n{custom}\n" if custom else ""
-    welcome_text = f"\nرسالة الترحيب المحددة لك لبدء الحديث:\n\"{profile['welcome_message'].strip()}\"\n" if profile.get("welcome_message") else ""
+    is_welcome_enabled = profile.get("is_welcome_message_enabled", True) if profile.get("is_welcome_message_enabled") is not None else True
+    if is_welcome_enabled and profile.get("welcome_message"):
+        welcome_text = f"\nرسالة الترحيب المحددة لك لبدء الحديث:\n\"{profile['welcome_message'].strip()}\"\n"
+    elif not is_welcome_enabled:
+        welcome_text = "\nتعليمات بدء الحديث: ميزة رسالة الترحيب الافتتاحية معطلة لهذا البروفايل. يُمنع منعاً باتاً أن تبدأ الحديث أو تبادر بأي ترحيب استباقي؛ بل التزم الصمت التام وانتظر المتصل البشري حتى يتكلم أولاً، وبعد أن يتحدث المتصل قم بالرد عليه ومساعدته بلباقة.\n"
+    else:
+        welcome_text = ""
 
     # 5. Verbosity
     verbosity_instruction = VERBOSITY_INSTRUCTIONS.get(verbosity, VERBOSITY_INSTRUCTIONS["balanced"])
