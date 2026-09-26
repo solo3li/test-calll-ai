@@ -3,9 +3,11 @@ import { View, Text, TouchableOpacity, StyleSheet, TextInput } from "react-nativ
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
 import { useCall } from "../context/CallContext";
+import { useAuthStore } from "../stores/useAuthStore";
 
 export const DialpadView: React.FC = () => {
   const { dialpadInput, setDialpadInput, startCall } = useCall();
+  const employee = useAuthStore((s) => s.employee);
 
   const keys = [
     { num: "1", sub: "" },
@@ -49,16 +51,18 @@ export const DialpadView: React.FC = () => {
         )}
       </View>
 
-      {/* Quick AI Test Call Button */}
-      <TouchableOpacity
-        style={styles.aiTestButton}
-        onPress={() => startCall("000", "المساعد الذكي (تجربة)")}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="sparkles" size={16} color="#10b981" style={{ marginRight: 6 }} />
-        <Text style={styles.aiTestButtonText}>🤖 تجربة المساعد الذكي (AI Test Call)</Text>
-        <Ionicons name="call" size={14} color="#10b981" style={{ marginLeft: 6 }} />
-      </TouchableOpacity>
+      {/* Quick AI Test Call Button (Owner / Supervisor Only) */}
+      {employee?.is_owner && (
+        <TouchableOpacity
+          style={styles.aiTestButton}
+          onPress={() => startCall("000", "المساعد الذكي (تجربة)")}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="sparkles" size={16} color="#10b981" style={{ marginRight: 6 }} />
+          <Text style={styles.aiTestButtonText}>🤖 تجربة المساعد الذكي (مالك / مشرف)</Text>
+          <Ionicons name="call" size={14} color="#10b981" style={{ marginLeft: 6 }} />
+        </TouchableOpacity>
+      )}
 
       {/* Speed Dial Queues */}
       <View style={styles.quickQueuesRow}>

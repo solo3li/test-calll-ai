@@ -14,6 +14,7 @@ export interface EmployeeProfile {
   status_display: string;
   avatar_url: string;
   is_active: boolean;
+  is_owner?: boolean;
 }
 
 export interface CentrifugoConfig {

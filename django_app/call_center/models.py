@@ -33,6 +33,19 @@ class EmployeeProfile(models.Model):
     def __str__(self):
         return f"{self.display_name} (تحويلة: {self.extension}) - {self.get_status_display()}"
 
+    @property
+    def is_owner(self) -> bool:
+        if self.user.is_superuser:
+            return True
+        if self.employer_id and self.employer_id == self.user_id:
+            return True
+        try:
+            if self.user.managed_employees.exists() or self.user.agent_profiles.exists():
+                return True
+        except Exception:
+            pass
+        return False
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -47,6 +60,7 @@ class EmployeeProfile(models.Model):
             "avatar_url": self.avatar_url or f"https://api.dicebear.com/7.x/bottts/png?seed={self.extension}",
             "push_token": self.push_token,
             "is_active": self.is_active,
+            "is_owner": self.is_owner,
         }
 
 

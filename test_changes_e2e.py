@@ -184,18 +184,34 @@ log_test("POST /api/partner/v1/clients/<id>/token/ returns 404 (endpoint removed
 # ==============================================================================
 print("\n>>> SUITE 4: Call Center Employee AI Test Call & Dialpad Button")
 
-# 4.1 Login Employee (Ahmed 101)
+# 4.1 Login Regular Employee (Ahmed 101)
 login_res = session.post(f"{BASE_URL}/api/call-center/auth/login/", json={
     "identifier": "101",
     "password": "password123"
 })
 assert login_res.status_code == 200, f"Login failed: {login_res.text}"
+emp_data = login_res.json().get("employee", {})
 emp_token = login_res.json()["token"]
 emp_headers = {"Authorization": f"Bearer {emp_token}", "Content-Type": "application/json"}
-log_test("Employee 101 login successful", True)
+log_test("Employee 101 login successful (is_owner: False)", emp_data.get("is_owner") is False)
 
-# 4.2 Dial Target 000 (AI Test Call)
-dial_000_res = session.post(f"{BASE_URL}/api/call-center/calls/dial/", headers=emp_headers, json={"target": "000"})
+# 4.2 Regular Employee dialing '000' is restricted (403 Forbidden)
+emp_dial_000 = session.post(f"{BASE_URL}/api/call-center/calls/dial/", headers=emp_headers, json={"target": "000"})
+log_test("Regular employee dialing '000' restricted with 403", emp_dial_000.status_code == 403, f"Status: {emp_dial_000.status_code}")
+
+# 4.3 Login Owner Employee (test_dev_user)
+owner_login = session.post(f"{BASE_URL}/api/call-center/auth/login/", json={
+    "identifier": "test_dev_user",
+    "password": "password123"
+})
+assert owner_login.status_code == 200, f"Owner login failed: {owner_login.text}"
+owner_data = owner_login.json().get("employee", {})
+owner_token = owner_login.json()["token"]
+owner_headers = {"Authorization": f"Bearer {owner_token}", "Content-Type": "application/json"}
+log_test("Owner employee login successful (is_owner: True)", owner_data.get("is_owner") is True)
+
+# 4.4 Owner dialing '000' triggers AI Test Call (200 OK)
+dial_000_res = session.post(f"{BASE_URL}/api/call-center/calls/dial/", headers=owner_headers, json={"target": "000"})
 dial_data = dial_000_res.json() if dial_000_res.status_code == 200 else {}
 is_ai_test = (
     dial_000_res.status_code == 200 and
@@ -205,19 +221,19 @@ is_ai_test = (
     "room_name" in dial_data and
     "🤖" in dial_data.get("target_name", "")
 )
-log_test("Dialing '000' triggers AI Test Call (status: success, call_type: ai_test)", is_ai_test, f"Room: {dial_data.get('room_name')}")
+log_test("Owner dialing '000' triggers AI Test Call (status: success, call_type: ai_test)", is_ai_test, f"Room: {dial_data.get('room_name')}")
 
-# 4.3 Dial Target 'ai' alias
-dial_ai_res = session.post(f"{BASE_URL}/api/call-center/calls/dial/", headers=emp_headers, json={"target": "ai"})
-log_test("Dialing 'ai' alias triggers AI Test Call", dial_ai_res.status_code == 200 and dial_ai_res.json().get("call_type") == "ai_test")
+# 4.5 Owner dialing 'ai' alias
+dial_ai_res = session.post(f"{BASE_URL}/api/call-center/calls/dial/", headers=owner_headers, json={"target": "ai"})
+log_test("Owner dialing 'ai' alias triggers AI Test Call", dial_ai_res.status_code == 200 and dial_ai_res.json().get("call_type") == "ai_test")
 
-# 4.4 Inspect Employee Expo 57 DialpadView component
+# 4.6 Inspect Employee Expo 57 DialpadView component
 dialpad_component_path = os.path.join(CURRENT_DIR, "employee_expo57", "src", "components", "DialpadView.tsx")
 with open(dialpad_component_path, "r", encoding="utf-8") as f:
     dialpad_code = f.read()
 
-has_ai_button = "تجربة المساعد الذكي" in dialpad_code and 'startCall("000"' in dialpad_code
-log_test("DialpadView.tsx includes fast '🤖 تجربة المساعد الذكي' button dialing 000", has_ai_button)
+has_ai_button = "تجربة المساعد الذكي" in dialpad_code and 'startCall("000"' in dialpad_code and "employee?.is_owner" in dialpad_code
+log_test("DialpadView.tsx includes fast '🤖 تجربة المساعد الذكي' button guarded by employee?.is_owner", has_ai_button)
 
 # ==============================================================================
 # TEST SUITE 5: Document Management - Direct File Upload Rejection

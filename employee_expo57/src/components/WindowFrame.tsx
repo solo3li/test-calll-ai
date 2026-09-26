@@ -78,7 +78,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ children }) => {
               {/* Employee Name & Ext */}
               <View style={styles.employeeBadge}>
                 <Text style={styles.employeeName} numberOfLines={1}>
-                  {employee.display_name}
+                  {employee.is_owner ? "👑 " : ""}{employee.display_name}
                 </Text>
                 <Text style={styles.employeeExt}>#{employee.extension}</Text>
               </View>

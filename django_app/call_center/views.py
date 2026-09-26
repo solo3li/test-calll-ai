@@ -99,18 +99,30 @@ def api_employee_login(request):
 
         # 3. Fetch or auto-create EmployeeProfile
         employee = EmployeeProfile.objects.filter(user=user).first()
+        is_owner_user = bool(user.is_superuser or user.agent_profiles.exists() or user.managed_employees.exists())
+
         if not employee:
             ext = str(100 + user.id)
+            display = f"{user.get_full_name() or user.username} (المالك / المشرف)" if is_owner_user else (user.get_full_name() or user.username)
             employee = EmployeeProfile.objects.create(
                 user=user,
+                employer=user if is_owner_user else None,
                 extension=ext,
-                display_name=user.get_full_name() or user.username,
-                department="المبيعات" if user.id % 2 != 0 else "خدمة العملاء",
+                display_name=display,
+                department="الإدارة العامة" if is_owner_user else ("المبيعات" if user.id % 2 != 0 else "خدمة العملاء"),
                 status="ready"
             )
         else:
+            update_fields = ['status']
             employee.status = "ready"
-            employee.save(update_fields=['status'])
+            if is_owner_user:
+                if employee.employer_id != user.id:
+                    employee.employer = user
+                    update_fields.append('employer')
+                if "(المالك" not in employee.display_name:
+                    employee.display_name = f"{user.get_full_name() or user.username} (المالك / المشرف)"
+                    update_fields.append('display_name')
+            employee.save(update_fields=update_fields)
 
         # 4. Generate Tokens
         app_token = generate_employee_jwt(employee)
@@ -556,7 +568,7 @@ def api_dial_call(request):
 
     caller = get_employee_from_token(request)
     if not caller:
-        if request.user.is_authenticated:
+        if hasattr(request, 'user') and request.user.is_authenticated:
             caller = EmployeeProfile.objects.filter(user=request.user).first()
             if not caller:
                 caller = EmployeeProfile.objects.create(
@@ -578,11 +590,17 @@ def api_dial_call(request):
 
         # 0. Check if target is AI Assistant (Linked 1:1 to Employer Voice Room)
         if target.lower() in ['000', 'ai', 'assistant', 'bot', 'test_ai']:
+            if not caller.is_owner:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "الاتصال بالمساعد الذكي مخصص فقط لحساب المالك أو المشرف"
+                }, status=403)
+
             from agents.models import AgentProfile
             from telephony.models import BusinessHoursSchedule
 
             # 1. Resolve Employer / Owner
-            owner_user = caller.employer
+            owner_user = caller.employer or caller.user
             if not owner_user:
                 # If employer not set, resolve to main admin/superuser who created the profiles
                 owner_user = User.objects.filter(is_superuser=True).order_by('id').first() or caller.user
