@@ -388,6 +388,8 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
         if (Platform.OS === "web") {
           const el = track.attach();
           el.play().catch((e) => console.log("Audio play error:", e));
+        } else {
+          try { track.attach(); } catch (e) { console.log("Native audio attach:", e); }
         }
       }
     });
@@ -522,7 +524,25 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
             if (Platform.OS === "web") {
               const audioElement = track.attach();
               audioElement.play().catch((err) => console.log("Audio play error:", err));
+            } else {
+              // Android/iOS: attach returns an element-like obj but audio routes via native LiveKit SDK
+              try {
+                track.attach();
+              } catch (e) {
+                console.log("Native audio attach:", e);
+              }
             }
+          }
+          // Start timer when first audio track arrives (covers AI calls where ParticipantConnected may already have fired)
+          if (!callTimerInterval) {
+            callTimerInterval = setInterval(() => {
+              set((state) => ({
+                activeCall: {
+                  ...state.activeCall,
+                  durationSeconds: state.activeCall.durationSeconds + 1,
+                },
+              }));
+            }, 1000);
           }
         });
 

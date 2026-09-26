@@ -211,13 +211,22 @@ async def run_agent_session(
                         await asyncio.sleep(1.0)
                         if not greeting_triggered and not stop_event.is_set():
                             greeting_triggered = True
-                            is_welcome_enabled = active_profile.get("is_welcome_message_enabled", True) if active_profile.get("is_welcome_message_enabled") is not None else True
+                            # Explicit bool cast to handle any truthy/falsy edge cases
+                            raw_flag = active_profile.get("is_welcome_message_enabled")
+                            is_welcome_enabled = bool(raw_flag) if raw_flag is not None else True
+                            custom_welcome = (active_profile.get("welcome_message") or "").strip()
+                            logger.info(
+                                f"[GREETING] profile='{active_profile.get('name')}' "
+                                f"is_welcome_enabled={is_welcome_enabled} "
+                                f"custom_welcome='{custom_welcome[:50] if custom_welcome else '(none)'}'"
+                            )
                             if not is_welcome_enabled:
-                                logger.info(f"Welcome message is disabled for profile '{active_profile.get('name')}'. Waiting for caller to speak first.")
+                                logger.info(f"[GREETING] Welcome message disabled for profile '{active_profile.get('name')}'. Waiting for caller.")
                                 return
                             is_outbound = bool(outbound_context and outbound_context.get("is_outbound_ai"))
                             welcome_msg = generate_welcome_greeting(active_profile, is_outbound, outbound_context)
-                            logger.info(f"Human participant detected in room {room_name}. Triggering proactive greeting: '{welcome_msg}'")
+                            logger.info(f"[GREETING] Triggering proactive greeting in room {room_name}: '{welcome_msg[:80]}'")
+
                             try:
                                 prompt = f"المتصل قام بالرد أو الاتصال للتو وهو ينتظر سماعك الآن. ابدأ المحادثة فوراً وتحدث بهذه الجملة الترحيبية: '{welcome_msg}'"
                                 await session.send_client_content(

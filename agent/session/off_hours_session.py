@@ -164,21 +164,24 @@ async def run_off_hours_session(
                                 for part in model_turn.parts:
                                     if part.inline_data and part.inline_data.data:
                                         raw_pcm = part.inline_data.data
-                                        chunk_size = 480 * 2
+                                        chunk_size = 480 * 2  # 960 bytes = 20ms @24kHz mono
                                         for i in range(0, len(raw_pcm), chunk_size):
                                             pcm_slice = raw_pcm[i:i + chunk_size]
-                                            if len(pcm_slice) == chunk_size:
-                                                frame = rtc.AudioFrame(
-                                                    data=pcm_slice,
-                                                    sample_rate=24000,
-                                                    num_channels=1,
-                                                    samples_per_channel=480
-                                                )
-                                                await audio_source.capture_frame(frame)
-                                                await asyncio.sleep(0.015)
+                                            # Pad last short chunk so AudioFrame is always full
+                                            if len(pcm_slice) < chunk_size:
+                                                pcm_slice = pcm_slice + b'\x00' * (chunk_size - len(pcm_slice))
+                                            frame = rtc.AudioFrame(
+                                                data=pcm_slice,
+                                                sample_rate=24000,
+                                                num_channels=1,
+                                                samples_per_channel=480
+                                            )
+                                            await audio_source.capture_frame(frame)
+                                            await asyncio.sleep(0.015)
 
                             if server_content.turn_complete:
                                 logger.info(f"[OFF-HOURS] Gemini Live finished speaking off-hours message")
+                                played_successfully = True
                                 break
             except Exception as gemini_err:
                 logger.error(f"[OFF-HOURS] Error speaking AI message: {gemini_err}")
