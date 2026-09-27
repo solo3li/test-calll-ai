@@ -1,10 +1,11 @@
-"""Tool declaration and execution dispatcher for Gemini Live sessions."""
+import time
 from typing import Dict, Any, List, Optional, Tuple
 from google.genai import types
 from agent.config import logger
 from agent.clients.centrifugo_client import notify_centrifugo_async
 from agent.clients.django_client import query_knowledge_base_async, lookup_customer_memory_async
 from agent.clients.mcp_client import execute_mcp_tool_call
+from agent.clients.inngest_client import dispatch_tool_log_to_inngest
 
 
 def clean_gemini_schema(raw):
@@ -188,6 +189,8 @@ async def handle_gemini_tool_call(
 ) -> Tuple[types.FunctionResponse, Optional[Dict[str, Any]]]:
     """Execute a single function call from Gemini Live and return (response, pending_transfer)."""
     pending_transfer = None
+    start_t = time.monotonic()
+    caller_phone = getattr(session_state, "caller_phone", "") if session_state else ""
 
     if fc.name == "search_knowledge_base":
         await notify_centrifugo_async(channel_name, "agent_searching_rag", "جاري البحث الدلالي في مستنداتك...")
@@ -195,6 +198,23 @@ async def handle_gemini_tool_call(
         logger.info(f"Executing search_knowledge_base for user_id={user_id}, query='{query_text}'")
         search_result = await query_knowledge_base_async(query_text, user_id, genai_client)
         logger.info(f"Search result retrieved: {search_result[:100]}...")
+        elapsed_ms = int((time.monotonic() - start_t) * 1000)
+
+        dispatch_tool_log_to_inngest({
+            "user_id": user_id,
+            "room_name": room_name,
+            "caller_phone": caller_phone,
+            "tool_name": "search_knowledge_base",
+            "tool_type": "rag",
+            "server_name": "نظام البحث الدلالي (RAG)",
+            "arguments": {"query": query_text},
+            "status": "success",
+            "error_type": "none",
+            "error_message": "",
+            "response_preview": search_result[:300],
+            "execution_time_ms": elapsed_ms
+        })
+
         return types.FunctionResponse(
             id=fc.id,
             name=fc.name,
@@ -206,6 +226,8 @@ async def handle_gemini_tool_call(
         await notify_centrifugo_async(channel_name, "agent_action_executing", f"جاري فحص سجل العميل '{identifier}'...")
         logger.info(f"Executing lookup_customer_memory for user_id={user_id}, identifier='{identifier}'")
         res = await lookup_customer_memory_async(user_id, identifier)
+        elapsed_ms = int((time.monotonic() - start_t) * 1000)
+
         if res.get("found"):
             mem = res.get("memory") or {}
             c_name = mem.get("customer_name") or ""
@@ -215,6 +237,7 @@ async def handle_gemini_tool_call(
 
             if session_state and phone:
                 session_state.caller_phone = phone
+                caller_phone = phone
                 logger.info(f"Dynamically updated session_state.caller_phone to '{phone}' from memory lookup")
 
             result_msg = "تم العثور على سجل العميل في النظام بنجاح:\n"
@@ -232,31 +255,65 @@ async def handle_gemini_tool_call(
             if summary:
                 result_msg += f"- ملخص آخر تواصل: {summary}\n"
             result_msg += "وظف هذه المعلومات للترحيب بالعميل ومتابعة طلبه ومساعدته بذكاء وعفوية."
+
+            dispatch_tool_log_to_inngest({
+                "user_id": user_id,
+                "room_name": room_name,
+                "caller_phone": caller_phone,
+                "tool_name": "lookup_customer_memory",
+                "tool_type": "memory",
+                "server_name": "ذاكرة العملاء (CRM)",
+                "arguments": {"identifier": identifier},
+                "status": "success",
+                "error_type": "none",
+                "error_message": "",
+                "response_preview": result_msg[:300],
+                "execution_time_ms": elapsed_ms
+            })
+
             return types.FunctionResponse(
                 id=fc.id,
                 name=fc.name,
                 response={"result": result_msg}
             ), None
         else:
+            not_found_msg = f"لم يتم العثور على سجل سابق للعميل بالمعرف '{identifier}'. تعامل معه كعميل جديد بلباقة وسجل بياناته عند الحاجة."
+            dispatch_tool_log_to_inngest({
+                "user_id": user_id,
+                "room_name": room_name,
+                "caller_phone": caller_phone,
+                "tool_name": "lookup_customer_memory",
+                "tool_type": "memory",
+                "server_name": "ذاكرة العملاء (CRM)",
+                "arguments": {"identifier": identifier},
+                "status": "failed",
+                "error_type": "not_found",
+                "error_message": f"لا يوجد سجل للعميل '{identifier}'",
+                "response_preview": not_found_msg[:300],
+                "execution_time_ms": elapsed_ms
+            })
+
             return types.FunctionResponse(
                 id=fc.id,
                 name=fc.name,
-                response={"result": f"لم يتم العثور على سجل سابق للعميل بالمعرف '{identifier}'. تعامل معه كعميل جديد بلباقة وسجل بياناته عند الحاجة."}
+                response={"result": not_found_msg}
             ), None
 
     elif fc.name in mcp_tools:
         mcp_info = mcp_tools[fc.name]
         desc = mcp_info["description"][:30] if mcp_info.get("description") else fc.name
         s_name = mcp_info.get("server_name", "FastMCP")
+        s_url = mcp_info.get("server_url", "")
         await notify_centrifugo_async(channel_name, "agent_action_executing", f"جاري استدعاء أداة {s_name}: {desc}...")
         act_args = dict(fc.args or {})
-        logger.info(f"Executing MCP tool '{fc.name}' with args {act_args} on [{s_name}] {mcp_info.get('server_url')}")
+        logger.info(f"Executing MCP tool '{fc.name}' with args {act_args} on [{s_name}] {s_url}")
         action_result = await execute_mcp_tool_call(
-            mcp_info["server_url"],
+            s_url,
             mcp_info["auth_token"],
             fc.name,
             act_args
         )
+        elapsed_ms = int((time.monotonic() - start_t) * 1000)
 
         is_error = False
         error_msg = ""
@@ -274,6 +331,24 @@ async def handle_gemini_tool_call(
                 is_error = True
                 error_msg = raw_output
                 error_type = "tool_error"
+
+        # Dispatch log event to Inngest
+        dispatch_tool_log_to_inngest({
+            "user_id": user_id,
+            "room_name": room_name,
+            "caller_phone": caller_phone,
+            "tool_name": fc.name,
+            "tool_type": "mcp",
+            "server_name": s_name,
+            "server_url": s_url,
+            "arguments": act_args,
+            "status": "failed" if is_error else "success",
+            "error_type": error_type if is_error else "none",
+            "error_message": error_msg if is_error else "",
+            "response_preview": (error_msg if is_error else raw_output)[:300],
+            "raw_response": action_result if isinstance(action_result, dict) else {"result": raw_output},
+            "execution_time_ms": elapsed_ms
+        })
 
         if is_error:
             logger.warning(f"MCP tool '{fc.name}' failed: type={error_type}, msg={error_msg[:100]}")
@@ -336,7 +411,23 @@ async def handle_gemini_tool_call(
         reason = str(fc.args.get("reason", "")).strip() if fc.args else ""
         matched_q = next((q for q in call_queues if str(q.get("code")) == q_code), None)
         q_name = matched_q.get("name", "القسم المطلوب") if matched_q else f"طابور {q_code}"
+        elapsed_ms = int((time.monotonic() - start_t) * 1000)
         logger.info(f"AI requested transfer_to_queue in room {room_name}: queue_code={q_code}, queue_name={q_name}, reason={reason}")
+
+        dispatch_tool_log_to_inngest({
+            "user_id": user_id,
+            "room_name": room_name,
+            "caller_phone": caller_phone,
+            "tool_name": "transfer_to_queue",
+            "tool_type": "transfer",
+            "server_name": "نظام طوابير الكول سنتر",
+            "arguments": {"queue_code": q_code, "reason": reason},
+            "status": "success",
+            "error_type": "none",
+            "error_message": "",
+            "response_preview": f"تحويل إلى {q_name}: {reason}",
+            "execution_time_ms": elapsed_ms
+        })
 
         await notify_centrifugo_async(channel_name, "agent_transferring", f"جاري تحويلك إلى {q_name}...")
         pending_transfer = {
@@ -355,6 +446,21 @@ async def handle_gemini_tool_call(
 
     else:
         logger.warning(f"Unknown tool requested by Gemini: {fc.name}")
+        elapsed_ms = int((time.monotonic() - start_t) * 1000)
+        dispatch_tool_log_to_inngest({
+            "user_id": user_id,
+            "room_name": room_name,
+            "caller_phone": caller_phone,
+            "tool_name": fc.name,
+            "tool_type": "mcp",
+            "server_name": "غير معرف",
+            "arguments": dict(fc.args or {}),
+            "status": "failed",
+            "error_type": "unknown_tool",
+            "error_message": f"الأداة '{fc.name}' غير معرفة في النظام",
+            "execution_time_ms": elapsed_ms
+        })
+
         return types.FunctionResponse(
             id=fc.id,
             name=fc.name,

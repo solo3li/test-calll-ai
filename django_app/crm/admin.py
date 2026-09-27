@@ -1,19 +1,69 @@
 from django.contrib import admin
+from django.utils.html import format_html
+from agents.models import AgentToolCallLog
 from .models import CustomerMemory, CallSession, UserCampaignLimit, OutboundCampaign, CampaignContact
 
-@admin.register(UserCampaignLimit)
-class UserCampaignLimitAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'max_concurrent_calls', 'is_auto_dialer_enabled', 'updated_at')
-    list_editable = ('max_concurrent_calls', 'is_auto_dialer_enabled')
-    search_fields = ('user__username', 'user__email')
-    readonly_fields = ('created_at', 'updated_at')
+class AgentToolCallLogInline(admin.TabularInline):
+    model = AgentToolCallLog
+    extra = 0
+    can_delete = False
+    readonly_fields = (
+        'status_badge',
+        'tool_badge',
+        'execution_time_badge',
+        'short_error_message',
+        'created_at_formatted',
+    )
+    fields = (
+        'status_badge',
+        'tool_badge',
+        'execution_time_badge',
+        'short_error_message',
+        'created_at_formatted',
+    )
+    show_change_link = True
+    verbose_name = "استدعاء أداة ذكاء اصطناعي"
+    verbose_name_plural = "استدعاءات الأدوات أثناء هذه المكالمة (AI Tool Calls)"
 
-@admin.register(CustomerMemory)
-class CustomerMemoryAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'phone_number', 'customer_name', 'total_calls_count', 'last_interaction_at', 'updated_at')
-    list_filter = ('updated_at', 'user')
-    search_fields = ('user__username', 'phone_number', 'customer_name', 'last_interaction_summary')
-    readonly_fields = ('created_at', 'updated_at')
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def status_badge(self, obj):
+        colors = {
+            'success': ('#def7ec', '#03543f', '✓ ناجح'),
+            'failed': ('#fde8e8', '#9b1c1c', '✕ فشل أداة'),
+            'timeout': ('#fef08a', '#713f12', '⏱ انتهاء مهلة'),
+            'connection_error': ('#f3e8ff', '#6b21a8', '⚡ فشل اتصال'),
+            'validation_error': ('#ffedd5', '#9a3412', '⚠ خطأ مدخلات'),
+        }
+        bg, text_color, label = colors.get(obj.status, ('#f3f4f6', '#374151', obj.status))
+        return format_html(
+            '<span style="background:{};color:{};font-weight:600;padding:2px 8px;border-radius:12px;font-size:11px;">{}</span>',
+            bg, text_color, label
+        )
+    status_badge.short_description = "الحالة"
+
+    def tool_badge(self, obj):
+        return format_html(
+            '<strong>{}</strong> <span style="color:#6b7280;font-size:11px;">({})</span>',
+            obj.tool_name, obj.get_tool_type_display()
+        )
+    tool_badge.short_description = "الأداة"
+
+    def execution_time_badge(self, obj):
+        return format_html('<span>{} ms</span>', obj.execution_time_ms)
+    execution_time_badge.short_description = "الزمن"
+
+    def short_error_message(self, obj):
+        if not obj.error_message:
+            return "—"
+        return obj.error_message[:50] + ("..." if len(obj.error_message) > 50 else "")
+    short_error_message.short_description = "السبب / الخطأ"
+
+    def created_at_formatted(self, obj):
+        return obj.created_at.strftime("%H:%M:%S") if obj.created_at else "—"
+    created_at_formatted.short_description = "الوقت"
+
 
 @admin.register(CallSession)
 class CallSessionAdmin(admin.ModelAdmin):
@@ -21,6 +71,7 @@ class CallSessionAdmin(admin.ModelAdmin):
     list_filter = ('direction', 'started_at', 'user')
     search_fields = ('room_name', 'caller_phone', 'destination_phone', 'call_goal', 'summary', 'user__username')
     readonly_fields = ('started_at',)
+    inlines = [AgentToolCallLogInline]
 
 class CampaignContactInline(admin.TabularInline):
     model = CampaignContact

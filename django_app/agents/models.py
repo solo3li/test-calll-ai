@@ -237,3 +237,48 @@ class SystemSetting(models.Model):
         from django.conf import settings
         return getattr(settings, 'GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
 
+
+class AgentToolCallLog(models.Model):
+    TOOL_TYPE_CHOICES = [
+        ('mcp', 'خادم أدوات خارجي (FastMCP)'),
+        ('rag', 'بحث المستندات (RAG)'),
+        ('memory', 'ذاكرة العملاء (CRM Memory)'),
+        ('transfer', 'تحويل طابور (Queue Transfer)'),
+    ]
+
+    STATUS_CHOICES = [
+        ('success', 'ناجح (Success)'),
+        ('failed', 'فشل أداة (Tool Error)'),
+        ('timeout', 'انتهاء المهلة (Timeout)'),
+        ('connection_error', 'فشل اتصال (Connection Error)'),
+        ('validation_error', 'خطأ تحقق (Validation Error)'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='agent_tool_call_logs', verbose_name="العميل / الشركة")
+    call_session = models.ForeignKey('crm.CallSession', on_delete=models.SET_NULL, null=True, blank=True, related_name='tool_call_logs', verbose_name="جلسة المكالمة")
+    room_name = models.CharField(max_length=120, db_index=True, verbose_name="معرف الغرفة")
+    caller_phone = models.CharField(max_length=64, blank=True, default='', verbose_name="رقم المتصل")
+    tool_name = models.CharField(max_length=100, db_index=True, verbose_name="اسم الأداة")
+    tool_type = models.CharField(max_length=30, choices=TOOL_TYPE_CHOICES, default='mcp', verbose_name="نوع الأداة")
+    server_name = models.CharField(max_length=150, blank=True, default='', verbose_name="اسم السيرفر / النظام")
+    server_url = models.CharField(max_length=500, blank=True, default='', verbose_name="رابط الخادم")
+    arguments = models.JSONField(default=dict, blank=True, verbose_name="مدخلات الأداة (Arguments)")
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='success', db_index=True, verbose_name="حالة التنفيذ")
+    error_type = models.CharField(max_length=50, blank=True, default='none', verbose_name="نوع الخطأ")
+    error_message = models.TextField(blank=True, default='', verbose_name="سبب ورسالة الخطأ")
+    response_preview = models.TextField(blank=True, default='', verbose_name="معاينة الرد")
+    raw_response = models.JSONField(null=True, blank=True, default=dict, verbose_name="الرد الكامل (JSON)")
+    execution_time_ms = models.IntegerField(default=0, verbose_name="مدة التنفيذ (ms)")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="وقت الاستدعاء")
+
+    class Meta:
+        db_table = 'voice_assistant_agenttoolcalllog'
+        ordering = ['-created_at']
+        verbose_name = "سجل استدعاء الأداة"
+        verbose_name_plural = "مراقبة استدعاءات الأدوات (Tool Logs)"
+
+    def __str__(self):
+        status_label = self.get_status_display()
+        return f"{self.tool_name} [{status_label}] - {self.room_name} ({self.execution_time_ms}ms)"
+
+
