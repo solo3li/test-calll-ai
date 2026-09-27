@@ -544,15 +544,6 @@ def livekit_webhook(request):
                     logger.error(f"Error updating CallSession for room '{r_name}': {db_err}")
 
                 try:
-                    from call_center.models import EmployeeCallLog
-                    emp_updated = EmployeeCallLog.objects.filter(room_name=r_name).update(
-                        recording_url=rec_url
-                    )
-                    logger.info(f"Updated EmployeeCallLog recording_url for room '{r_name}' ({emp_updated} records updated): {rec_url}")
-                except Exception as emp_db_err:
-                    logger.error(f"Error updating EmployeeCallLog for room '{r_name}': {emp_db_err}")
-
-                try:
                     r = redis.Redis.from_url(settings.REDIS_URL)
                     r.set(f"recording_url:{r_name}", rec_url, ex=86400)
                 except Exception as red_err:
