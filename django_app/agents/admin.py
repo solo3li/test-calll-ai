@@ -26,12 +26,19 @@ class AgentProfileAdmin(admin.ModelAdmin):
     search_fields = ('name', 'custom_instructions', 'user__username')
     readonly_fields = ('created_at', 'updated_at')
 
+from django.urls import path, reverse
+from django.http import HttpResponseRedirect
+from django.contrib import messages
+from django.utils import timezone
+from .mcp_service import test_mcp_connection_sync
+
 @admin.register(UserMCPServer)
 class UserMCPServerAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'user', 'server_url', 'is_active', 'tools_count', 'last_synced_at')
+    list_display = ('id', 'name', 'user', 'server_url', 'is_active', 'tools_count', 'last_synced_at', 'connection_test_badge')
     list_filter = ('is_active', 'user')
     search_fields = ('name', 'server_url', 'user__username')
-    readonly_fields = ('created_at', 'updated_at', 'last_synced_at')
+    readonly_fields = ('created_at', 'updated_at', 'last_synced_at', 'test_connection_action', 'tools_preview')
+    actions = ['test_selected_servers', 'activate_selected_servers', 'deactivate_selected_servers']
 
     def tools_count(self, obj):
         tools = obj.cached_tools
@@ -39,6 +46,123 @@ class UserMCPServerAdmin(admin.ModelAdmin):
             return len(tools)
         return 0
     tools_count.short_description = "الأدوات المتوفرة"
+
+    def connection_test_badge(self, obj):
+        test_url = reverse('admin:agents_usermcpserver_test', args=[obj.id])
+        return format_html(
+            '<a class="button" style="padding:4px 10px; font-size:11px; font-weight:600; background:#FAF0F2; color:#680E23; border:1px solid #E8CCD2; border-radius:8px; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" href="{}" title="اختبار الاتصال بالخادم وتحديث أدواته فوراً">'
+            '<span>🔌</span> <span>فحص الآن</span>'
+            '</a>',
+            test_url
+        )
+    connection_test_badge.short_description = "فحص حي"
+
+    def test_connection_action(self, obj):
+        if not obj or not obj.id:
+            return "احفظ الخادم أولاً لإجراء الفحص من لوحة التحكم، أو استخدم الفحص المباشر في صفحة المتجر."
+        test_url = reverse('admin:agents_usermcpserver_test', args=[obj.id])
+        return format_html(
+            '<div style="margin: 6px 0;">'
+            '<a class="button" style="background:#680E23; color:#fff; font-weight:bold; padding:9px 18px; border-radius:10px; text-decoration:none; display:inline-flex; align-items:center; gap:8px; box-shadow: 0 2px 8px rgba(104,14,35,0.25);" href="{}">'
+            '<span>🔌</span> <span>فحص الاتصال وتحديث الأدوات الحية الآن (Live Test & Sync)</span>'
+            '</a>'
+            '<p style="margin: 6px 0 0 0; font-size:11px; color:#6E645D;">يقوم هذا الإجراء بالاتصال الفوري بنقطة نهاية SSE للخادم، وقياس سرعة الاستجابة، وتحديث قائمة الأدوات تلقائياً.</p>'
+            '</div>',
+            test_url
+        )
+    test_connection_action.short_description = "إجراء الفحص المباشر"
+
+    def tools_preview(self, obj):
+        tools = obj.cached_tools or []
+        if not tools:
+            return "لا توجد أدوات مكتشفة حتى الآن. اضغط على زر الفحص لتحديث الأدوات."
+        items = []
+        for t in tools:
+            name = t.get('name', 'بدون اسم')
+            desc = t.get('description', '') or 'بدون وصف'
+            params = []
+            if isinstance(t.get('parameters'), dict):
+                props = t.get('parameters', {}).get('properties', {})
+                if isinstance(props, dict):
+                    params = list(props.keys())
+            params_str = ", ".join(params) if params else "بدون معاملات"
+            items.append(
+                f"<li style='margin-bottom:6px;'>"
+                f"<strong style='color:#680E23; font-family:monospace;'>{name}</strong>: {desc} "
+                f"<span style='background:#FAF7F2; border:1px solid #DDD5C7; padding:1px 6px; border-radius:4px; font-size:10px; color:#443D39;'>({params_str})</span>"
+                f"</li>"
+            )
+        return mark_safe(f"<ul style='margin:0; padding-right:18px; line-height:1.6;'>{''.join(items)}</ul>")
+    tools_preview.short_description = "معاينة الأدوات المكتشفة"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('<int:object_id>/test/', self.admin_site.admin_view(self.test_single_server_view), name='agents_usermcpserver_test'),
+        ]
+        return custom_urls + urls
+
+    def test_single_server_view(self, request, object_id):
+        from django.shortcuts import get_object_or_404
+        obj = get_object_or_404(UserMCPServer, pk=object_id)
+        res = test_mcp_connection_sync(obj.server_url, obj.auth_token, timeout=6.0)
+        if res.get("ok"):
+            obj.cached_tools = res.get("tools", [])
+            obj.last_synced_at = timezone.now()
+            obj.save(update_fields=['cached_tools', 'last_synced_at'])
+            self.message_user(
+                request,
+                format_html(
+                    "✅ <strong>نجح الاتصال بخادم '{}':</strong> تم فحص البروتوكول في {}ms واكتشاف {} أداة متاحة.",
+                    obj.name, res.get('latency_ms'), res.get('tools_count')
+                ),
+                level=messages.SUCCESS
+            )
+        else:
+            self.message_user(
+                request,
+                format_html(
+                    "❌ <strong>فشل الاتصال بخادم '{}':</strong> {} (النوع: {})",
+                    obj.name, res.get('error_message'), res.get('error_type')
+                ),
+                level=messages.ERROR
+            )
+        return HttpResponseRedirect(reverse('admin:agents_usermcpserver_change', args=[object_id]))
+
+    def test_selected_servers(self, request, queryset):
+        success_count = 0
+        fail_count = 0
+        details = []
+
+        for server in queryset:
+            res = test_mcp_connection_sync(server.server_url, server.auth_token, timeout=6.0)
+            if res.get("ok"):
+                server.cached_tools = res.get("tools", [])
+                server.last_synced_at = timezone.now()
+                server.save(update_fields=['cached_tools', 'last_synced_at'])
+                success_count += 1
+                details.append(f"🟢 {server.name}: متصل ({res.get('latency_ms')}ms, {res.get('tools_count')} أداة)")
+            else:
+                fail_count += 1
+                details.append(f"🔴 {server.name}: تعذر الاتصال ({res.get('error_type')})")
+
+        msg = f"تم فحص {queryset.count()} خادم. الناجحة: {success_count}، الفاشلة: {fail_count}."
+        if details:
+            msg += "<br>" + "<br>".join(details)
+
+        level = messages.SUCCESS if fail_count == 0 else (messages.WARNING if success_count > 0 else messages.ERROR)
+        self.message_user(request, format_html(msg), level=level)
+    test_selected_servers.short_description = "🔌 فحص واختبار اتصال الخوادم المحددة (Test Connection & Tools)"
+
+    def activate_selected_servers(self, request, queryset):
+        cnt = queryset.update(is_active=True)
+        self.message_user(request, f"تم تفعيل {cnt} خادم MCP بنجاح للمكالمات الصوتية.", level=messages.SUCCESS)
+    activate_selected_servers.short_description = "تفعيل الخوادم المحددة للمكالمات"
+
+    def deactivate_selected_servers(self, request, queryset):
+        cnt = queryset.update(is_active=False)
+        self.message_user(request, f"تم تعطيل {cnt} خادم MCP.", level=messages.INFO)
+    deactivate_selected_servers.short_description = "تعطيل الخوادم المحددة"
 
 
 import json

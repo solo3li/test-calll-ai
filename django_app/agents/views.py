@@ -265,36 +265,19 @@ def delete_profile(request, profile_id):
 
 # ==================== User Custom Actions ====================
 
-# ==================== User External MCP Server ====================
-
-async def _fetch_mcp_tools_async(url: str, auth_token: str = ""):
-    """Connect to MCP SSE server, perform handshake, and list tools."""
-    from mcp import ClientSession
-    from mcp.client.sse import sse_client
-
-    headers = {}
-    if auth_token:
-        headers["Authorization"] = f"Bearer {auth_token}"
-
-    async with sse_client(url, headers=headers) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tool_list = await session.list_tools()
-            tools = []
-            for t in tool_list.tools:
-                schema = getattr(t, 'input_schema', None) or getattr(t, 'inputSchema', None) or {}
-                tools.append({
-                    "name": t.name,
-                    "description": t.description or "",
-                    "parameters": schema
-                })
-            return tools
+from .mcp_service import (
+    test_mcp_connection_sync,
+    test_mcp_tool_sync,
+    test_mcp_connection_async,
+    test_mcp_tool_async
+)
 
 def fetch_mcp_tools_sync(url: str, auth_token: str = "", timeout: float = 6.0):
     """Fetch tool list from an external MCP SSE server synchronously with timeout."""
-    async def _run():
-        return await asyncio.wait_for(_fetch_mcp_tools_async(url, auth_token), timeout=timeout)
-    return asyncio.run(_run())
+    res = test_mcp_connection_sync(url, auth_token, timeout=timeout)
+    if not res.get("ok"):
+        raise RuntimeError(res.get("error_message") or "Failed to connect to MCP server")
+    return res.get("tools", [])
 
 @login_required(login_url='/login/')
 def get_mcp_server(request):
@@ -490,6 +473,108 @@ def delete_mcp_server(request):
             server.delete()
             return JsonResponse({"status": "success", "message": f"تم حذف خادم '{server_name}' بنجاح."})
         return JsonResponse({"status": "error", "message": "لا يوجد خادم لحذفه."}, status=404)
+
+@login_required(login_url='/login/')
+def test_mcp_connection_view(request):
+    """
+    Test connection to an MCP SSE server.
+    Accepts:
+    1. { "server_url": "...", "auth_token": "..." } (for pre-flight test before save)
+    2. { "id": 123 } (for testing existing server)
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body) if (request.body and request.content_type == 'application/json') else request.POST
+    except Exception:
+        data = {}
+
+    server_id = data.get('id') or data.get('server_id')
+    server_url = (data.get('server_url') or '').strip()
+    auth_token = (data.get('auth_token') or '').strip()
+    try:
+        timeout = float(data.get('timeout', 6.0))
+    except (ValueError, TypeError):
+        timeout = 6.0
+
+    server_obj = None
+    if server_id:
+        server_obj = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+        server_url = server_url or server_obj.server_url
+        if 'auth_token' not in data:
+            auth_token = server_obj.auth_token
+
+    if not server_url:
+        return JsonResponse({"status": "error", "message": "رابط الخادم (server_url) مطلوب."}, status=400)
+
+    result = test_mcp_connection_sync(server_url, auth_token, timeout=timeout)
+
+    # If this was an existing saved server and connection succeeded, auto-sync cached_tools
+    if server_obj and result.get("ok"):
+        try:
+            server_obj.cached_tools = result.get("tools", [])
+            server_obj.last_synced_at = timezone.now()
+            server_obj.save(update_fields=['cached_tools', 'last_synced_at'])
+            result["server"] = server_obj.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to auto-update cached_tools on server {server_obj.id}: {e}")
+
+    http_status = 200 if result.get("ok") else 400
+    return JsonResponse(result, status=http_status)
+
+
+@login_required(login_url='/login/')
+def test_mcp_tool_view(request):
+    """
+    Execute a test call on a specific MCP tool with custom arguments.
+    Accepts:
+    - server_url & auth_token OR id
+    - tool_name: str
+    - arguments: dict or JSON string
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body) if (request.body and request.content_type == 'application/json') else request.POST
+    except Exception:
+        data = {}
+
+    server_id = data.get('id') or data.get('server_id')
+    server_url = (data.get('server_url') or '').strip()
+    auth_token = (data.get('auth_token') or '').strip()
+    tool_name = (data.get('tool_name') or '').strip()
+    arguments = data.get('arguments', {})
+    try:
+        timeout = float(data.get('timeout', 8.0))
+    except (ValueError, TypeError):
+        timeout = 8.0
+
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except Exception:
+            return JsonResponse({"status": "error", "message": "صيغة المعاملات (arguments) غير صحيحة، يجب أن تكون JSON صالح."}, status=400)
+
+    if not isinstance(arguments, dict):
+        arguments = {}
+
+    if server_id:
+        server_obj = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+        server_url = server_url or server_obj.server_url
+        if 'auth_token' not in data:
+            auth_token = server_obj.auth_token
+
+    if not server_url:
+        return JsonResponse({"status": "error", "message": "رابط الخادم (server_url) مطلوب."}, status=400)
+
+    if not tool_name:
+        return JsonResponse({"status": "error", "message": "اسم الأداة (tool_name) مطلوب لتنفيذ الاختبار."}, status=400)
+
+    result = test_mcp_tool_sync(server_url, auth_token, tool_name, arguments, timeout=timeout)
+    http_status = 200 if result.get("ok") else 400
+    return JsonResponse(result, status=http_status)
 
 # ==================== Internal AI Agent Bootstrap API ====================
 

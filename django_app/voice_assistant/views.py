@@ -39,6 +39,8 @@ from agents.views import (
     sync_mcp_server,
     toggle_mcp_server,
     delete_mcp_server,
+    test_mcp_connection_view,
+    test_mcp_tool_view,
 )
 from crm.views import (
     list_customers_memory,

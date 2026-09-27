@@ -76,6 +76,7 @@ from asgiref.sync import async_to_sync
 
 from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
+from agents.mcp_service import test_mcp_connection_sync, test_mcp_tool_sync
 from billing.models import UserWallet, BillingConfig, BillingTransaction
 from crm.models import CallSession, CustomerMemory, OutboundCampaign, CampaignContact, UserCampaignLimit
 from crm.inngest_jobs import inngest_client, broadcast_campaign_update
@@ -2025,6 +2026,115 @@ def api_partner_client_mcp_sync(request, client_id, mcp_id):
             "client_id": client_id,
             "mcp_id": server.id
         }, status=502)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_mcp_test(request, client_id):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/mcp/test/
+    Pre-flight or on-demand test of a FastMCP server connection for the client.
+    Accepts:
+    - { "server_url": "...", "auth_token": "...", "timeout": 6.0 }
+    - OR { "mcp_id": 123 }
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+    mcp_id = data.get('mcp_id') or data.get('id')
+    server_url = (data.get('server_url') or '').strip()
+    auth_token = (data.get('auth_token') or '').strip()
+    try:
+        timeout = float(data.get('timeout', 6.0))
+    except (ValueError, TypeError):
+        timeout = 6.0
+
+    server = None
+    if mcp_id:
+        server = UserMCPServer.objects.filter(user=request.client_user, id=mcp_id).first()
+        if not server:
+            return JsonResponse({"status": "error", "message": "Client FastMCP server not found"}, status=404)
+        server_url = server_url or server.server_url
+        if 'auth_token' not in data:
+            auth_token = server.auth_token
+
+    if not server_url:
+        return JsonResponse({"status": "error", "message": "server_url is required"}, status=400)
+
+    result = test_mcp_connection_sync(server_url, auth_token, timeout=timeout)
+    if server and result.get("ok"):
+        try:
+            from django.utils import timezone
+            server.cached_tools = result.get("tools", [])
+            server.last_synced_at = timezone.now()
+            server.save(update_fields=['cached_tools', 'last_synced_at'])
+            result["server"] = server.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to auto-update tools for client {client_id} MCP {server.id}: {e}")
+
+    result["client_id"] = client_id
+    http_status = 200 if result.get("ok") else 400
+    return JsonResponse(result, status=http_status)
+
+
+@csrf_exempt
+@partner_client_access_required
+def api_partner_client_mcp_test_tool(request, client_id, mcp_id=None):
+    """
+    POST /api/partner/v1/clients/<int:client_id>/mcp/<int:mcp_id>/test-tool/
+    POST /api/partner/v1/clients/<int:client_id>/mcp/test-tool/
+    Executes a test tool call on the client's FastMCP server.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+    target_id = mcp_id or data.get('mcp_id') or data.get('id')
+    server_url = (data.get('server_url') or '').strip()
+    auth_token = (data.get('auth_token') or '').strip()
+    tool_name = (data.get('tool_name') or '').strip()
+    arguments = data.get('arguments', {})
+    try:
+        timeout = float(data.get('timeout', 8.0))
+    except (ValueError, TypeError):
+        timeout = 8.0
+
+    if target_id:
+        server = UserMCPServer.objects.filter(user=request.client_user, id=target_id).first()
+        if not server:
+            return JsonResponse({"status": "error", "message": "Client FastMCP server not found"}, status=404)
+        server_url = server_url or server.server_url
+        if 'auth_token' not in data:
+            auth_token = server.auth_token
+
+    if not server_url:
+        return JsonResponse({"status": "error", "message": "server_url is required"}, status=400)
+
+    if not tool_name:
+        return JsonResponse({"status": "error", "message": "tool_name is required"}, status=400)
+
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except Exception:
+            return JsonResponse({"status": "error", "message": "arguments must be valid JSON"}, status=400)
+
+    if not isinstance(arguments, dict):
+        arguments = {}
+
+    result = test_mcp_tool_sync(server_url, auth_token, tool_name, arguments, timeout=timeout)
+    result["client_id"] = client_id
+    http_status = 200 if result.get("ok") else 400
+    return JsonResponse(result, status=http_status)
 
 
 # =========================================================================

@@ -136,6 +136,259 @@ function renderMcpServersGrid(servers) {
   }
 }
 
+let currentModalDiscoveredTools = [];
+
+function populatePlaygroundTools(tools) {
+  const playground = document.getElementById('modal-tool-playground');
+  const toolSelect = document.getElementById('playground-tool-select');
+  const countBadge = document.getElementById('playground-tools-count-badge');
+  if (!playground || !toolSelect) return;
+
+  if (!tools || tools.length === 0) {
+    playground.classList.add('hidden');
+    return;
+  }
+
+  playground.classList.remove('hidden');
+  if (countBadge) countBadge.innerText = `${tools.length} أداة`;
+
+  toolSelect.innerHTML = tools.map((t, idx) => {
+    return `<option value="${idx}">${escapeHtml(t.name)}</option>`;
+  }).join('');
+
+  onPlaygroundToolChange();
+}
+
+function onPlaygroundToolChange() {
+  const toolSelect = document.getElementById('playground-tool-select');
+  const descEl = document.getElementById('playground-tool-desc');
+  const resContainer = document.getElementById('playground-result-container');
+  if (resContainer) resContainer.classList.add('hidden');
+
+  if (!toolSelect || !currentModalDiscoveredTools.length) return;
+  const idx = parseInt(toolSelect.value) || 0;
+  const tool = currentModalDiscoveredTools[idx];
+  if (!tool) return;
+
+  if (descEl) {
+    descEl.innerText = tool.description || 'لا يوجد وصف توضيحي لهذه الأداة.';
+  }
+
+  fillPlaygroundSampleArgs();
+}
+
+function fillPlaygroundSampleArgs() {
+  const toolSelect = document.getElementById('playground-tool-select');
+  const argsEl = document.getElementById('playground-tool-args');
+  if (!toolSelect || !argsEl || !currentModalDiscoveredTools.length) return;
+
+  const idx = parseInt(toolSelect.value) || 0;
+  const tool = currentModalDiscoveredTools[idx];
+  if (!tool) return;
+
+  const schema = tool.parameters || {};
+  const props = schema.properties || {};
+  const required = schema.required || [];
+
+  const sample = {};
+  for (const [key, prop] of Object.entries(props)) {
+    const pType = (prop.type || 'string').toLowerCase();
+    if (pType === 'string') {
+      sample[key] = prop.default || (required.includes(key) ? "قيمة تجريبية" : "");
+    } else if (pType === 'integer' || pType === 'number') {
+      sample[key] = prop.default !== undefined ? prop.default : 1;
+    } else if (pType === 'boolean') {
+      sample[key] = prop.default !== undefined ? prop.default : true;
+    } else if (pType === 'array') {
+      sample[key] = [];
+    } else if (pType === 'object') {
+      sample[key] = {};
+    } else {
+      sample[key] = "";
+    }
+  }
+
+  argsEl.value = JSON.stringify(sample, null, 2);
+}
+
+async function testMcpConnectionFromModal() {
+  const idVal = document.getElementById('modal-mcp-id').value;
+  const server_url = document.getElementById('modal-mcp-url').value.trim();
+  const auth_token = document.getElementById('modal-mcp-token').value.trim();
+  const btn = document.getElementById('btn-test-mcp-conn');
+  const btnText = document.getElementById('btn-test-mcp-conn-text');
+  const connAlert = document.getElementById('modal-test-conn-alert');
+  const latencyBadge = document.getElementById('test-conn-latency-badge');
+
+  if (!server_url) {
+    if (connAlert) {
+      connAlert.className = 'mt-2.5 p-3 rounded-2xl text-xs bg-rose-50 border border-rose-200 text-rose-800 flex items-center gap-2';
+      connAlert.innerHTML = '<span>❌ يرجى إدخال رابط الخادم (Server URL) أولاً.</span>';
+      connAlert.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.innerText = 'جاري الفحص واكتشاف الأدوات...';
+  if (connAlert) {
+    connAlert.className = 'mt-2.5 p-3 rounded-2xl text-xs bg-[#FAF7F2] border border-[#DDD5C7] text-[#443D39] flex items-center gap-2';
+    connAlert.innerHTML = '<span>🔄 جاري محاولة الاتصال بنقطة نهاية SSE ومصافحة بروتوكول MCP...</span>';
+    connAlert.classList.remove('hidden');
+  }
+  if (latencyBadge) latencyBadge.classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/agents/mcp/test-connection/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({
+        id: idVal ? parseInt(idVal) : null,
+        server_url,
+        auth_token
+      })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      if (connAlert) {
+        connAlert.className = 'mt-2.5 p-3 rounded-2xl text-xs bg-emerald-50 border border-emerald-300 text-emerald-800 space-y-1';
+        connAlert.innerHTML = `
+          <div class="font-bold flex items-center gap-1.5">
+            <span>✅</span> <span>تم الاتصال بالخادم بنجاح!</span>
+          </div>
+          <div class="text-[11px] text-emerald-700">
+            تم فحص البروتوكول واكتشاف <strong>${data.tools_count}</strong> أداة جاهزة للاستخدام الصوتي.
+          </div>
+        `;
+      }
+      if (latencyBadge) {
+        latencyBadge.innerText = `${data.latency_ms} ms`;
+        latencyBadge.className = 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-300';
+        latencyBadge.classList.remove('hidden');
+      }
+
+      currentModalDiscoveredTools = data.tools || [];
+      populatePlaygroundTools(currentModalDiscoveredTools);
+    } else {
+      if (connAlert) {
+        connAlert.className = 'mt-2.5 p-3 rounded-2xl text-xs bg-rose-50 border border-rose-200 text-rose-800 space-y-1';
+        connAlert.innerHTML = `
+          <div class="font-bold flex items-center gap-1.5">
+            <span>❌</span> <span>تعذر الاتصال بخادم MCP:</span>
+          </div>
+          <div class="text-[11px] text-rose-700">
+            ${escapeHtml(data.error_message || 'فشل الاتصال بالخادم.')}
+          </div>
+          <div class="text-[10px] text-[#6E645D] pt-0.5">
+            ملاحظة: يمكنك حفظ الخادم رغم ذلك كـ (معطل) إذا كان قيد الإعداد.
+          </div>
+        `;
+      }
+      if (latencyBadge && data.latency_ms) {
+        latencyBadge.innerText = `${data.latency_ms} ms`;
+        latencyBadge.className = 'px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-rose-50 text-rose-800 border border-rose-200';
+        latencyBadge.classList.remove('hidden');
+      }
+    }
+  } catch (err) {
+    if (connAlert) {
+      connAlert.className = 'mt-2.5 p-3 rounded-2xl text-xs bg-rose-50 border border-rose-200 text-rose-800 flex items-center gap-2';
+      connAlert.innerHTML = `<span>❌ حدث خطأ في الشبكة أثناء طلب الفحص: ${escapeHtml(err.message || '')}</span>`;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.innerText = 'فحص الاتصال واكتشاف الأدوات';
+  }
+}
+
+async function testMcpToolFromModal() {
+  const idVal = document.getElementById('modal-mcp-id').value;
+  const server_url = document.getElementById('modal-mcp-url').value.trim();
+  const auth_token = document.getElementById('modal-mcp-token').value.trim();
+  const toolSelect = document.getElementById('playground-tool-select');
+  const argsText = document.getElementById('playground-tool-args').value.trim();
+  const btn = document.getElementById('btn-execute-test-tool');
+  const btnText = document.getElementById('btn-execute-test-tool-text');
+  const resContainer = document.getElementById('playground-result-container');
+  const execBadge = document.getElementById('playground-exec-badge');
+  const resultOutput = document.getElementById('playground-result-output');
+
+  if (!toolSelect || !currentModalDiscoveredTools.length) return;
+  const idx = parseInt(toolSelect.value) || 0;
+  const tool = currentModalDiscoveredTools[idx];
+  if (!tool) return;
+
+  let parsedArgs = {};
+  if (argsText) {
+    try {
+      parsedArgs = JSON.parse(argsText);
+    } catch (e) {
+      alert('صيغة المُدخلات غير صالحة. يجب أن تكون بتنسيق JSON صحيح (مثل: {"key": "value"}).');
+      return;
+    }
+  }
+
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.innerText = 'جاري التنفيذ...';
+  if (resContainer) resContainer.classList.remove('hidden');
+  if (execBadge) {
+    execBadge.innerText = '⏳ جاري الاستدعاء...';
+    execBadge.className = 'font-mono text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-[#FAF7F2] text-[#443D39] border border-[#DDD5C7]';
+  }
+  if (resultOutput) resultOutput.innerText = 'جاري انتظار استجابة الخادم...';
+
+  try {
+    const res = await fetch('/api/agents/mcp/test-tool/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({
+        id: idVal ? parseInt(idVal) : null,
+        server_url,
+        auth_token,
+        tool_name: tool.name,
+        arguments: parsedArgs
+      })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      if (execBadge) {
+        execBadge.innerText = `✅ ناجح (${data.execution_time_ms} ms)`;
+        execBadge.className = 'font-mono text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-300';
+      }
+      if (resultOutput) {
+        resultOutput.innerText = data.result || 'تم التنفيذ بنجاح بدون نص مخرجات.';
+      }
+    } else {
+      if (execBadge) {
+        execBadge.innerText = `❌ فشل (${data.error_type || 'error'}) - ${data.execution_time_ms || 0} ms`;
+        execBadge.className = 'font-mono text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-rose-50 text-rose-800 border border-rose-200';
+      }
+      if (resultOutput) {
+        resultOutput.innerText = data.error_message || data.result || 'فشل تنفيذ الأداة.';
+      }
+    }
+  } catch (err) {
+    if (execBadge) {
+      execBadge.innerText = '❌ خطأ شبكة';
+      execBadge.className = 'font-mono text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-rose-50 text-rose-800 border border-rose-200';
+    }
+    if (resultOutput) {
+      resultOutput.innerText = 'حدث خطأ في الاتصال أثناء تنفيذ الأداة: ' + (err.message || '');
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.innerText = 'تجربة الاستدعاء الآن';
+  }
+}
+
 function openMcpModal(serverId = null) {
   const modalTitle = document.getElementById('modal-mcp-title');
   const modalBtnDelete = document.getElementById('modal-btn-delete-mcp');
@@ -144,6 +397,16 @@ function openMcpModal(serverId = null) {
   const urlInput = document.getElementById('modal-mcp-url');
   const tokenInput = document.getElementById('modal-mcp-token');
   const activeInput = document.getElementById('modal-mcp-active');
+
+  const connAlert = document.getElementById('modal-test-conn-alert');
+  const latencyBadge = document.getElementById('test-conn-latency-badge');
+  const playground = document.getElementById('modal-tool-playground');
+  const playgroundRes = document.getElementById('playground-result-container');
+  if (connAlert) { connAlert.className = 'hidden'; connAlert.innerHTML = ''; }
+  if (latencyBadge) { latencyBadge.className = 'hidden'; latencyBadge.innerText = ''; }
+  if (playgroundRes) { playgroundRes.classList.add('hidden'); }
+
+  currentModalDiscoveredTools = [];
 
   if (serverId) {
     const s = userMcpServers.find(x => x.id === serverId);
@@ -155,6 +418,13 @@ function openMcpModal(serverId = null) {
       if (tokenInput) tokenInput.value = s.auth_token || '';
       if (activeInput) activeInput.checked = s.is_active;
       if (modalBtnDelete) modalBtnDelete.classList.remove('hidden');
+
+      if (Array.isArray(s.cached_tools) && s.cached_tools.length > 0) {
+        currentModalDiscoveredTools = s.cached_tools;
+        populatePlaygroundTools(s.cached_tools);
+      } else if (playground) {
+        playground.classList.add('hidden');
+      }
     }
   } else {
     if (modalTitle) modalTitle.innerHTML = '<span>⚡</span> ربط خادم FastMCP خارجي جديد';
@@ -164,6 +434,7 @@ function openMcpModal(serverId = null) {
     if (tokenInput) tokenInput.value = '';
     if (activeInput) activeInput.checked = true;
     if (modalBtnDelete) modalBtnDelete.classList.add('hidden');
+    if (playground) playground.classList.add('hidden');
   }
   if (mcpModal) mcpModal.classList.remove('hidden');
 }

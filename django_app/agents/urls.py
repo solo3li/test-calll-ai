@@ -18,6 +18,8 @@ urlpatterns = [
     path('mcp/sync/', views.sync_mcp_server, name='sync_mcp_server'),
     path('mcp/toggle/', views.toggle_mcp_server, name='toggle_mcp_server'),
     path('mcp/delete/', views.delete_mcp_server, name='delete_mcp_server'),
+    path('mcp/test-connection/', views.test_mcp_connection_view, name='test_mcp_connection'),
+    path('mcp/test-tool/', views.test_mcp_tool_view, name='test_mcp_tool'),
 
     # Internal AI Agent Session Bootstrap API
     path('internal/bootstrap/', views.api_internal_agent_bootstrap, name='api_internal_agent_bootstrap'),

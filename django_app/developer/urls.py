@@ -33,8 +33,11 @@ urlpatterns = [
     path('rag/query/', views.api_user_rag_query, name='developer_rag_query'),
 
     path('mcp/', views.api_user_mcp, name='developer_mcp'),
+    path('mcp/test/', views.api_user_mcp_test, name='developer_mcp_test'),
+    path('mcp/test-tool/', views.api_user_mcp_test_tool, name='developer_mcp_test_tool_generic'),
     path('mcp/<int:mcp_id>/', views.api_user_mcp_detail, name='developer_mcp_detail'),
     path('mcp/<int:mcp_id>/sync/', views.api_user_mcp_sync, name='developer_mcp_sync'),
+    path('mcp/<int:mcp_id>/test-tool/', views.api_user_mcp_test_tool, name='developer_mcp_test_tool'),
 
     # Telephony & SIP Trunks
     path('telephony/', views.api_user_telephony, name='developer_telephony'),

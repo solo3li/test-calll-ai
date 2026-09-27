@@ -35,6 +35,8 @@ urlpatterns = [
     path('api/mcp/sync/', views.sync_mcp_server, name='sync_mcp_server'),
     path('api/mcp/toggle/', views.toggle_mcp_server, name='toggle_mcp_server'),
     path('api/mcp/delete/', views.delete_mcp_server, name='delete_mcp_server'),
+    path('api/mcp/test-connection/', views.test_mcp_connection_view, name='test_mcp_connection'),
+    path('api/mcp/test-tool/', views.test_mcp_tool_view, name='test_mcp_tool'),
 
     # Customer Memory & Call History APIs
     path('api/customers/', views.list_customers_memory, name='list_customers_memory'),
