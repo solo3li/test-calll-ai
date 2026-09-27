@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, ActivityIndicator, RefreshControl, Platform, Linking
+  TextInput, ActivityIndicator, RefreshControl
 } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { Colors } from "../constants/theme";
-import { apiRequest, API_BASE_URL } from "../constants/api";
+import { apiRequest } from "../constants/api";
 import { useAuthStore } from "../stores/useAuthStore";
 import { useCallStore } from "../stores/useCallStore";
 
@@ -19,7 +19,6 @@ interface CallLogEntry {
   started_at: string;
   ended_at: string | null;
   duration_secs: number;
-  recording_url?: string;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,9 +67,6 @@ export const HistoryView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "missed" | "inbound" | "outbound">("all");
 
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const audioRef = useRef<any>(null);
-
   const fetchLogs = useCallback(async (silent = false) => {
     if (!token) return;
     if (!silent) setIsLoading(true);
@@ -82,10 +78,7 @@ export const HistoryView: React.FC = () => {
         token
       );
       if (data.status === "success") {
-        const fetched = data.logs || [];
-        setLogs(fetched);
-        const missed = fetched.filter((l) => l.call_type === "missed").length;
-        useCallStore.getState().setMissedCallsCount(missed);
+        setLogs(data.logs || []);
       }
     } catch (err: any) {
       setError("فشل تحميل سجل المكالمات");
@@ -94,63 +87,6 @@ export const HistoryView: React.FC = () => {
       setIsRefreshing(false);
     }
   }, [token]);
-
-  const handleTogglePlayback = (item: CallLogEntry) => {
-    if (!item.recording_url) return;
-
-    if (playingId === item.id) {
-      if (audioRef.current) {
-        try {
-          audioRef.current.pause();
-        } catch (e) {}
-        audioRef.current = null;
-      }
-      setPlayingId(null);
-      return;
-    }
-
-    if (audioRef.current) {
-      try {
-        audioRef.current.pause();
-      } catch (e) {}
-      audioRef.current = null;
-    }
-
-    const rawUrl = item.recording_url;
-    const fullUrl = rawUrl.startsWith("http") ? rawUrl : `${API_BASE_URL}${rawUrl}`;
-
-    if (Platform.OS === "web") {
-      try {
-        const audio = new Audio(fullUrl);
-        audio.onended = () => {
-          setPlayingId(null);
-          audioRef.current = null;
-        };
-        audio.onerror = () => {
-          setPlayingId(null);
-          audioRef.current = null;
-        };
-        audioRef.current = audio;
-        setPlayingId(item.id);
-        audio.play().catch(() => setPlayingId(null));
-      } catch (err) {
-        console.warn("Audio playback error:", err);
-        setPlayingId(null);
-      }
-    } else {
-      Linking.openURL(fullUrl).catch(() => {});
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        try {
-          audioRef.current.pause();
-        } catch (e) {}
-      }
-    };
-  }, []);
 
   // Fetch on mount
   useEffect(() => {
@@ -202,43 +138,16 @@ export const HistoryView: React.FC = () => {
           </View>
         </View>
 
-        {/* Right: Actions */}
-        <View style={styles.actionsCol}>
-          {item.recording_url ? (
-            <TouchableOpacity
-              style={[
-                styles.recordingBtn,
-                playingId === item.id && styles.recordingBtnActive,
-              ]}
-              onPress={() => handleTogglePlayback(item)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={playingId === item.id ? "pause" : "play"}
-                size={13}
-                color={playingId === item.id ? "#fff" : "#10b981"}
-              />
-              <Text
-                style={[
-                  styles.recordingBtnText,
-                  playingId === item.id && styles.recordingBtnTextActive,
-                ]}
-              >
-                {playingId === item.id ? "إيقاف" : "تسجيل"}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {item.extension ? (
-            <TouchableOpacity
-              style={styles.callbackBtn}
-              onPress={() => startCall(item.extension, item.other_party)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="call" size={14} color="#fff" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
+        {/* Right: callback button */}
+        {item.extension ? (
+          <TouchableOpacity
+            style={styles.callbackBtn}
+            onPress={() => startCall(item.extension, item.other_party)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="call" size={14} color="#fff" />
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   };
@@ -426,34 +335,6 @@ const styles = StyleSheet.create({
   durationText: {
     color: Colors.textSubtle,
     fontSize: 10,
-  },
-  actionsCol: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  recordingBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  recordingBtnActive: {
-    backgroundColor: "#10b981",
-    borderColor: "#10b981",
-  },
-  recordingBtnText: {
-    color: "#10b981",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  recordingBtnTextActive: {
-    color: "#fff",
   },
   callbackBtn: {
     width: 32,
