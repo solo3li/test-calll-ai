@@ -195,11 +195,15 @@ def get_tokens(request):
             is_active=True
         )
 
-    metadata = json.dumps({
+    custom_phone = str(request.GET.get('caller_phone') or request.GET.get('phone') or request.GET.get('customer_phone') or '').strip()
+    meta_dict = {
         "user_id": request.user.id,
         "username": request.user.username,
         "profile": active_profile.to_dict()
-    })
+    }
+    if custom_phone:
+        meta_dict["caller_phone"] = custom_phone
+    metadata = json.dumps(meta_dict)
 
     token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
         .with_identity(user_identity) \
@@ -304,11 +308,13 @@ def livekit_webhook(request):
         else:
             user_id = None
             profile = None
+            meta_caller_phone = None
             if event.participant.metadata:
                 try:
                     meta = json.loads(event.participant.metadata)
                     user_id = meta.get("user_id")
                     profile = meta.get("profile")
+                    meta_caller_phone = meta.get("caller_phone")
                 except Exception:
                     pass
 
@@ -412,7 +418,7 @@ def livekit_webhook(request):
                 logger.info(f"Participant joined outbound room {room_name}. Already dispatched.")
                 return HttpResponse("ok")
 
-            caller_phone = 'web_dashboard'
+            caller_phone = meta_caller_phone or 'web_dashboard'
             if participant_identity.startswith("sip_"):
                 raw_sip = participant_identity.replace("sip_sip_", "").replace("sip_", "")
                 raw_sip = raw_sip.split("@")[0].replace("sip:", "")

@@ -1,6 +1,7 @@
 import json
 import logging
 import datetime
+import re
 from decimal import Decimal
 from django.conf import settings
 from django.http import JsonResponse
@@ -8,6 +9,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
+from django.db.models import Q
 
 from .models import CustomerMemory, CallSession
 from common.auth import verify_internal_api_key
@@ -93,7 +95,7 @@ def reset_customer_memory(request):
 
 @csrf_exempt
 def api_internal_get_customer_memory(request):
-    """Internal API to get customer memory by user_id and caller_phone (supports GET and POST)."""
+    """Internal API to get or search customer memory by user_id, caller_phone, or query identifier."""
     if request.method not in ['GET', 'POST']:
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
@@ -103,13 +105,16 @@ def api_internal_get_customer_memory(request):
     try:
         user_id = None
         caller_phone = 'web_dashboard'
+        query = ''
         if request.method == 'POST':
             data = json.loads(request.body.decode('utf-8')) if request.body else {}
             user_id = data.get('user_id') or request.POST.get('user_id')
             raw_phone = str(data.get('caller_phone') or request.POST.get('caller_phone') or 'web_dashboard')
+            query = str(data.get('query') or data.get('identifier') or request.POST.get('query') or '').strip()
         else:
             user_id = request.GET.get('user_id')
             raw_phone = str(request.GET.get('caller_phone') or 'web_dashboard')
+            query = str(request.GET.get('query') or request.GET.get('identifier') or '').strip()
 
         caller_phone = raw_phone.strip()
         if raw_phone.startswith(' ') and not caller_phone.startswith('+'):
@@ -118,11 +123,32 @@ def api_internal_get_customer_memory(request):
         if not user_id:
             return JsonResponse({"status": "error", "message": "user_id is required"}, status=400)
 
-        memory = CustomerMemory.objects.filter(user_id=user_id, phone_number=caller_phone).first()
-        if not memory and caller_phone != 'web_dashboard' and len(caller_phone) >= 7:
-            suffix = caller_phone[-8:]
-            memory = CustomerMemory.objects.filter(user_id=user_id, phone_number__endswith=suffix).first()
+        memory = None
+        # 1. Search by query/identifier if provided
+        if query:
+            # A. Exact phone match
+            memory = CustomerMemory.objects.filter(user_id=user_id, phone_number=query).first()
+            # B. Suffix phone match (last 8 digits)
+            if not memory:
+                clean_digits = re.sub(r'\D', '', query)
+                if len(clean_digits) >= 7:
+                    memory = CustomerMemory.objects.filter(user_id=user_id, phone_number__endswith=clean_digits[-8:]).first()
+            # C. Name match
+            if not memory:
+                memory = CustomerMemory.objects.filter(user_id=user_id, customer_name__icontains=query).first()
+            # D. Profile text match
+            if not memory:
+                memory = CustomerMemory.objects.filter(user_id=user_id, permanent_profile__icontains=query).first()
 
+        # 2. Fallback to caller_phone lookup only if query was not provided
+        if not memory and not query and caller_phone:
+            memory = CustomerMemory.objects.filter(user_id=user_id, phone_number=caller_phone).first()
+            if not memory and caller_phone != 'web_dashboard' and len(caller_phone) >= 7:
+                clean_digits = re.sub(r'\D', '', caller_phone)
+                suffix = clean_digits[-8:] if len(clean_digits) >= 8 else caller_phone[-8:]
+                memory = CustomerMemory.objects.filter(user_id=user_id, phone_number__endswith=suffix).first()
+
+        found = bool(memory)
         card_text = memory.format_for_system_instruction() if memory else ""
         mem_dict = memory.to_dict() if memory else {
             "phone_number": caller_phone,
@@ -134,6 +160,7 @@ def api_internal_get_customer_memory(request):
 
         return JsonResponse({
             "status": "success",
+            "found": found,
             "phone_number": memory.phone_number if memory else caller_phone,
             "card_text": card_text,
             "memory": mem_dict

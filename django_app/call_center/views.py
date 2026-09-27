@@ -678,7 +678,25 @@ def api_dial_call(request):
             return JsonResponse({"status": "error", "message": "يرجى تحديد رقم التحويلة أو كود الطابور للاتصال"}, status=400)
 
         # 0. Check if target is AI Assistant (Linked 1:1 to Employer Voice Room)
-        if target.lower() in ['000', 'ai', 'assistant', 'bot', 'test_ai']:
+        # Supports plain '000', 'ai', or with simulated phone e.g. '000*01108124794', '000#01108124794', '000:01108124794'
+        target_clean = target.strip()
+        simulated_phone = str(data.get('customer_phone') or data.get('simulate_phone') or '').strip()
+        is_ai_target = False
+        target_lower = target_clean.lower()
+
+        if target_lower in ['000', 'ai', 'assistant', 'bot', 'test_ai']:
+            is_ai_target = True
+        else:
+            for sep in ['*', '#', ':', '/']:
+                if sep in target_clean:
+                    prefix, _, suffix = target_clean.partition(sep)
+                    if prefix.strip().lower() in ['000', 'ai', 'assistant', 'bot', 'test_ai']:
+                        is_ai_target = True
+                        if not simulated_phone:
+                            simulated_phone = suffix.strip()
+                        break
+
+        if is_ai_target:
             if not caller.is_owner:
                 return JsonResponse({
                     "status": "error",
@@ -687,6 +705,7 @@ def api_dial_call(request):
 
             from agents.models import AgentProfile
             from telephony.models import BusinessHoursSchedule
+            from crm.models import CustomerMemory
 
             # 1. Resolve Employer / Owner
             owner_user = caller.employer or caller.user
@@ -706,6 +725,18 @@ def api_dial_call(request):
 
             profile_dict = active_profile.to_dict() if active_profile else None
             ai_name = active_profile.name if active_profile else "المساعد الصوتي الذكي"
+
+            # 2.1 Resolve caller_phone & CustomerMemory
+            caller_phone = 'web_dashboard'
+            matched_memory = None
+            if simulated_phone:
+                matched_memory = CustomerMemory.objects.filter(user=owner_user, phone_number=simulated_phone).first()
+                if not matched_memory and len(simulated_phone) >= 7:
+                    matched_memory = CustomerMemory.objects.filter(user=owner_user, phone_number__endswith=simulated_phone[-8:]).first()
+                if matched_memory:
+                    caller_phone = matched_memory.phone_number
+                else:
+                    caller_phone = simulated_phone
 
             # 3. Check Business Hours Schedule of the employer
             is_off_hours = False
@@ -731,7 +762,12 @@ def api_dial_call(request):
             token = api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET) \
                 .with_identity(f"employee_{caller.id}_{caller.extension}") \
                 .with_name(caller.display_name) \
-                .with_metadata(json.dumps({"role": "caller", "employee_id": caller.id, "owner_user_id": owner_user.id})) \
+                .with_metadata(json.dumps({
+                    "role": "caller",
+                    "employee_id": caller.id,
+                    "owner_user_id": owner_user.id,
+                    "caller_phone": caller_phone
+                })) \
                 .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=True, can_subscribe=True))
             caller_jwt = token.to_jwt()
 
@@ -741,7 +777,7 @@ def api_dial_call(request):
                 job_payload = json.dumps({
                     "room_name": room_name,
                     "user_id": owner_user.id,
-                    "caller_phone": "web_dashboard",
+                    "caller_phone": caller_phone,
                     "profile": profile_dict,
                     "is_queue": False,
                     "participant_identity": f"employee_{caller.id}_{caller.extension}",
@@ -749,7 +785,7 @@ def api_dial_call(request):
                     "off_hours_data": off_hours_data
                 })
                 r.rpush("agent_jobs", job_payload)
-                logger.info(f"Dispatched AI room '{room_name}' to Redis for employee {caller.display_name} mirrored to owner {owner_user.username} (off_hours={is_off_hours})")
+                logger.info(f"Dispatched AI room '{room_name}' to Redis for employee {caller.display_name} mirrored to owner {owner_user.username} [caller_phone={caller_phone}, off_hours={is_off_hours}]")
             except Exception as ex:
                 logger.error(f"Failed to dispatch AI test call room '{room_name}' to Redis: {ex}")
 
@@ -768,9 +804,10 @@ def api_dial_call(request):
                 })
 
             # Log outbound call for employee
+            sim_label = f" (محاكاة العميل: {caller_phone})" if caller_phone != 'web_dashboard' else ""
             EmployeeCallLog.objects.create(
                 employee=caller,
-                other_party=f"تجربة المساعد الذكي ({ai_name})",
+                other_party=f"تجربة المساعد الذكي ({ai_name}){sim_label}",
                 extension="000",
                 room_name=room_name,
                 call_type='outbound',
@@ -791,6 +828,8 @@ def api_dial_call(request):
                 "room_name": room_name,
                 "target_name": f"🤖 {ai_name}",
                 "target_number": "000",
+                "caller_phone": caller_phone,
+                "simulated_customer": matched_memory.to_dict() if matched_memory else None,
                 "livekit_url": settings.LIVEKIT_URL,
                 "livekit_token": caller_jwt,
                 "is_off_hours": is_off_hours

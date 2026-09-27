@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from google.genai import types
 from agent.config import logger
 from agent.clients.centrifugo_client import notify_centrifugo_async
-from agent.clients.django_client import query_knowledge_base_async
+from agent.clients.django_client import query_knowledge_base_async, lookup_customer_memory_async
 from agent.clients.mcp_client import execute_mcp_tool_call
 
 
@@ -26,7 +26,24 @@ def build_gemini_tools(mcp_tools: Dict[str, Any], call_queues: List[Dict[str, An
         }
     }
 
-    func_decls = [rag_decl]
+    memory_decl = {
+        "name": "lookup_customer_memory",
+        "description": (
+            "البحث في سجل وذاكرة العملاء بالاسم أو برقم الهاتف لاسترجاع بيانات العميل وتفضيلاته وعنوانه وسجل تواصله السابق مع المؤسسة لمساعدته بشكل مخصص."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "identifier": {
+                    "type": "STRING",
+                    "description": "رقم هاتف العميل (مثل 01108124794) أو اسمه للبحث عنه في سجلات المنشأة"
+                }
+            },
+            "required": ["identifier"]
+        }
+    }
+
+    func_decls = [rag_decl, memory_decl]
 
     # Add external MCP tools from all active servers
     for t_name, t_info in mcp_tools.items():
@@ -81,7 +98,8 @@ async def handle_gemini_tool_call(
     channel_name: str,
     mcp_tools: Dict[str, Any],
     call_queues: List[Dict[str, Any]],
-    genai_client = None
+    genai_client = None,
+    session_state: Optional[Any] = None
 ) -> Tuple[types.FunctionResponse, Optional[Dict[str, Any]]]:
     """Execute a single function call from Gemini Live and return (response, pending_transfer)."""
     pending_transfer = None
@@ -97,6 +115,49 @@ async def handle_gemini_tool_call(
             name=fc.name,
             response={"result": search_result}
         ), None
+
+    elif fc.name == "lookup_customer_memory":
+        identifier = str(fc.args.get("identifier", "")).strip() if fc.args else ""
+        await notify_centrifugo_async(channel_name, "agent_action_executing", f"جاري فحص سجل العميل '{identifier}'...")
+        logger.info(f"Executing lookup_customer_memory for user_id={user_id}, identifier='{identifier}'")
+        res = await lookup_customer_memory_async(user_id, identifier)
+        if res.get("found"):
+            mem = res.get("memory") or {}
+            c_name = mem.get("customer_name") or ""
+            phone = res.get("phone_number")
+            prof = mem.get("permanent_profile") or {}
+            summary = mem.get("last_interaction_summary") or ""
+
+            if session_state and phone:
+                session_state.caller_phone = phone
+                logger.info(f"Dynamically updated session_state.caller_phone to '{phone}' from memory lookup")
+
+            result_msg = "تم العثور على سجل العميل في النظام بنجاح:\n"
+            if c_name:
+                result_msg += f"- اسم العميل: {c_name}\n"
+            if phone:
+                result_msg += f"- رقم الهاتف: {phone}\n"
+            if prof.get("address") or prof.get("city"):
+                result_msg += f"- العنوان/المدينة: {prof.get('address') or prof.get('city')}\n"
+            if prof.get("preferences"):
+                prefs = prof['preferences']
+                if isinstance(prefs, list):
+                    prefs = "، ".join(str(p) for p in prefs)
+                result_msg += f"- التفضيلات والاهتمامات: {prefs}\n"
+            if summary:
+                result_msg += f"- ملخص آخر تواصل: {summary}\n"
+            result_msg += "وظف هذه المعلومات للترحيب بالعميل ومتابعة طلبه ومساعدته بذكاء وعفوية."
+            return types.FunctionResponse(
+                id=fc.id,
+                name=fc.name,
+                response={"result": result_msg}
+            ), None
+        else:
+            return types.FunctionResponse(
+                id=fc.id,
+                name=fc.name,
+                response={"result": f"لم يتم العثور على سجل سابق للعميل بالمعرف '{identifier}'. تعامل معه كعميل جديد بلباقة وسجل بياناته عند الحاجة."}
+            ), None
 
     elif fc.name in mcp_tools:
         mcp_info = mcp_tools[fc.name]

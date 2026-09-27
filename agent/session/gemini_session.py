@@ -227,8 +227,19 @@ async def run_agent_session(
                             welcome_msg = generate_welcome_greeting(active_profile, is_outbound, outbound_context)
                             logger.info(f"[GREETING] Triggering proactive greeting in room {room_name}: '{welcome_msg[:80]}'")
 
+                            c_name = ""
+                            if memory_data:
+                                c_name = (memory_data.get("customer_name") or (memory_data.get("permanent_profile") or {}).get("customer_name") or "").strip()
+
                             try:
-                                prompt = f"المتصل قام بالرد أو الاتصال للتو وهو ينتظر سماعك الآن. ابدأ المحادثة فوراً وتحدث بهذه الجملة الترحيبية: '{welcome_msg}'"
+                                if c_name:
+                                    prompt = (
+                                        f"المتصل قام بالرد أو الاتصال للتو وهو ينتظر سماعك الآن. "
+                                        f"هذا عميل مسجل لديك مسبقاً واسمه ({c_name}). "
+                                        f"ابدأ المحادثة فوراً بالترحيب به باسمه بلباقة مع توظيف رسالة الترحيب التالية بشكل طبيعي: '{welcome_msg}'."
+                                    )
+                                else:
+                                    prompt = f"المتصل قام بالرد أو الاتصال للتو وهو ينتظر سماعك الآن. ابدأ المحادثة فوراً وتحدث بهذه الجملة الترحيبية: '{welcome_msg}'"
                                 await session.send_client_content(
                                     turns=[
                                         types.Content(
@@ -295,7 +306,8 @@ async def run_agent_session(
                                         channel_name=channel_name,
                                         mcp_tools=mcp_tools,
                                         call_queues=call_queues,
-                                        genai_client=client
+                                        genai_client=client,
+                                        session_state=session_state
                                     )
                                     function_responses.append(resp)
                                     if transfer_info:
@@ -502,12 +514,13 @@ async def run_agent_session(
         await notify_centrifugo_async(channel_name, "agent_disconnected", "تم إنهاء جلسة المساعدة الصوتية.")
 
         if user_id and session_state.dialogue_turns:
-            logger.info(f"Triggering background memory distillation for user {user_id} [phone={caller_phone}] with {len(session_state.dialogue_turns)} turns.")
+            final_phone = session_state.caller_phone or caller_phone
+            logger.info(f"Triggering background memory distillation for user {user_id} [phone={final_phone}] with {len(session_state.dialogue_turns)} turns.")
             track_background_task(
                 asyncio.create_task(
                     distill_and_update_memory(
                         user_id=user_id,
-                        caller_phone=caller_phone,
+                        caller_phone=final_phone,
                         room_name=room_name,
                         started_at=session_state.started_at,
                         messages=list(session_state.dialogue_turns),

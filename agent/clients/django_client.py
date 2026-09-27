@@ -365,3 +365,47 @@ def fetch_customer_memory_sync(user_id: int, caller_phone: str = "web_dashboard"
     except Exception as e:
         logger.error(f"Error fetching customer memory for user {user_id} ({caller_phone}): {e}")
         return {"phone_number": caller_phone, "permanent_profile": {}, "last_interaction_summary": "", "card_text": "", "total_calls_count": 0}
+
+
+async def lookup_customer_memory_async(user_id: int, query: str) -> dict:
+    """Lookup customer memory in Django CRM by name or phone query non-blockingly."""
+    if not user_id or not query:
+        return {"status": "error", "found": False, "message": "query and user_id are required"}
+    url = f"{DJANGO_API_URL}/api/crm/internal/memory/"
+    headers = {
+        "X-Internal-API-Key": INTERNAL_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {"user_id": user_id, "query": query}
+    try:
+        session = await get_http_session()
+        async with session.post(url, json=payload, headers=headers, timeout=5.0) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            text = await resp.text()
+            logger.error(f"CRM Memory lookup error ({resp.status}): {text}")
+            return {"status": "error", "found": False, "message": text}
+    except Exception as e:
+        logger.error(f"Failed to lookup customer memory asynchronously: {e}")
+        return {"status": "error", "found": False, "message": str(e)}
+
+
+def lookup_customer_memory_sync(user_id: int, query: str) -> dict:
+    """Lookup customer memory in Django CRM synchronously."""
+    if not user_id or not query:
+        return {"status": "error", "found": False, "message": "query and user_id are required"}
+    try:
+        url = f"{DJANGO_API_URL}/api/crm/internal/memory/"
+        headers = {
+            "X-Internal-API-Key": INTERNAL_API_KEY,
+            "Content-Type": "application/json"
+        }
+        res = requests.post(url, json={"user_id": user_id, "query": query}, headers=headers, timeout=5)
+        if res.status_code == 200:
+            return res.json()
+        logger.error(f"CRM Memory lookup sync error ({res.status_code}): {res.text}")
+        return {"status": "error", "found": False, "message": res.text}
+    except Exception as e:
+        logger.error(f"Failed to lookup customer memory synchronously: {e}")
+        return {"status": "error", "found": False, "message": str(e)}
+

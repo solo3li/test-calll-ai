@@ -15,6 +15,8 @@ from .django_client import (
     parse_active_profile_from_bootstrap,
     fetch_user_active_profile_sync,
     fetch_customer_memory_sync,
+    lookup_customer_memory_async,
+    lookup_customer_memory_sync,
 )
 from .mcp_client import execute_mcp_tool_call, fetch_user_mcp_servers_sync
 
@@ -38,6 +40,8 @@ __all__ = [
     "parse_active_profile_from_bootstrap",
     "fetch_user_active_profile_sync",
     "fetch_customer_memory_sync",
+    "lookup_customer_memory_async",
+    "lookup_customer_memory_sync",
     "execute_mcp_tool_call",
     "fetch_user_mcp_servers_sync",
     "fetch_user_mcp_server_sync",
