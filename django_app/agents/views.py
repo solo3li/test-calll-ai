@@ -267,6 +267,85 @@ def delete_profile(request, profile_id):
 
 # ==================== User External MCP Server ====================
 
+def clean_gemini_schema(raw):
+    """
+    Recursively sanitize any JSON Schema (from FastMCP, Pydantic, OpenAPI, etc.)
+    into a strict Gemini Live API compliant Schema dictionary.
+    """
+    if not isinstance(raw, dict):
+        return raw
+
+    cleaned = {}
+
+    any_of = raw.get("anyOf") or raw.get("any_of") or raw.get("oneOf") or raw.get("one_of")
+    if any_of and isinstance(any_of, list):
+        non_null_schemas = [s for s in any_of if isinstance(s, dict) and s.get("type") not in ("null", "NULL")]
+        has_null = any(isinstance(s, dict) and s.get("type") in ("null", "NULL") for s in any_of)
+        
+        if non_null_schemas:
+            primary = clean_gemini_schema(non_null_schemas[0])
+            if isinstance(primary, dict):
+                cleaned.update(primary)
+        if has_null:
+            cleaned["nullable"] = True
+
+    schema_type = raw.get("type")
+    if schema_type:
+        if isinstance(schema_type, str):
+            st_upper = schema_type.upper()
+            if st_upper in ("STRING", "INTEGER", "NUMBER", "BOOLEAN", "OBJECT", "ARRAY"):
+                cleaned["type"] = st_upper
+            elif st_upper in ("FLOAT", "DOUBLE"):
+                cleaned["type"] = "NUMBER"
+            elif st_upper in ("INT", "LONG"):
+                cleaned["type"] = "INTEGER"
+            elif st_upper in ("BOOL",):
+                cleaned["type"] = "BOOLEAN"
+            else:
+                cleaned["type"] = st_upper
+        elif isinstance(schema_type, list):
+            non_null_types = [t for t in schema_type if str(t).lower() != "null"]
+            if non_null_types:
+                cleaned["type"] = str(non_null_types[0]).upper()
+            if any(str(t).lower() == "null" for t in schema_type):
+                cleaned["nullable"] = True
+
+    if "type" not in cleaned:
+        if "properties" in raw:
+            cleaned["type"] = "OBJECT"
+        elif "items" in raw:
+            cleaned["type"] = "ARRAY"
+
+    if "description" in raw and isinstance(raw["description"], str):
+        cleaned["description"] = raw["description"]
+
+    if "nullable" in raw:
+        cleaned["nullable"] = bool(raw["nullable"])
+
+    if "enum" in raw and isinstance(raw["enum"], list):
+        cleaned["enum"] = [str(e) for e in raw["enum"]]
+
+    if "properties" in raw and isinstance(raw["properties"], dict):
+        cleaned_props = {}
+        for prop_name, prop_schema in raw["properties"].items():
+            cleaned_props[prop_name] = clean_gemini_schema(prop_schema)
+        cleaned["properties"] = cleaned_props
+
+    if "required" in raw and isinstance(raw["required"], list):
+        if "properties" in cleaned:
+            cleaned["required"] = [f for f in raw["required"] if f in cleaned["properties"]]
+        else:
+            cleaned["required"] = list(raw["required"])
+
+    if "items" in raw:
+        if isinstance(raw["items"], dict):
+            cleaned["items"] = clean_gemini_schema(raw["items"])
+        elif isinstance(raw["items"], list) and raw["items"]:
+            cleaned["items"] = clean_gemini_schema(raw["items"][0])
+
+    return cleaned
+
+
 async def _fetch_mcp_tools_async(url: str, auth_token: str = ""):
     """Connect to MCP SSE server, perform handshake, and list tools."""
     from mcp import ClientSession
@@ -286,7 +365,7 @@ async def _fetch_mcp_tools_async(url: str, auth_token: str = ""):
                 tools.append({
                     "name": t.name,
                     "description": t.description or "",
-                    "parameters": schema
+                    "parameters": clean_gemini_schema(schema)
                 })
             return tools
 
