@@ -159,6 +159,7 @@ class EmployeeCallLog(models.Model):
     started_at     = models.DateTimeField(auto_now_add=True)
     ended_at       = models.DateTimeField(null=True, blank=True)
     duration_secs  = models.PositiveIntegerField(default=0)
+    recording_url  = models.CharField(max_length=500, blank=True, null=True, default='', help_text='رابط ملف التسجيل الصوتي MP3')
 
     class Meta:
         db_table = 'call_center_employeecalllog'
@@ -170,6 +171,7 @@ class EmployeeCallLog(models.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "employee_id": self.employee_id,
             "other_party": self.other_party,
             "extension": self.extension,
             "room_name": self.room_name,
@@ -177,5 +179,7 @@ class EmployeeCallLog(models.Model):
             "started_at": self.started_at.strftime("%Y-%m-%d %H:%M:%S"),
             "ended_at": self.ended_at.strftime("%Y-%m-%d %H:%M:%S") if self.ended_at else None,
             "duration_secs": self.duration_secs,
+            "recording_url": self.recording_url,
         }
+
 

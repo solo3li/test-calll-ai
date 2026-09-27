@@ -9,7 +9,7 @@ export const TopTabBar: React.FC = () => {
 
   const tabs: { key: TabKey; label: string; icon: any; badge?: number }[] = [
     { key: "dialpad",  label: "Dialpad",  icon: "dialpad" },
-    { key: "history",  label: "History",  icon: "history", badge: 3 },
+    { key: "history",  label: "History",  icon: "history" },
     { key: "contacts", label: "Contacts", icon: "contacts" },
   ];
 

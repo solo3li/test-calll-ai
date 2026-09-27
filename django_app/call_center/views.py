@@ -983,6 +983,13 @@ def api_dial_call(request):
             except Exception as e:
                 logger.error(f"Failed to dial external customer via SIP trunk: {e}")
 
+            # Trigger Egress recording for external PSTN call
+            try:
+                from voice_assistant.egress_service import start_room_recording
+                start_room_recording(room_name)
+            except Exception as eg_err:
+                logger.warning(f"Could not trigger egress recording for PSTN room {room_name}: {eg_err}")
+
             return JsonResponse({
                 "status": "success",
                 "call_type": "external_pstn",
@@ -1066,6 +1073,13 @@ def api_get_call_token(request):
                 room_name=room_name,
                 call_type='inbound',
             )
+
+        # Trigger Egress recording for this answered call
+        try:
+            from voice_assistant.egress_service import start_room_recording
+            start_room_recording(room_name)
+        except Exception as eg_err:
+            logger.warning(f"Could not trigger egress recording for answered room {room_name}: {eg_err}")
 
         # Mark answering employee as busy
         if employee.status != 'busy':
@@ -1577,62 +1591,86 @@ def api_transfer_action(request):
 def api_list_call_logs(request):
     """
     GET /api/call-center/calls/logs/
-    Returns call history for the authenticated employee (most recent first).
-    Admins can pass ?employee_id=X to view any employee's logs.
+    Returns call history.
+    - If accessed by Employee via Bearer token:
+        Returns employee's logs. If NOT employee.is_owner, recording_url is stripped.
+    - If accessed by Employer/Owner via web session:
+        Filtered strictly to employee__employer=request.user (unless superuser).
+        Includes recording_url for playback and supports ?employee_id=, ?call_type=, ?search=, ?has_recording=.
     """
+    from django.db.models import Q
+
     employee = get_employee_from_token(request)
 
-    # Allow superuser/admin session auth as fallback
+    # 1. Employer / Admin session auth (Owner dashboard)
     if not employee:
         if not request.user.is_authenticated:
             return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
-        # Admin viewing a specific employee's logs
+
+        qs = EmployeeCallLog.objects.select_related('employee')
+        if not request.user.is_superuser:
+            qs = qs.filter(employee__employer=request.user)
+
+        # Filter by specific employee
         emp_id = request.GET.get("employee_id")
         if emp_id:
-            target_emp = EmployeeProfile.objects.filter(id=emp_id).first()
-            if not target_emp:
-                return JsonResponse({"status": "error", "message": "الموظف غير موجود"}, status=404)
-            logs = EmployeeCallLog.objects.filter(employee=target_emp).order_by("-started_at")[:200]
-            return JsonResponse({
-                "status": "success",
-                "employee": target_emp.to_dict(),
-                "logs": [log.to_dict() for log in logs],
-                "count": len(logs)
-            })
-        # Admin listing all employees' recent logs
-        logs = EmployeeCallLog.objects.select_related('employee').order_by("-started_at")[:500]
+            qs = qs.filter(employee_id=emp_id)
+
+        # Filter by call type (inbound, outbound, missed, transfer)
+        call_type = request.GET.get("call_type")
+        if call_type and call_type in ['inbound', 'outbound', 'missed', 'transfer']:
+            qs = qs.filter(call_type=call_type)
+
+        # Filter by recording presence
+        has_recording = request.GET.get("has_recording")
+        if has_recording == "true":
+            qs = qs.exclude(recording_url='').exclude(recording_url__isnull=True)
+
+        # Search filter
+        search = request.GET.get("search", "").strip()
+        if search:
+            qs = qs.filter(
+                Q(other_party__icontains=search) |
+                Q(extension__icontains=search) |
+                Q(employee__display_name__icontains=search) |
+                Q(employee__extension__icontains=search)
+            )
+
+        limit = min(int(request.GET.get("limit", 200)), 500)
+        logs = qs.order_by("-started_at")[:limit]
+
         return JsonResponse({
             "status": "success",
             "logs": [
-                {**log.to_dict(), "employee_name": log.employee.display_name, "employee_ext": log.employee.extension}
+                {
+                    **log.to_dict(),
+                    "employee_name": log.employee.display_name,
+                    "employee_ext": log.employee.extension,
+                    "employee_department": log.employee.department,
+                }
                 for log in logs
             ],
             "count": len(logs)
         })
 
-    # Optionally allow admin employee to view another employee's log
-    emp_id = request.GET.get("employee_id")
-    if emp_id and request.user.is_staff:
-        target_emp = EmployeeProfile.objects.filter(id=emp_id).first()
-        if not target_emp:
-            return JsonResponse({"status": "error", "message": "الموظف غير موجود"}, status=404)
-        logs = EmployeeCallLog.objects.filter(employee=target_emp).order_by("-started_at")[:200]
-        return JsonResponse({
-            "status": "success",
-            "employee": target_emp.to_dict(),
-            "logs": [log.to_dict() for log in logs],
-            "count": len(logs)
-        })
-
-    # Normal employee — return their own logs
+    # 2. Employee Bearer token auth (Employee Mobile/Web App)
     limit = min(int(request.GET.get("limit", 100)), 500)
     logs = EmployeeCallLog.objects.filter(employee=employee).order_by("-started_at")[:limit]
+
+    # PRIVACY ENFORCEMENT:
+    # Regular employees must NEVER see or receive audio recording links.
+    sanitized_logs = []
+    for log in logs:
+        log_data = log.to_dict()
+        if not employee.is_owner:
+            log_data["recording_url"] = ""
+        sanitized_logs.append(log_data)
 
     return JsonResponse({
         "status": "success",
         "employee": employee.to_dict(),
-        "logs": [log.to_dict() for log in logs],
-        "count": len(logs)
+        "logs": sanitized_logs,
+        "count": len(sanitized_logs)
     })
 
 
