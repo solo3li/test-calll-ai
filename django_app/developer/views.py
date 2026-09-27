@@ -6,6 +6,8 @@ import logging
 import secrets
 import requests
 import jwt
+import asyncio
+import csv
 from urllib.parse import urlparse, unquote
 from django.core.files.base import ContentFile
 from django.conf import settings
@@ -13,7 +15,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import JsonResponse as _DjangoJsonResponse
+from django.http import HttpResponse, JsonResponse as _DjangoJsonResponse
 
 def JsonResponse(data, *args, **kwargs):
     dumps_params = kwargs.pop('json_dumps_params', None)
@@ -83,12 +85,12 @@ from asgiref.sync import async_to_sync
 
 from agents.models import AgentProfile, UserMCPServer, SystemSetting
 from agents.views import fetch_mcp_tools_sync
-from billing.models import UserWallet
-from call_center.models import EmployeeProfile, CallQueue, QueueMembership
+from billing.models import UserWallet, BillingConfig, BillingTransaction
+from call_center.models import EmployeeProfile, EmployeeCallLog, CallQueue, QueueMembership
 from crm.models import CustomerMemory, CallSession, OutboundCampaign, CampaignContact, UserCampaignLimit
 from crm.inngest_jobs import inngest_client, broadcast_campaign_update
 from knowledge.models import Document, DocumentChunk
-from telephony.models import OutboundSIPTrunk, InboundPBXTrunk
+from telephony.models import OutboundSIPTrunk, InboundPBXTrunk, BusinessHoursSchedule
 from telephony.services import initiate_outbound_call
 from django.utils import timezone
 from crm.file_parser import parse_leads_file, normalize_phone, is_valid_phone
@@ -1381,11 +1383,30 @@ def api_user_calls(request):
     if request.method != 'GET':
         return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
 
-    calls = CallSession.objects.filter(user=request.user).order_by('-started_at')[:100]
+    qs = CallSession.objects.filter(user=request.user).order_by('-started_at')
+    
+    phone = request.GET.get('phone', '').strip()
+    if phone:
+        qs = qs.filter(Q(caller_phone__icontains=phone) | Q(destination_phone__icontains=phone))
+
+    direction = request.GET.get('direction', '').strip()
+    if direction:
+        qs = qs.filter(direction=direction)
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        qs = qs.filter(Q(caller_phone__icontains=search) | Q(destination_phone__icontains=search) | Q(call_goal__icontains=search) | Q(summary__icontains=search))
+
+    limit = min(int(request.GET.get('limit', 50)), 200)
+    offset = max(int(request.GET.get('offset', 0)), 0)
+    total = qs.count()
+    calls = qs[offset:offset+limit]
+
     calls_list = []
     for call in calls:
         calls_list.append({
             "call_id": call.room_name,
+            "session_id": call.id,
             "direction": call.direction,
             "direction_display": call.get_direction_display(),
             "caller_phone": call.caller_phone or "",
@@ -1404,8 +1425,51 @@ def api_user_calls(request):
 
     return JsonResponse({
         "status": "success",
-        "total_calls": len(calls_list),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
         "calls": calls_list
+    })
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_call_detail(request, call_id):
+    """
+    GET /api/v1/calls/<call_id>/
+    Returns single AI call session detail with transcript, dialogue turns, summary, cost, and recording URL.
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+    call = CallSession.objects.filter(
+        Q(room_name=call_id) | Q(id=call_id if str(call_id).isdigit() else -1),
+        user=request.user
+    ).first()
+
+    if not call:
+        return JsonResponse({"status": "error", "message": "Call not found"}, status=404)
+
+    return JsonResponse({
+        "status": "success",
+        "call": {
+            "call_id": call.room_name,
+            "session_id": call.id,
+            "direction": call.direction,
+            "direction_display": call.get_direction_display(),
+            "caller_phone": call.caller_phone or "",
+            "destination_phone": call.destination_phone or "",
+            "call_goal": call.call_goal or "",
+            "started_at": call.started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "ended_at": call.ended_at.strftime("%Y-%m-%d %H:%M:%S") if call.ended_at else None,
+            "duration_seconds": call.duration_seconds,
+            "billed_minutes": call.billed_minutes,
+            "cost": float(call.cost),
+            "summary": call.summary or "",
+            "transcript_text": call.transcript_text or "",
+            "recording_url": get_full_recording_url(request, call.recording_url),
+            "dialogue_turns": call.dialogue_turns,
+        }
     })
 
 
@@ -1881,6 +1945,714 @@ def api_user_business_hours(request):
         "message": "Business hours schedule updated successfully",
         "schedule": sched.to_dict(request)
     })
+
+
+# =========================================================================
+# Billing & Wallet Admin CRUD APIs
+# =========================================================================
+
+@csrf_exempt
+@user_api_key_required
+def api_user_billing_wallet(request):
+    """
+    GET /api/v1/billing/wallet/
+    Returns current user wallet balance, currency, deposit/spend totals, and per-minute rates.
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use GET."}, status=405)
+
+    config = BillingConfig.get_config()
+    wallet, _ = UserWallet.objects.get_or_create(
+        user=request.user,
+        defaults={
+            "balance": config.initial_welcome_credit,
+            "currency": config.currency,
+            "total_deposited": config.initial_welcome_credit,
+            "total_spent": 0,
+        }
+    )
+
+    return JsonResponse({
+        "status": "success",
+        "wallet": wallet.to_dict(),
+        "rates": {
+            "cost_per_minute": float(config.cost_per_minute),
+            "currency": config.currency,
+            "currency_symbol": config.get_currency_symbol(),
+            "rounding_mode": config.rounding_mode,
+            "min_balance_to_call": float(config.min_balance_to_call)
+        }
+    })
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_billing_transactions(request):
+    """
+    GET /api/v1/billing/transactions/
+    Paginated financial ledger documenting credit deductions, top-ups, and adjustments.
+    Filters: type, limit, offset.
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use GET."}, status=405)
+
+    qs = BillingTransaction.objects.filter(wallet__user=request.user).order_by('-created_at')
+
+    tx_type = request.GET.get('type', '').strip()
+    if tx_type:
+        qs = qs.filter(transaction_type=tx_type)
+
+    limit = min(int(request.GET.get('limit', 50)), 200)
+    offset = max(int(request.GET.get('offset', 0)), 0)
+    total = qs.count()
+    txs = qs[offset:offset+limit]
+
+    return JsonResponse({
+        "status": "success",
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "transactions": [tx.to_dict() for tx in txs]
+    })
+
+
+# =========================================================================
+# CRM Customers CRUD APIs
+# =========================================================================
+
+@csrf_exempt
+@user_api_key_required
+def api_user_crm_customers(request):
+    """
+    GET & POST /api/v1/crm/customers/
+    GET: Search and list CRM customer memories and permanent profiles.
+    POST: Create or update customer record / permanent profile / notes.
+    """
+    if request.method == 'GET':
+        query = (request.GET.get('search') or request.GET.get('q') or '').strip()
+        qs = CustomerMemory.objects.filter(user=request.user).order_by('-updated_at')
+
+        if query:
+            qs = qs.filter(
+                Q(phone_number__icontains=query) |
+                Q(customer_name__icontains=query) |
+                Q(last_interaction_summary__icontains=query)
+            )
+
+        limit = min(int(request.GET.get('limit', 50)), 200)
+        offset = max(int(request.GET.get('offset', 0)), 0)
+        total = qs.count()
+        customers = qs[offset:offset+limit]
+
+        return JsonResponse({
+            "status": "success",
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "customers": [c.to_dict() for c in customers]
+        })
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        phone_number = str(data.get('phone_number') or data.get('phone') or '').strip()
+        if not phone_number:
+            return JsonResponse({"status": "error", "message": "phone_number is required"}, status=400)
+
+        memory, created = CustomerMemory.objects.get_or_create(user=request.user, phone_number=phone_number)
+        if 'customer_name' in data:
+            memory.customer_name = str(data['customer_name']).strip()
+        if 'permanent_profile' in data and isinstance(data['permanent_profile'], dict):
+            memory.permanent_profile = data['permanent_profile']
+        if 'last_interaction_summary' in data:
+            memory.last_interaction_summary = str(data['last_interaction_summary']).strip()
+        if 'notes' in data:
+            prof = memory.permanent_profile or {}
+            prof['notes'] = str(data['notes']).strip()
+            memory.permanent_profile = prof
+
+        memory.save()
+        return JsonResponse({
+            "status": "success",
+            "message": "Customer memory saved successfully",
+            "customer": memory.to_dict()
+        }, status=201 if created else 200)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_crm_customer_delete(request, phone):
+    """
+    GET, PUT, PATCH, DELETE /api/v1/crm/customers/<phone>/
+    GET: Single customer memory card with recent call history.
+    PUT/PATCH: Update customer profile, name, and notes.
+    DELETE: Delete customer memory record.
+    """
+    phone = str(phone).strip()
+    memory = CustomerMemory.objects.filter(user=request.user, phone_number=phone).first()
+
+    if request.method == 'GET':
+        if not memory:
+            return JsonResponse({"status": "error", "message": f"Customer with phone '{phone}' not found"}, status=404)
+
+        recent_calls = CallSession.objects.filter(
+            Q(caller_phone=phone) | Q(destination_phone=phone),
+            user=request.user
+        ).order_by('-started_at')[:10]
+
+        return JsonResponse({
+            "status": "success",
+            "customer": memory.to_dict(),
+            "recent_calls": [
+                {
+                    "call_id": c.room_name,
+                    "direction": c.direction,
+                    "direction_display": c.get_direction_display(),
+                    "started_at": c.started_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    "duration_seconds": c.duration_seconds,
+                    "billed_minutes": c.billed_minutes,
+                    "cost": float(c.cost),
+                    "summary": c.summary or "",
+                    "recording_url": get_full_recording_url(request, c.recording_url),
+                }
+                for c in recent_calls
+            ]
+        })
+
+    elif request.method in ('PUT', 'PATCH'):
+        if not memory:
+            return JsonResponse({"status": "error", "message": f"Customer with phone '{phone}' not found"}, status=404)
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        if 'customer_name' in data:
+            memory.customer_name = str(data['customer_name']).strip()
+        if 'permanent_profile' in data and isinstance(data['permanent_profile'], dict):
+            memory.permanent_profile = data['permanent_profile']
+        if 'last_interaction_summary' in data:
+            memory.last_interaction_summary = str(data['last_interaction_summary']).strip()
+        if 'notes' in data:
+            prof = memory.permanent_profile or {}
+            prof['notes'] = str(data['notes']).strip()
+            memory.permanent_profile = prof
+
+        memory.save()
+        return JsonResponse({
+            "status": "success",
+            "message": "Customer memory updated successfully",
+            "customer": memory.to_dict()
+        })
+
+    elif request.method == 'DELETE':
+        if not memory:
+            return JsonResponse({"status": "error", "message": f"Customer with phone '{phone}' not found"}, status=404)
+        memory.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": f"Customer memory for '{phone}' deleted successfully"
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Employee Call Logs Admin API
+# =========================================================================
+
+@csrf_exempt
+@user_api_key_required
+def api_user_employee_calls(request):
+    """
+    GET /api/v1/employees/calls/
+    Returns call logs for all employees managed by the authenticated account owner.
+    Supports filters: employee_id, extension, call_type, search, limit, offset.
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use GET."}, status=405)
+
+    qs = EmployeeCallLog.objects.filter(employee__employer=request.user).select_related('employee').order_by('-started_at')
+
+    employee_id = request.GET.get('employee_id')
+    if employee_id and str(employee_id).isdigit():
+        qs = qs.filter(employee_id=int(employee_id))
+
+    extension = request.GET.get('extension', '').strip()
+    if extension:
+        qs = qs.filter(Q(extension=extension) | Q(employee__extension=extension))
+
+    call_type = request.GET.get('call_type', '').strip()
+    if call_type and call_type != 'all':
+        qs = qs.filter(call_type=call_type)
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        qs = qs.filter(
+            Q(other_party__icontains=search) |
+            Q(employee__display_name__icontains=search) |
+            Q(room_name__icontains=search)
+        )
+
+    limit = min(int(request.GET.get('limit', 50)), 200)
+    offset = max(int(request.GET.get('offset', 0)), 0)
+    total = qs.count()
+    logs = qs[offset:offset+limit]
+
+    logs_list = []
+    for log in logs:
+        logs_list.append({
+            "id": log.id,
+            "employee_id": log.employee_id,
+            "employee_name": log.employee.display_name if log.employee else "",
+            "employee_extension": log.employee.extension if log.employee else "",
+            "other_party": log.other_party,
+            "extension": log.extension,
+            "room_name": log.room_name,
+            "call_type": log.call_type,
+            "call_type_display": log.get_call_type_display(),
+            "started_at": log.started_at.strftime("%Y-%m-%d %H:%M:%S") if log.started_at else "",
+            "ended_at": log.ended_at.strftime("%Y-%m-%d %H:%M:%S") if log.ended_at else None,
+            "duration_secs": log.duration_secs,
+            "recording_url": get_full_recording_url(request, log.recording_url),
+        })
+
+    return JsonResponse({
+        "status": "success",
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "calls": logs_list
+    })
+
+
+# =========================================================================
+# Telephony Inbound & PBX Trunks Admin CRUD APIs
+# =========================================================================
+
+@csrf_exempt
+@user_api_key_required
+def api_user_pbx_trunks(request):
+    """
+    GET & POST /api/v1/telephony/pbx-trunks/
+    GET: List all Inbound/Bidirectional PBX Trunks (Issabel / Asterisk) with generated Issabel config.
+    POST: Create a new PBX Trunk and provision inbound/outbound SIP trunks in LiveKit.
+    """
+    from telephony.views import _async_create_pbx_inbound_trunk_and_rule
+    host_domain = getattr(settings, 'SIP_PUBLIC_DOMAIN', request.get_host().split(':')[0])
+
+    if request.method == 'GET':
+        trunks = InboundPBXTrunk.objects.filter(user=request.user).select_related('target_queue', 'target_profile')
+        return JsonResponse({
+            "status": "success",
+            "total": trunks.count(),
+            "host_domain": host_domain,
+            "sip_port": 5060,
+            "trunks": [t.to_dict(host_domain=host_domain) for t in trunks]
+        })
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        name = str(data.get('name') or 'سنترال الشركة (Issabel PBX)').strip()
+        auth_mode = str(data.get('auth_mode') or 'ip').strip()
+        pbx_ip = str(data.get('pbx_ip') or '').strip()
+        auth_username = str(data.get('auth_username') or '').strip()
+        auth_password = str(data.get('auth_password') or '').strip()
+        inbound_numbers = str(data.get('inbound_numbers') or '').strip()
+        destination_type = str(data.get('destination_type') or 'ai_assistant').strip()
+        if destination_type in ('ai', 'ai_assistant'):
+            destination_type = 'ai_assistant'
+        elif destination_type in ('queue', 'call_queue'):
+            destination_type = 'call_queue'
+
+        target_queue_id = data.get('target_queue_id')
+        target_profile_id = data.get('target_profile_id')
+        enable_outbound = bool(data.get('enable_outbound', True))
+        outbound_port = int(data.get('outbound_port') or 5060)
+        outbound_transport = str(data.get('outbound_transport') or 'UDP').strip().upper()
+        is_default_outbound = bool(data.get('is_default_outbound', False))
+        is_active = bool(data.get('is_active', True))
+
+        if auth_mode not in ['ip', 'credentials']:
+            return JsonResponse({"status": "error", "message": "auth_mode must be 'ip' or 'credentials'"}, status=400)
+
+        if auth_mode == 'ip' and not pbx_ip:
+            return JsonResponse({"status": "error", "message": "pbx_ip is required for IP authentication"}, status=400)
+
+        if auth_mode == 'credentials' and not auth_username:
+            return JsonResponse({"status": "error", "message": "auth_username is required for credentials authentication"}, status=400)
+
+        target_queue = None
+        if destination_type == 'call_queue':
+            if not target_queue_id:
+                return JsonResponse({"status": "error", "message": "target_queue_id is required when destination_type is call_queue"}, status=400)
+            target_queue = CallQueue.objects.filter(id=target_queue_id, user=request.user).first()
+            if not target_queue:
+                return JsonResponse({"status": "error", "message": "Target queue not found"}, status=404)
+
+        target_profile = None
+        if target_profile_id:
+            target_profile = AgentProfile.objects.filter(id=target_profile_id, user=request.user).first()
+
+        if is_default_outbound:
+            InboundPBXTrunk.objects.filter(user=request.user).update(is_default_outbound=False)
+
+        if auth_mode == 'credentials' and not auth_password:
+            auth_password = secrets.token_hex(6)
+
+        trunk = InboundPBXTrunk(
+            user=request.user,
+            name=name,
+            auth_mode=auth_mode,
+            pbx_ip=pbx_ip,
+            auth_username=auth_username,
+            inbound_numbers=inbound_numbers,
+            destination_type=destination_type,
+            target_queue=target_queue,
+            target_profile=target_profile,
+            enable_outbound=enable_outbound,
+            outbound_port=outbound_port,
+            outbound_transport=outbound_transport,
+            is_default_outbound=is_default_outbound,
+            is_active=is_active
+        )
+        trunk.set_auth_password(auth_password)
+        trunk.save()
+
+        # Provision in LiveKit SIP
+        try:
+            target_queue_code = target_queue.code if target_queue else None
+            lk_trunk_id, lk_rule_id, lk_out_id = asyncio.run(_async_create_pbx_inbound_trunk_and_rule(
+                name=trunk.name,
+                auth_mode=trunk.auth_mode,
+                pbx_ip=trunk.pbx_ip,
+                auth_username=trunk.auth_username,
+                auth_password=trunk.auth_password,
+                inbound_numbers_str=trunk.inbound_numbers,
+                destination_type=trunk.destination_type,
+                target_queue_code=target_queue_code,
+                user_id=request.user.id,
+                trunk_db_id=trunk.id,
+                enable_outbound=trunk.enable_outbound,
+                outbound_port=trunk.outbound_port,
+                outbound_transport=trunk.outbound_transport
+            ))
+            trunk.livekit_trunk_id = lk_trunk_id
+            trunk.livekit_rule_id = lk_rule_id
+            trunk.livekit_outbound_trunk_id = lk_out_id
+            trunk.save(update_fields=['livekit_trunk_id', 'livekit_rule_id', 'livekit_outbound_trunk_id'])
+        except Exception as lk_err:
+            logger.warning(f"Could not provision LiveKit SIP trunk for PBX {trunk.id}: {lk_err}")
+
+        return JsonResponse({
+            "status": "success",
+            "message": "PBX Trunk created and configured successfully",
+            "trunk": trunk.to_dict(host_domain=host_domain)
+        }, status=201)
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_pbx_trunk_detail(request, trunk_id):
+    """
+    GET, PUT, PATCH, DELETE /api/v1/telephony/pbx-trunks/<trunk_id>/
+    GET: Retrieve single PBX Trunk with full Issabel configuration.
+    PUT/PATCH: Update PBX Trunk and re-sync with LiveKit.
+    DELETE: Delete PBX Trunk and release LiveKit SIP resources.
+    """
+    from telephony.views import _async_create_pbx_inbound_trunk_and_rule, _async_delete_pbx_trunk_and_rule
+    trunk = get_object_or_404(InboundPBXTrunk, id=trunk_id, user=request.user)
+    host_domain = getattr(settings, 'SIP_PUBLIC_DOMAIN', request.get_host().split(':')[0])
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "status": "success",
+            "trunk": trunk.to_dict(host_domain=host_domain)
+        })
+
+    elif request.method in ('PUT', 'PATCH'):
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        if 'name' in data:
+            trunk.name = str(data['name']).strip()
+        if 'auth_mode' in data and data['auth_mode'] in ['ip', 'credentials']:
+            trunk.auth_mode = data['auth_mode']
+        if 'pbx_ip' in data:
+            trunk.pbx_ip = str(data['pbx_ip']).strip()
+        if 'auth_username' in data:
+            trunk.auth_username = str(data['auth_username']).strip()
+        if 'auth_password' in data and str(data['auth_password']).strip():
+            trunk.set_auth_password(str(data['auth_password']).strip())
+        if 'inbound_numbers' in data:
+            trunk.inbound_numbers = str(data['inbound_numbers']).strip()
+        if 'destination_type' in data:
+            dtype = str(data['destination_type']).strip()
+            if dtype in ('ai', 'ai_assistant'):
+                trunk.destination_type = 'ai_assistant'
+            elif dtype in ('queue', 'call_queue'):
+                trunk.destination_type = 'call_queue'
+        if 'target_queue_id' in data:
+            tq_id = data['target_queue_id']
+            trunk.target_queue = CallQueue.objects.filter(id=tq_id, user=request.user).first() if tq_id else None
+        if 'target_profile_id' in data:
+            tp_id = data['target_profile_id']
+            trunk.target_profile = AgentProfile.objects.filter(id=tp_id, user=request.user).first() if tp_id else None
+        if 'enable_outbound' in data:
+            trunk.enable_outbound = bool(data['enable_outbound'])
+        if 'outbound_port' in data:
+            trunk.outbound_port = int(data['outbound_port'] or 5060)
+        if 'outbound_transport' in data:
+            trunk.outbound_transport = str(data['outbound_transport']).strip().upper()
+        if 'is_default_outbound' in data:
+            is_def = bool(data['is_default_outbound'])
+            if is_def:
+                InboundPBXTrunk.objects.filter(user=request.user).update(is_default_outbound=False)
+            trunk.is_default_outbound = is_def
+        if 'is_active' in data:
+            trunk.is_active = bool(data['is_active'])
+
+        trunk.save()
+
+        # Re-provision in LiveKit
+        try:
+            target_queue_code = trunk.target_queue.code if trunk.target_queue else None
+            lk_trunk_id, lk_rule_id, lk_out_id = asyncio.run(_async_create_pbx_inbound_trunk_and_rule(
+                name=trunk.name,
+                auth_mode=trunk.auth_mode,
+                pbx_ip=trunk.pbx_ip,
+                auth_username=trunk.auth_username,
+                auth_password=trunk.auth_password,
+                inbound_numbers_str=trunk.inbound_numbers,
+                destination_type=trunk.destination_type,
+                target_queue_code=target_queue_code,
+                user_id=request.user.id,
+                trunk_db_id=trunk.id,
+                existing_trunk_id=trunk.livekit_trunk_id or None,
+                existing_rule_id=trunk.livekit_rule_id or None,
+                enable_outbound=trunk.enable_outbound,
+                outbound_port=trunk.outbound_port,
+                outbound_transport=trunk.outbound_transport,
+                existing_outbound_trunk_id=trunk.livekit_outbound_trunk_id or None
+            ))
+            trunk.livekit_trunk_id = lk_trunk_id
+            trunk.livekit_rule_id = lk_rule_id
+            trunk.livekit_outbound_trunk_id = lk_out_id
+            trunk.save(update_fields=['livekit_trunk_id', 'livekit_rule_id', 'livekit_outbound_trunk_id'])
+        except Exception as lk_err:
+            logger.warning(f"Could not re-provision LiveKit SIP trunk for PBX {trunk.id}: {lk_err}")
+
+        return JsonResponse({
+            "status": "success",
+            "message": "PBX Trunk updated successfully",
+            "trunk": trunk.to_dict(host_domain=host_domain)
+        })
+
+    elif request.method == 'DELETE':
+        try:
+            asyncio.run(_async_delete_pbx_trunk_and_rule(
+                trunk.livekit_trunk_id,
+                trunk.livekit_rule_id,
+                trunk.livekit_outbound_trunk_id
+            ))
+        except Exception as lk_err:
+            logger.warning(f"Error releasing LiveKit SIP resources for PBX {trunk.id}: {lk_err}")
+
+        trunk.delete()
+        return JsonResponse({
+            "status": "success",
+            "message": "PBX Trunk deleted successfully"
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+# =========================================================================
+# Campaign Action & Contact Admin APIs
+# =========================================================================
+
+@csrf_exempt
+@user_api_key_required
+def api_user_campaign_reset(request, campaign_id):
+    """
+    POST /api/v1/campaigns/<campaign_id>/reset/
+    Resets failed, busy, or unreached contacts in a campaign back to 'pending',
+    zeroes retries, and returns the campaign status to 'draft'.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use POST."}, status=405)
+
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+    campaign.status = 'draft'
+    campaign.save(update_fields=['status', 'updated_at'])
+
+    updated_count = campaign.contacts.filter(
+        call_status__in=['failed', 'busy', 'no_answer', 'in_progress']
+    ).update(
+        call_status='pending',
+        interest_level='uncontacted',
+        retries_count=0,
+        call_summary='',
+        extracted_data={}
+    )
+    campaign.update_metrics()
+
+    return JsonResponse({
+        "status": "success",
+        "message": f"Successfully reset {updated_count} contacts back to pending",
+        "reset_count": updated_count,
+        "campaign": campaign.to_dict()
+    })
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_campaign_export(request, campaign_id):
+    """
+    GET /api/v1/campaigns/<campaign_id>/export/?format=json|csv|xlsx&filter=all|hot|hot_warm|answered
+    Export campaign contacts and AI classification results.
+    Default format is 'json'.
+    """
+    if request.method != 'GET':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use GET."}, status=405)
+
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+    filter_mode = request.GET.get('filter', 'all').strip().lower()
+    export_format = request.GET.get('format', 'json').strip().lower()
+
+    contacts_qs = campaign.contacts.all()
+    if filter_mode == 'hot':
+        contacts_qs = contacts_qs.filter(interest_level='hot')
+    elif filter_mode == 'hot_warm':
+        contacts_qs = contacts_qs.filter(interest_level__in=['hot', 'warm'])
+    elif filter_mode == 'answered':
+        contacts_qs = contacts_qs.filter(call_status='answered')
+
+    if export_format == 'json':
+        return JsonResponse({
+            "status": "success",
+            "campaign_id": campaign.id,
+            "campaign_name": campaign.name,
+            "filter": filter_mode,
+            "total_contacts": contacts_qs.count(),
+            "contacts": [c.to_dict() for c in contacts_qs]
+        })
+
+    elif export_format == 'csv':
+        timestamp_str = timezone.now().strftime('%Y%m%d_%H%M')
+        filename = f"campaign_{campaign.id}_{filter_mode}_{timestamp_str}.csv"
+        response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response.write('\ufeff')
+        writer = csv.writer(response)
+
+        headers = [
+            "اسم العميل", "رقم الهاتف", "حالة الاتصال", "تصنيف الاهتمام",
+            "ملخص المكالمة", "مدة المكالمة (ثواني)", "عدد المحاولات", "تاريخ آخر اتصال"
+        ]
+        writer.writerow(headers)
+        for c in contacts_qs:
+            writer.writerow([
+                c.customer_name,
+                c.phone_number,
+                c.get_call_status_display(),
+                c.get_interest_level_display(),
+                c.call_summary,
+                c.duration_seconds,
+                c.retries_count,
+                c.last_attempt_at.strftime('%Y-%m-%d %H:%M') if c.last_attempt_at else ""
+            ])
+        return response
+
+    elif export_format == 'xlsx':
+        from crm.campaign_views import api_export_campaign_contacts
+        return api_export_campaign_contacts(request, campaign_id)
+
+    return JsonResponse({"status": "error", "message": "Invalid format. Supported: json, csv, xlsx"}, status=400)
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_campaign_contact_detail(request, campaign_id, contact_id):
+    """
+    GET, PUT, PATCH, DELETE /api/v1/campaigns/<campaign_id>/contacts/<contact_id>/
+    GET: Retrieve contact detail with call status and AI extracted data.
+    PUT/PATCH: Update contact details (name, phone, attributes, interest_level, call_status).
+    DELETE: Remove contact from campaign and update metrics.
+    """
+    campaign = get_object_or_404(OutboundCampaign, id=campaign_id, user=request.user)
+    contact = get_object_or_404(CampaignContact, id=contact_id, campaign=campaign)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "status": "success",
+            "contact": contact.to_dict()
+        })
+
+    elif request.method in ('PUT', 'PATCH'):
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
+
+        if 'customer_name' in data:
+            contact.customer_name = str(data['customer_name']).strip()
+        if 'phone_number' in data:
+            contact.phone_number = str(data['phone_number']).strip()
+        if 'attributes' in data and isinstance(data['attributes'], dict):
+            contact.attributes = data['attributes']
+        if 'call_status' in data:
+            contact.call_status = str(data['call_status']).strip()
+        if 'interest_level' in data:
+            contact.interest_level = str(data['interest_level']).strip()
+        if 'call_summary' in data:
+            contact.call_summary = str(data['call_summary']).strip()
+
+        contact.save()
+        campaign.update_metrics()
+        return JsonResponse({
+            "status": "success",
+            "message": "Contact updated successfully",
+            "contact": contact.to_dict()
+        })
+
+    elif request.method == 'DELETE':
+        contact.delete()
+        campaign.update_metrics()
+        return JsonResponse({
+            "status": "success",
+            "message": "Contact deleted successfully"
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@user_api_key_required
+def api_user_campaign_contact_dial(request, campaign_id, contact_id):
+    """
+    POST /api/v1/campaigns/<campaign_id>/contacts/<contact_id>/dial/
+    Trigger an immediate outbound call to a single specific contact in the campaign.
+    """
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "Method not allowed. Use POST."}, status=405)
+
+    from crm.campaign_views import api_dial_single_contact
+    return api_dial_single_contact(request, contact_id)
+
 
 
 

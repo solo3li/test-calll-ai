@@ -101,6 +101,98 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 }
             }
         },
+        "/billing/wallet/": {
+            "get": {
+                "tags": [tag_map["tag_account"]],
+                "summary": "عرض رصيد المحفظة وتسعيرة الدقائق (Get Wallet & Rates)" if is_ar else "Get Wallet Balance & Minute Rates",
+                "description": (
+                    "يعيد رصيد المحفظة المسبقة الدفع الحالي، العملة، إجمالي المشحون والمستهلك، وسعر الدقيقة وطريقة التقريب لأعلى دقيقة كاملة."
+                    if is_ar else
+                    "Returns current prepaid balance, currency, deposit/spending totals, per-minute billing rates, and ceiling rounding mode."
+                ),
+                "responses": {
+                    "200": {
+                        "description": "بيانات المحفظة والتسعير" if is_ar else "Wallet and pricing details",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "wallet": {
+                                        "id": 1,
+                                        "user_id": 1,
+                                        "username": "admin",
+                                        "balance": 24.50,
+                                        "currency": "USD",
+                                        "currency_symbol": "$",
+                                        "total_spent": 5.50,
+                                        "total_deposited": 30.00,
+                                        "updated_at": "2026-09-27 02:40"
+                                    },
+                                    "rates": {
+                                        "cost_per_minute": 0.05,
+                                        "currency": "USD",
+                                        "currency_symbol": "$",
+                                        "rounding_mode": "ceil",
+                                        "min_balance_to_call": 0.05
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"$ref": "#/components/responses/401Error"}
+                }
+            }
+        },
+        "/billing/transactions/": {
+            "get": {
+                "tags": [tag_map["tag_account"]],
+                "summary": "سجل الحركات المالية وشحن الرصيد (Billing Ledger)" if is_ar else "Billing Transactions & Ledger",
+                "description": (
+                    "استعراض سجل الحركات المالية التفصيلية (خصومات المكالمات، شحن الرصيد، والتعديلات الإدارية) مع التقسيم لصفحات."
+                    if is_ar else
+                    "Paginated ledger of all financial transactions (call deductions, top-ups, adjustments)."
+                ),
+                "parameters": [
+                    {"name": "type", "in": "query", "schema": {"type": "string", "enum": ["call_deduction", "topup", "admin_adjustment", "welcome_bonus"]}, "description": "تصفية بنوع الحركة" if is_ar else "Filter by transaction type"},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}},
+                    {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "قائمة الحركات المالية" if is_ar else "Transactions list",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "total": 45,
+                                    "limit": 50,
+                                    "offset": 0,
+                                    "transactions": [
+                                        {
+                                            "id": 102,
+                                            "transaction_type": "call_deduction",
+                                            "transaction_type_display": "خصم مكالمة صوتية",
+                                            "amount": -0.10,
+                                            "amount_formatted": "-0.10 $",
+                                            "balance_after": 24.50,
+                                            "balance_after_formatted": "24.50 $",
+                                            "currency": "USD",
+                                            "currency_symbol": "$",
+                                            "actual_seconds": 75,
+                                            "billed_minutes": 2,
+                                            "rate_applied": 0.05,
+                                            "description": "مكالمة صادرة (2 دقيقة تقريب لأعلى - 75 ثانية)",
+                                            "room_name": "room_user_1_ai_out_ab12cd34",
+                                            "created_at": "2026-09-27 01:15:30"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/profiles/studio/": {
             "get": {
                 "tags": [tag_map["tag_profiles"]],
@@ -220,6 +312,86 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 "summary": "حذف ذاكرة عميل (Delete Memory)" if is_ar else "Delete Customer Memory",
                 "parameters": [{"$ref": "#/components/parameters/MemoryId"}],
                 "responses": {"200": {"description": "تم الحذف بنجاح" if is_ar else "Memory deleted successfully"}}
+            }
+        },
+        "/crm/customers/": {
+            "get": {
+                "tags": [tag_map["tag_crm"]],
+                "summary": "استعراض وبحث قائمة عملاء الـ CRM (List CRM Customers)" if is_ar else "List & Search CRM Customers",
+                "description": "استعراض والبحث في قائمة العملاء، أرقام الهواتف، والذاكرة التراكمية الدائمة." if is_ar else "List and search customer profiles, phone numbers, and permanent CRM context.",
+                "parameters": [
+                    {"name": "search", "in": "query", "schema": {"type": "string"}, "description": "بحث بالاسم، رقم الهاتف، أو الملاحظات" if is_ar else "Search query (name, phone, notes)"},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}},
+                    {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0}}
+                ],
+                "responses": {"200": {"description": "قائمة العملاء" if is_ar else "Customers list"}}
+            },
+            "post": {
+                "tags": [tag_map["tag_crm"]],
+                "summary": "إضافة أو تحديث عميل CRM برقم الهاتف (Create / Upsert Customer)" if is_ar else "Create or Upsert CRM Customer",
+                "description": "إنشاء سجل عميل جديد أو تحديث ملفه الدائم وملاحظات التعامل." if is_ar else "Create customer record or update permanent profile and memory notes.",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["phone_number"],
+                                "properties": {
+                                    "phone_number": {"type": "string", "example": "+966551234567"},
+                                    "customer_name": {"type": "string", "example": "فيصل المطيري" if is_ar else "Faisal Al-Mutairi"},
+                                    "permanent_profile": {"type": "object", "example": {"city": "الرياض", "vip_level": "VIP", "preferences": "يفضل التواصل صباحاً"}},
+                                    "notes": {"type": "string", "example": "عميل متكرر - مهتم بمنتجات التقنية"},
+                                    "last_interaction_summary": {"type": "string", "example": "تم الاتفاق على شحن الطلب غداً"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "تم حفظ العميل بنجاح" if is_ar else "Customer saved successfully"}}
+            }
+        },
+        "/crm/customers/{phone}/": {
+            "get": {
+                "tags": [tag_map["tag_crm"]],
+                "summary": "بطاقة العميل وسجل آخر 10 مكالمات (Get Customer & Call History)" if is_ar else "Get Customer Profile & Call History",
+                "description": "يعيد بيانات العميل الدائمة مع آخر 10 مكالمات صوتية مسجلة بروابط التسجيل الصوتي." if is_ar else "Returns customer permanent context and recent 10 call sessions with audio recording URLs.",
+                "parameters": [
+                    {"name": "phone", "in": "path", "required": True, "schema": {"type": "string"}, "description": "رقم هاتف العميل" if is_ar else "Customer phone number"}
+                ],
+                "responses": {"200": {"description": "بيانات العميل والمكالمات" if is_ar else "Customer profile and calls"}}
+            },
+            "put": {
+                "tags": [tag_map["tag_crm"]],
+                "summary": "تحديث بطاقة العميل (Update Customer Profile)" if is_ar else "Update Customer Profile",
+                "parameters": [
+                    {"name": "phone", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "customer_name": {"type": "string", "example": "فيصل المطيري"},
+                                    "permanent_profile": {"type": "object"},
+                                    "notes": {"type": "string"},
+                                    "last_interaction_summary": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "تم التحديث بنجاح" if is_ar else "Customer updated successfully"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_crm"]],
+                "summary": "حذف ذاكرة وبطاقة العميل (Delete Customer Memory)" if is_ar else "Delete Customer Memory",
+                "parameters": [
+                    {"name": "phone", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {"200": {"description": "تم الحذف بنجاح" if is_ar else "Customer deleted successfully"}}
             }
         },
         "/documents/": {
@@ -389,6 +561,92 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 "responses": {"201": {"description": "تم التعيين بنجاح" if is_ar else "Number assigned successfully"}}
             }
         },
+        "/telephony/pbx-trunks/": {
+            "get": {
+                "tags": [tag_map["tag_telephony"]],
+                "summary": "استعراض سنترالات الـ PBX وإعدادات Issabel الجاهزة (List PBX Trunks)" if is_ar else "List Inbound PBX Trunks",
+                "description": "يعيد قائمة جذوع وسنترالات PBX المسجلة مع نصوص الضبط الجاهزة للنسخ في Issabel (PEER Details & USER Details)." if is_ar else "Returns registered PBX trunks with auto-generated Issabel / Asterisk configuration.",
+                "responses": {"200": {"description": "قائمة السنترالات" if is_ar else "PBX trunks list"}}
+            },
+            "post": {
+                "tags": [tag_map["tag_telephony"]],
+                "summary": "ربط سنترال PBX ثنائي الاتجاه جديد (Create PBX Trunk)" if is_ar else "Create Bidirectional PBX Trunk",
+                "description": "إنشاء جذع PBX جديد بربط IP أو بيانات مستخدم ومزامنة قواعد التوجيه في خادم LiveKit SIP." if is_ar else "Create PBX trunk via IP or SIP credentials and sync with LiveKit SIP dispatch.",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["name", "auth_mode"],
+                                "properties": {
+                                    "name": {"type": "string", "example": "سنترال المقر الرئيسي (Issabel PBX)"},
+                                    "auth_mode": {"type": "string", "enum": ["ip", "credentials"], "default": "ip"},
+                                    "pbx_ip": {"type": "string", "example": "192.168.1.50", "description": "مطلوب في حال auth_mode=ip"},
+                                    "auth_username": {"type": "string", "example": "issabel_trunk_101", "description": "مطلوب في حال auth_mode=credentials"},
+                                    "auth_password": {"type": "string", "example": "SuperSecretPass123"},
+                                    "inbound_numbers": {"type": "string", "example": "100,200", "description": "أرقام الاستقبال مفصولة بفواصل"},
+                                    "destination_type": {"type": "string", "enum": ["ai_assistant", "call_queue"], "default": "ai_assistant"},
+                                    "target_queue_id": {"type": "integer", "description": "مطلوب عند اختيار call_queue"},
+                                    "target_profile_id": {"type": "integer"},
+                                    "enable_outbound": {"type": "boolean", "default": True},
+                                    "outbound_port": {"type": "integer", "default": 5060},
+                                    "outbound_transport": {"type": "string", "enum": ["UDP", "TCP", "TLS"], "default": "UDP"},
+                                    "is_default_outbound": {"type": "boolean", "default": False}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "تم الربط وتوليد إعدادات Issabel بنجاح" if is_ar else "PBX Trunk created successfully"}}
+            }
+        },
+        "/telephony/pbx-trunks/{trunk_id}/": {
+            "get": {
+                "tags": [tag_map["tag_telephony"]],
+                "summary": "تفاصيل سنترال PBX محدد ونصوص الربط (Get PBX Trunk Detail)" if is_ar else "Get PBX Trunk Details",
+                "parameters": [{"name": "trunk_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                "responses": {"200": {"description": "تفاصيل السنترال وإعدادات Issabel" if is_ar else "PBX trunk details"}}
+            },
+            "put": {
+                "tags": [tag_map["tag_telephony"]],
+                "summary": "تعديل إعدادات سنترال PBX (Update PBX Trunk)" if is_ar else "Update PBX Trunk",
+                "parameters": [{"name": "trunk_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "auth_mode": {"type": "string", "enum": ["ip", "credentials"]},
+                                    "pbx_ip": {"type": "string"},
+                                    "auth_username": {"type": "string"},
+                                    "auth_password": {"type": "string"},
+                                    "inbound_numbers": {"type": "string"},
+                                    "destination_type": {"type": "string", "enum": ["ai_assistant", "call_queue"]},
+                                    "target_queue_id": {"type": "integer"},
+                                    "target_profile_id": {"type": "integer"},
+                                    "enable_outbound": {"type": "boolean"},
+                                    "outbound_port": {"type": "integer"},
+                                    "outbound_transport": {"type": "string"},
+                                    "is_default_outbound": {"type": "boolean"},
+                                    "is_active": {"type": "boolean"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "تم التحديث وإعادة المزامنة بنجاح" if is_ar else "Updated successfully"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_telephony"]],
+                "summary": "حذف سنترال PBX وإلغاء حجز LiveKit SIP (Delete PBX Trunk)" if is_ar else "Delete PBX Trunk",
+                "parameters": [{"name": "trunk_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                "responses": {"200": {"description": "تم الحذف بنجاح" if is_ar else "Deleted successfully"}}
+            }
+        },
         "/employees/": {
             "get": {
                 "tags": [tag_map["tag_employees"]],
@@ -430,6 +688,57 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 "summary": "حذف موظف (Delete Employee)" if is_ar else "Delete Employee",
                 "parameters": [{"$ref": "#/components/parameters/EmployeeId"}],
                 "responses": {"200": {"description": "تم الحذف بنجاح" if is_ar else "Deleted successfully"}}
+            }
+        },
+        "/employees/calls/": {
+            "get": {
+                "tags": [tag_map["tag_employees"]],
+                "summary": "سجل مكالمات الموظفين وتطبيقات الهواتف (Employee Call Logs & Recordings)" if is_ar else "Employee Call Logs & Audio Recordings",
+                "description": (
+                    "استعراض سجل كافة مكالمات الموظفين والوكلاء الداخليين (مكالمات واردة، صادرة، محولة) مع روابط الاستماع للمكالمات المسجلة والفلترة بالتحويلة أو الموظف."
+                    if is_ar else
+                    "List internal employee call logs, durations, and audio recording URLs with filters by extension, employee, or call type."
+                ),
+                "parameters": [
+                    {"name": "employee_id", "in": "query", "schema": {"type": "integer"}, "description": "تصفية بموظف محدد" if is_ar else "Filter by employee ID"},
+                    {"name": "extension", "in": "query", "schema": {"type": "string"}, "description": "تصفية برقم التحويلة (مثال: 101)" if is_ar else "Filter by extension"},
+                    {"name": "call_type", "in": "query", "schema": {"type": "string", "enum": ["inbound", "outbound", "missed", "transfer"]}, "description": "نوع المكالمة" if is_ar else "Call direction type"},
+                    {"name": "search", "in": "query", "schema": {"type": "string"}, "description": "بحث باسم الموظف أو الطرف الآخر" if is_ar else "Search employee or caller"},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}},
+                    {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "سجلات مكالمات الموظفين" if is_ar else "Employee call logs",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "total": 12,
+                                    "limit": 50,
+                                    "offset": 0,
+                                    "calls": [
+                                        {
+                                            "id": 14,
+                                            "employee_id": 2,
+                                            "employee_name": "أحمد علي",
+                                            "employee_extension": "101",
+                                            "other_party": "102",
+                                            "extension": "102",
+                                            "room_name": "room_emp_101_102_a1b2",
+                                            "call_type": "outbound",
+                                            "call_type_display": "مكالمة صادرة",
+                                            "started_at": "2026-09-27 02:10:00",
+                                            "ended_at": "2026-09-27 02:12:45",
+                                            "duration_secs": 165,
+                                            "recording_url": "https://app.169.58.32.179.nip.io/media/recordings/emp_14.mp3"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         "/queues/": {
@@ -614,6 +923,51 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                 }
             }
         },
+        "/calls/{call_id}/": {
+            "get": {
+                "tags": [tag_map["tag_cdr"]],
+                "summary": "تفاصيل جلسة مكالمة محددة مع النص والملخص والتسجيل (Get Call Session Detail)" if is_ar else "Get Call Session Detail",
+                "description": (
+                    "استرجاع تفاصيل كاملة لمكالمة محددة عبر معرف المكالمة أو اسم الغرفة، تشمل نص الحوار الكامل (Transcript)، أدوار الحديث، التكلفة المحتسبة، الدقائق، ورابط التسجيل الصوتي."
+                    if is_ar else
+                    "Get complete single call session details including full dialogue turns, transcript, AI summary, billed cost, and direct audio recording URL."
+                ),
+                "parameters": [
+                    {"name": "call_id", "in": "path", "required": True, "schema": {"type": "string"}, "description": "معرف المكالمة أو اسم الغرفة (room_name)" if is_ar else "Call session ID or room_name"}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "تفاصيل المكالمة" if is_ar else "Call details",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "call": {
+                                        "call_id": "room_user_1_ai_out_ab12cd34",
+                                        "session_id": 482,
+                                        "direction": "outbound_ai",
+                                        "direction_display": "صادرة (ذكاء اصطناعي)",
+                                        "caller_phone": "+201234567890",
+                                        "destination_phone": "+201012345678",
+                                        "call_goal": "تأكيد الطلب رقم 1005",
+                                        "started_at": "2026-09-27 01:15:00",
+                                        "ended_at": "2026-09-27 01:16:30",
+                                        "duration_seconds": 90,
+                                        "billed_minutes": 2,
+                                        "cost": 0.10,
+                                        "summary": "تم التواصل مع العميل وتأكيد استلام الطلب غداً بمشيئة الله.",
+                                        "transcript_text": "المساعد: مرحباً بك... العميل: أهلاً، نعم أؤكد الطلب.",
+                                        "recording_url": "https://app.169.58.32.179.nip.io/media/recordings/call_482.mp3",
+                                        "dialogue_turns": 4
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {"$ref": "#/components/responses/404Error"}
+                }
+            }
+        },
         "/webhooks/": {
             "get": {
                 "tags": [tag_map["tag_webhooks"]],
@@ -639,6 +993,44 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                     }
                 },
                 "responses": {"200": {"description": "تم الحفظ بنجاح" if is_ar else "Webhook saved successfully"}}
+            }
+        },
+        "/business-hours/": {
+            "get": {
+                "tags": [tag_map["tag_telephony"]],
+                "summary": "استعراض جدول مواعيد العمل وساعات الدوام (Get Business Hours)" if is_ar else "Get Business Hours Schedule",
+                "description": "استعراض إعدادات ساعات العمل للأسبوع وسلوك المكالمات خارج الدوام (رد آلي أو رسالة صوتية)." if is_ar else "Get weekly business hours schedule and off-hours auto-responder behavior.",
+                "responses": {"200": {"description": "جدول مواعيد العمل" if is_ar else "Business hours schedule"}}
+            },
+            "post": {
+                "tags": [tag_map["tag_telephony"]],
+                "summary": "تحديث جدول ساعات العمل وسلوك خارج الدوام (Update Business Hours)" if is_ar else "Update Business Hours Schedule",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "is_enabled": {"type": "boolean", "default": True},
+                                    "timezone": {"type": "string", "example": "Africa/Cairo"},
+                                    "action_type": {"type": "string", "enum": ["ai_message", "audio_file"], "default": "ai_message"},
+                                    "ai_message": {"type": "string", "example": "مرحباً بكم، نتأسف لاتصالكم خارج أوقات العمل الرسمية."},
+                                    "audio_file_url": {"type": "string", "example": "https://example.com/audio/closed.mp3", "description": "رابط مباشر لملف صوتي خارجي بصيغة MP3 أو WAV"},
+                                    "days_config": {
+                                        "type": "object",
+                                        "example": {
+                                            "sunday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+                                            "monday": {"is_workday": True, "start_time": "09:00", "end_time": "17:00"},
+                                            "friday": {"is_workday": False, "start_time": "09:00", "end_time": "17:00"}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "تم حفظ مواعيد العمل بنجاح" if is_ar else "Business hours updated successfully"}}
             }
         },
         "/campaigns/": {
@@ -700,6 +1092,119 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
                     {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}}
                 ],
                 "responses": {"200": {"description": "تم بدء تشغيل الحملة بنجاح" if is_ar else "Campaign started successfully"}}
+            }
+        },
+        "/campaigns/{campaign_id}/": {
+            "get": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "تفاصيل حملة محددة وقائمة العملاء (Get Campaign Details & Contacts)" if is_ar else "Get Campaign Details & Contacts",
+                "description": "استرجاع بيانات الحملة التفصيلية، مؤشرات تقدم الاتصال، وقائمة العملاء وتصنيفات الاهتمام." if is_ar else "Returns campaign metrics, dial progress, and targeted customer contacts.",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تفاصيل الحملة" if is_ar else "Campaign details"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "حذف حملة اتصال (Delete Campaign)" if is_ar else "Delete Outbound Campaign",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تم حذف الحملة بنجاح" if is_ar else "Campaign deleted successfully"}}
+            }
+        },
+        "/campaigns/{campaign_id}/pause/": {
+            "post": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "إيقاف الحملة مؤقتاً (Pause Campaign)" if is_ar else "Pause Outbound Campaign",
+                "description": "إيقاف الاتصال الآلي للحملة مؤقتاً مع الحفاظ على تقدم المكالمات السابقة." if is_ar else "Temporarily pause campaign dialing queue.",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تم إيقاف الحملة مؤقتاً" if is_ar else "Campaign paused successfully"}}
+            }
+        },
+        "/campaigns/{campaign_id}/reset/": {
+            "post": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "إعادة تعيين العملاء لحالة الانتظار (Reset Campaign Contacts)" if is_ar else "Reset Failed Campaign Contacts",
+                "description": "إعادة تعيين جهات الاتصال التي لم ترد أو فشل الاتصال بها لحالة الانتظار وإرجاع الحملة لمسودة جاهزة لإعادة الاتصال." if is_ar else "Resets unreached/failed contacts back to pending and sets campaign back to draft.",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تمت إعادة التعيين بنجاح" if is_ar else "Contacts reset successfully"}}
+            }
+        },
+        "/campaigns/{campaign_id}/export/": {
+            "get": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "تصدير نتائج الحملة وتصنيفات العملاء (Export Campaign Leads)" if is_ar else "Export Campaign Leads & Classifications",
+                "description": "تصدير جهات اتصال ونتائج المكالمات بصيغة JSON أو ملف Excel/CSV جاهز للتحميل." if is_ar else "Export campaign contacts and AI classification results as JSON, CSV (UTF-8 BOM), or Excel XLSX.",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    {"name": "format", "in": "query", "schema": {"type": "string", "enum": ["json", "csv", "xlsx"], "default": "json"}, "description": "صيغة التصدير" if is_ar else "Export format"},
+                    {"name": "filter", "in": "query", "schema": {"type": "string", "enum": ["all", "hot", "hot_warm", "answered"], "default": "all"}, "description": "تصفية العملاء" if is_ar else "Lead filter mode"}
+                ],
+                "responses": {"200": {"description": "بيانات التصدير أو الملف المرفق" if is_ar else "Exported leads or downloaded file"}}
+            }
+        },
+        "/campaigns/{campaign_id}/contacts/{contact_id}/": {
+            "get": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "تفاصيل عميل محدد داخل الحملة (Get Campaign Contact Detail)" if is_ar else "Get Campaign Contact Details",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "بيانات العميل بالحملة" if is_ar else "Contact details"}}
+            },
+            "patch": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "تعديل بيانات عميل بالحملة (Update Campaign Contact)" if is_ar else "Update Campaign Contact",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "customer_name": {"type": "string", "example": "محمد الغامدي"},
+                                    "phone_number": {"type": "string", "example": "+966551234567"},
+                                    "attributes": {"type": "object"},
+                                    "call_status": {"type": "string", "enum": ["pending", "in_progress", "answered", "busy", "no_answer", "failed"]},
+                                    "interest_level": {"type": "string", "enum": ["uncontacted", "hot", "warm", "cold", "callback", "unreached"]},
+                                    "call_summary": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "تم التحديث بنجاح" if is_ar else "Updated successfully"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "حذف عميل من الحملة (Delete Campaign Contact)" if is_ar else "Delete Campaign Contact",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تم الحذف بنجاح" if is_ar else "Deleted successfully"}}
+            }
+        },
+        "/campaigns/{campaign_id}/contacts/{contact_id}/dial/": {
+            "post": {
+                "tags": [tag_map["tag_campaigns"]],
+                "summary": "إجراء اتصال فوري بعميل محدد بالحملة (Dial Single Contact)" if is_ar else "Trigger Outbound Call to Single Contact",
+                "description": "توجيه أمر فوري للاتصال بالعميل المحدد فردياً دون انتظار جدولة بقية الحملة." if is_ar else "Immediately triggers an autonomous AI outbound call to this specific contact.",
+                "parameters": [
+                    {"name": "campaign_id", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "تم بدء الاتصال بنجاح" if is_ar else "Call initiated successfully"}}
             }
         }
     }
