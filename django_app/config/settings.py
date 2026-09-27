@@ -168,10 +168,17 @@ SPECTACULAR_SETTINGS = {
     'COMPONENT_SPLIT_REQUEST': True,
     'SECURITY': [
         {'ApiKeyAuth': []},
+        {'PartnerKey': []},
         {'BearerAuth': []},
     ],
     'APPEND_COMPONENTS': {
         'securitySchemes': {
+            'PartnerKey': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'X-Partner-Key',
+                'description': 'مفتاح الشريك السري (sk_live_prt_...)',
+            },
             'ApiKeyAuth': {
                 'type': 'apiKey',
                 'in': 'header',
