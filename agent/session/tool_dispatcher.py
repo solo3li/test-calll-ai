@@ -7,95 +7,6 @@ from agent.clients.django_client import query_knowledge_base_async
 from agent.clients.mcp_client import execute_mcp_tool_call
 
 
-def clean_gemini_schema(raw: Any) -> Any:
-    """
-    Recursively sanitize any JSON Schema (from FastMCP, Pydantic, OpenAPI, etc.)
-    into a strict Gemini Live API compliant Schema dictionary.
-    
-    1. Removes unsupported Gemini keys:
-       - additionalProperties, additional_properties
-       - $schema, $defs, definitions, title, default
-    2. Simplifies `anyOf` / `oneOf` (e.g. `anyOf: [{type: 'string'}, {type: 'null'}]`):
-       - Extracts the primary non-null type and sets `nullable: True`.
-    3. Normalizes type strings to uppercase (STRING, INTEGER, NUMBER, BOOLEAN, OBJECT, ARRAY).
-    4. Recursively processes `properties` and `items`.
-    """
-    if not isinstance(raw, dict):
-        return raw
-
-    cleaned = {}
-
-    # 1. Handle anyOf / oneOf
-    any_of = raw.get("anyOf") or raw.get("any_of") or raw.get("oneOf") or raw.get("one_of")
-    if any_of and isinstance(any_of, list):
-        non_null_schemas = [s for s in any_of if isinstance(s, dict) and s.get("type") not in ("null", "NULL")]
-        has_null = any(isinstance(s, dict) and s.get("type") in ("null", "NULL") for s in any_of)
-        
-        if non_null_schemas:
-            primary = clean_gemini_schema(non_null_schemas[0])
-            if isinstance(primary, dict):
-                cleaned.update(primary)
-        if has_null:
-            cleaned["nullable"] = True
-
-    # 2. Extract and normalize type
-    schema_type = raw.get("type")
-    if schema_type:
-        if isinstance(schema_type, str):
-            st_upper = schema_type.upper()
-            if st_upper in ("STRING", "INTEGER", "NUMBER", "BOOLEAN", "OBJECT", "ARRAY"):
-                cleaned["type"] = st_upper
-            elif st_upper in ("FLOAT", "DOUBLE"):
-                cleaned["type"] = "NUMBER"
-            elif st_upper in ("INT", "LONG"):
-                cleaned["type"] = "INTEGER"
-            elif st_upper in ("BOOL",):
-                cleaned["type"] = "BOOLEAN"
-            else:
-                cleaned["type"] = st_upper
-        elif isinstance(schema_type, list):
-            non_null_types = [t for t in schema_type if str(t).lower() != "null"]
-            if non_null_types:
-                cleaned["type"] = str(non_null_types[0]).upper()
-            if any(str(t).lower() == "null" for t in schema_type):
-                cleaned["nullable"] = True
-
-    if "type" not in cleaned:
-        if "properties" in raw:
-            cleaned["type"] = "OBJECT"
-        elif "items" in raw:
-            cleaned["type"] = "ARRAY"
-
-    if "description" in raw and isinstance(raw["description"], str):
-        cleaned["description"] = raw["description"]
-
-    if "nullable" in raw:
-        cleaned["nullable"] = bool(raw["nullable"])
-
-    if "enum" in raw and isinstance(raw["enum"], list):
-        cleaned["enum"] = [str(e) for e in raw["enum"]]
-
-    if "properties" in raw and isinstance(raw["properties"], dict):
-        cleaned_props = {}
-        for prop_name, prop_schema in raw["properties"].items():
-            cleaned_props[prop_name] = clean_gemini_schema(prop_schema)
-        cleaned["properties"] = cleaned_props
-
-    if "required" in raw and isinstance(raw["required"], list):
-        if "properties" in cleaned:
-            cleaned["required"] = [f for f in raw["required"] if f in cleaned["properties"]]
-        else:
-            cleaned["required"] = list(raw["required"])
-
-    if "items" in raw:
-        if isinstance(raw["items"], dict):
-            cleaned["items"] = clean_gemini_schema(raw["items"])
-        elif isinstance(raw["items"], list) and raw["items"]:
-            cleaned["items"] = clean_gemini_schema(raw["items"][0])
-
-    return cleaned
-
-
 def build_gemini_tools(mcp_tools: Dict[str, Any], call_queues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Build the function declarations list for Gemini Live connect config."""
     rag_decl = {
@@ -117,17 +28,15 @@ def build_gemini_tools(mcp_tools: Dict[str, Any], call_queues: List[Dict[str, An
 
     func_decls = [rag_decl]
 
-    # Add external MCP tools from all active servers with clean Gemini schemas
+    # Add external MCP tools from all active servers
     for t_name, t_info in mcp_tools.items():
         decl = {
             "name": t_name,
             "description": t_info.get("description", "")
         }
         params = t_info.get("parameters")
-        if params and isinstance(params, dict):
-            cleaned_params = clean_gemini_schema(params)
-            if cleaned_params and isinstance(cleaned_params, dict):
-                decl["parameters"] = cleaned_params
+        if params and isinstance(params, dict) and params.get("properties"):
+            decl["parameters"] = params
         func_decls.append(decl)
 
     if mcp_tools:
