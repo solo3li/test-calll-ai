@@ -257,12 +257,79 @@ async def handle_gemini_tool_call(
             fc.name,
             act_args
         )
-        logger.info(f"MCP tool '{fc.name}' response: {action_result[:150]}")
-        return types.FunctionResponse(
-            id=fc.id,
-            name=fc.name,
-            response={"result": action_result}
-        ), None
+
+        is_error = False
+        error_msg = ""
+        error_type = "none"
+        raw_output = ""
+
+        if isinstance(action_result, dict):
+            is_error = bool(action_result.get("is_error"))
+            error_msg = str(action_result.get("error_message") or action_result.get("result") or "")
+            error_type = str(action_result.get("error_type") or "tool_error")
+            raw_output = str(action_result.get("result") or "")
+        else:
+            raw_output = str(action_result)
+            if "حدث خطأ" in raw_output or "استغرق نظام" in raw_output or "validation error" in raw_output.lower():
+                is_error = True
+                error_msg = raw_output
+                error_type = "tool_error"
+
+        if is_error:
+            logger.warning(f"MCP tool '{fc.name}' failed: type={error_type}, msg={error_msg[:100]}")
+            # Notify Centrifugo of tool failure for live dashboard tracking
+            await notify_centrifugo_async(
+                channel_name,
+                "agent_action_failed",
+                f"فشل تنفيذ أداة {fc.name}: {error_msg[:80]}",
+                {
+                    "tool_name": fc.name,
+                    "server_name": s_name,
+                    "error": error_msg,
+                    "error_type": error_type
+                }
+            )
+
+            available_queues_hint = ""
+            if call_queues:
+                q_names = " أو ".join([f"قسم {q['name']}" for q in call_queues if q.get("name")])
+                if q_names:
+                    available_queues_hint = f" واعرض على المتصل تحويله إلى {q_names} إذا رغب."
+
+            error_instruction = (
+                f"تنبيه حاسم للمساعد الصوتي: فشلت هذه الأداة ({fc.name}) في التنفيذ ولم تكتمل العملية المطلوبة. "
+                f"يجب أن تعتذر للمتصل فوراً وتوضح له سبب التعذر بلباقة بناءً على سبب الخطأ: ({error_msg}). "
+                f"يُمنع منعاً باتاً وحاسماً أن تدّعي نجاح العملية أو تقول 'تم تأكيد طلبك' أو 'تم التسجيل' أو تؤلف بيانات وهمية! "
+                f"اقترح على المتصل إعادة المحاولة لاحقاً،{available_queues_hint}"
+            )
+
+            return types.FunctionResponse(
+                id=fc.id,
+                name=fc.name,
+                response={
+                    "status": "error",
+                    "error": True,
+                    "error_type": error_type,
+                    "error_message": error_msg,
+                    "instruction": error_instruction
+                }
+            ), None
+        else:
+            logger.info(f"MCP tool '{fc.name}' response: {raw_output[:150]}")
+            await notify_centrifugo_async(
+                channel_name,
+                "agent_action_success",
+                f"تم تنفيذ أداة {fc.name} بنجاح",
+                {"tool_name": fc.name}
+            )
+            return types.FunctionResponse(
+                id=fc.id,
+                name=fc.name,
+                response={
+                    "status": "success",
+                    "result": raw_output
+                }
+            ), None
 
     elif fc.name == "transfer_to_queue":
         q_code = str(fc.args.get("queue_code", "")).strip() if fc.args else ""
