@@ -500,7 +500,10 @@ def test_mcp_connection_view(request):
 
     server_obj = None
     if server_id:
-        server_obj = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+        if request.user.is_staff:
+            server_obj = get_object_or_404(UserMCPServer, id=server_id)
+        else:
+            server_obj = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
         server_url = server_url or server_obj.server_url
         if 'auth_token' not in data:
             auth_token = server_obj.auth_token
@@ -513,9 +516,22 @@ def test_mcp_connection_view(request):
     # If this was an existing saved server and connection succeeded, auto-sync cached_tools
     if server_obj and result.get("ok"):
         try:
-            server_obj.cached_tools = result.get("tools", [])
+            # Preserve existing test_results for tools that still exist
+            existing_tests = {}
+            if isinstance(server_obj.cached_tools, list):
+                for old_t in server_obj.cached_tools:
+                    if isinstance(old_t, dict) and old_t.get("name") and old_t.get("test_result"):
+                        existing_tests[old_t["name"]] = old_t["test_result"]
+
+            new_tools = result.get("tools", [])
+            for nt in new_tools:
+                if nt.get("name") in existing_tests:
+                    nt["test_result"] = existing_tests[nt["name"]]
+
+            server_obj.cached_tools = new_tools
             server_obj.last_synced_at = timezone.now()
             server_obj.save(update_fields=['cached_tools', 'last_synced_at'])
+            result["tools"] = new_tools
             result["server"] = server_obj.to_dict()
         except Exception as e:
             logger.warning(f"Failed to auto-update cached_tools on server {server_obj.id}: {e}")
@@ -560,8 +576,12 @@ def test_mcp_tool_view(request):
     if not isinstance(arguments, dict):
         arguments = {}
 
+    server_obj = None
     if server_id:
-        server_obj = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
+        if request.user.is_staff:
+            server_obj = get_object_or_404(UserMCPServer, id=server_id)
+        else:
+            server_obj = get_object_or_404(UserMCPServer, id=server_id, user=request.user)
         server_url = server_url or server_obj.server_url
         if 'auth_token' not in data:
             auth_token = server_obj.auth_token
@@ -573,6 +593,29 @@ def test_mcp_tool_view(request):
         return JsonResponse({"status": "error", "message": "اسم الأداة (tool_name) مطلوب لتنفيذ الاختبار."}, status=400)
 
     result = test_mcp_tool_sync(server_url, auth_token, tool_name, arguments, timeout=timeout)
+
+    # Persist test_result in cached_tools if server exists
+    if server_obj and isinstance(server_obj.cached_tools, list):
+        try:
+            test_info = {
+                "status": "success" if result.get("ok") else "error",
+                "execution_time_ms": result.get("execution_time_ms", 0),
+                "tested_at": timezone.now().strftime("%Y-%m-%d %H:%M"),
+                "error_type": result.get("error_type", "none"),
+                "error_message": result.get("error_message", "")
+            }
+            updated = False
+            for t_item in server_obj.cached_tools:
+                if isinstance(t_item, dict) and t_item.get("name") == tool_name:
+                    t_item["test_result"] = test_info
+                    updated = True
+                    break
+            if updated:
+                server_obj.save(update_fields=['cached_tools'])
+                result["test_result"] = test_info
+        except Exception as e:
+            logger.warning(f"Failed to persist tool test result on server {server_obj.id}: {e}")
+
     http_status = 200 if result.get("ok") else 400
     return JsonResponse(result, status=http_status)
 

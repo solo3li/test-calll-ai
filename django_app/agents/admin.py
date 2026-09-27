@@ -73,27 +73,322 @@ class UserMCPServerAdmin(admin.ModelAdmin):
     test_connection_action.short_description = "إجراء الفحص المباشر"
 
     def tools_preview(self, obj):
+        if not obj or not obj.id:
+            return "احفظ الخادم أولاً لإظهار جدول الأدوات وإمكانية اختبارها."
         tools = obj.cached_tools or []
         if not tools:
-            return "لا توجد أدوات مكتشفة حتى الآن. اضغط على زر الفحص لتحديث الأدوات."
-        items = []
-        for t in tools:
-            name = t.get('name', 'بدون اسم')
-            desc = t.get('description', '') or 'بدون وصف'
-            params = []
-            if isinstance(t.get('parameters'), dict):
-                props = t.get('parameters', {}).get('properties', {})
-                if isinstance(props, dict):
-                    params = list(props.keys())
-            params_str = ", ".join(params) if params else "بدون معاملات"
-            items.append(
-                f"<li style='margin-bottom:6px;'>"
-                f"<strong style='color:#680E23; font-family:monospace;'>{name}</strong>: {desc} "
-                f"<span style='background:#FAF7F2; border:1px solid #DDD5C7; padding:1px 6px; border-radius:4px; font-size:10px; color:#443D39;'>({params_str})</span>"
-                f"</li>"
+            return mark_safe(
+                "<div style='padding:14px; background:#FAF7F2; border:1px dashed #DDD5C7; border-radius:12px; color:#6E645D; font-size:12px;'>"
+                "لا توجد أدوات مكتشفة حتى الآن. اضغط على زر <strong>'فحص الاتصال وتحديث الأدوات الحية الآن'</strong> أعلاه لقراءة دوال الخادم."
+                "</div>"
             )
-        return mark_safe(f"<ul style='margin:0; padding-right:18px; line-height:1.6;'>{''.join(items)}</ul>")
-    tools_preview.short_description = "معاينة الأدوات المكتشفة"
+
+        tools_json = json.dumps(tools)
+
+        rows = []
+        for idx, t in enumerate(tools, start=1):
+            name = t.get('name', 'بدون اسم')
+            desc = t.get('description', '') or 'بدون وصف توضيحي'
+            params = t.get('parameters', {})
+            props = params.get('properties', {}) if isinstance(params, dict) else {}
+            required = params.get('required', []) if isinstance(params, dict) else []
+
+            param_badges = []
+            if props and isinstance(props, dict):
+                for p_name in props.keys():
+                    is_req = p_name in required
+                    if is_req:
+                        param_badges.append(
+                            f'<span style="background:#FAF0F2; color:#680E23; border:1px solid #E8CCD2; padding:2px 7px; border-radius:5px; font-size:10px; font-weight:bold; margin:2px;" title="حقل إلزامي">{p_name}*</span>'
+                        )
+                    else:
+                        param_badges.append(
+                            f'<span style="background:#F5EFE6; color:#6E645D; border:1px solid #DDD5C7; padding:2px 7px; border-radius:5px; font-size:10px; margin:2px;">{p_name}</span>'
+                        )
+            params_html = "".join(param_badges) if param_badges else '<span style="color:#8C827A; font-size:11px;">بدون معاملات</span>'
+
+            test_res = t.get('test_result', {})
+            st = test_res.get('status')
+            if st == 'success':
+                exec_time = test_res.get('execution_time_ms', 0)
+                tested_at = test_res.get('tested_at', '')
+                status_html = (
+                    f'<span id="status-badge-{idx}" style="background:#ECFDF5; color:#065F46; border:1px solid #A7F3D0; padding:3px 9px; border-radius:6px; font-weight:bold; font-size:11px; display:inline-flex; align-items:center; gap:4px;" title="آخر فحص: {tested_at}">'
+                    f'<span>🟢 يعمل</span> <small style="color:#047857; font-family:monospace;">({exec_time}ms)</small>'
+                    f'</span>'
+                )
+            elif st == 'error':
+                err_type = test_res.get('error_type', 'error')
+                err_msg = test_res.get('error_message', '')[:60]
+                status_html = (
+                    f'<span id="status-badge-{idx}" style="background:#FEF2F2; color:#991B1B; border:1px solid #FECACA; padding:3px 9px; border-radius:6px; font-weight:bold; font-size:11px; display:inline-flex; align-items:center; gap:4px;" title="{err_msg}">'
+                    f'<span>🔴 فشل</span> <small style="color:#B91C1C;">({err_type})</small>'
+                    f'</span>'
+                )
+            else:
+                status_html = (
+                    f'<span id="status-badge-{idx}" style="background:#F5EFE6; color:#6E645D; border:1px solid #DDD5C7; padding:3px 9px; border-radius:6px; font-weight:600; font-size:11px; display:inline-flex; align-items:center; gap:4px;">'
+                    f'<span>⚪ لم يُختبر</span>'
+                    f'</span>'
+                )
+
+            rows.append(f"""
+            <tr style="border-bottom:1px solid #EAE3D9; transition:background 0.2s;" onmouseover="this.style.background='#FAF7F2'" onmouseout="this.style.background='#fff'">
+              <td style="padding:10px 8px; text-align:center; color:#8C827A; font-weight:bold;">{idx}</td>
+              <td style="padding:10px 12px; font-family:monospace; font-weight:bold; color:#680E23; font-size:12px;">{name}</td>
+              <td style="padding:10px 12px; color:#443D39; line-height:1.4;">{desc}</td>
+              <td style="padding:10px 12px; display:flex; flex-wrap:wrap; gap:3px;">{params_html}</td>
+              <td style="padding:10px 12px; text-align:center;">{status_html}</td>
+              <td style="padding:10px 12px; text-align:center;">
+                <button type="button" onclick="adminOpenTestToolModal({obj.id}, '{name}', {idx})" style="background:#680E23; color:#fff; border:none; padding:6px 14px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 3px rgba(104,14,35,0.25);" onmouseover="this.style.background='#7E152F'" onmouseout="this.style.background='#680E23'">
+                  <span>⚡</span> <span>اختبار الأداة</span>
+                </button>
+              </td>
+            </tr>
+            """)
+
+        rows_html = "".join(rows)
+
+        html = f"""
+        <script id="mcp-admin-tools-data" type="application/json">{tools_json}</script>
+        <div style="overflow-x:auto; margin-top:8px; border-radius:14px; border:1px solid #EAE3D9; box-shadow:0 2px 10px rgba(0,0,0,0.02);">
+          <table id="mcp-admin-tools-table" style="width:100%; border-collapse:collapse; background:#fff; font-size:12px; text-align:right;">
+            <thead>
+              <tr style="background:#FAF7F2; border-bottom:2px solid #EAE3D9; color:#443D39;">
+                <th style="padding:12px 10px; width:35px; text-align:center;">#</th>
+                <th style="padding:12px 12px; width:210px;">اسم الأداة</th>
+                <th style="padding:12px 12px;">الوصف والغرض</th>
+                <th style="padding:12px 12px; width:220px;">المعاملات المطلوبة</th>
+                <th style="padding:12px 12px; width:160px; text-align:center;">حالة الفحص</th>
+                <th style="padding:12px 12px; width:130px; text-align:center;">إجراء</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows_html}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Testing Modal -->
+        <div id="admin-tool-modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(28,25,23,0.6); backdrop-filter:blur(3px); z-index:99999; align-items:center; justify-content:center; padding:15px; direction:rtl; box-sizing:border-box;">
+          <div style="background:#fff; border-radius:20px; width:100%; max-width:620px; box-shadow:0 25px 50px rgba(0,0,0,0.25); overflow:hidden; font-family:inherit; border:1px solid #EAE3D9;">
+            <div style="background:#FAF7F2; padding:16px 22px; border-bottom:1px solid #EAE3D9; display:flex; justify-content:space-between; align-items:center;">
+              <h3 style="margin:0; font-size:15px; color:#1C1917; font-weight:bold; display:flex; align-items:center; gap:8px;">
+                <span>⚡</span> <span>اختبار الأداة حياً:</span> <code id="admin-modal-tool-name" style="color:#680E23; font-size:14px; font-family:monospace;"></code>
+              </h3>
+              <button type="button" onclick="adminCloseTestToolModal()" style="background:none; border:none; font-size:24px; color:#8C827A; cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <div style="padding:22px; max-height:75vh; overflow-y:auto; font-size:12px; box-sizing:border-box;">
+              <div style="margin-bottom:14px;">
+                <label style="font-weight:bold; color:#443D39; display:block; margin-bottom:4px;">وصف الأداة:</label>
+                <p id="admin-modal-tool-desc" style="margin:0; color:#1C1917; line-height:1.5; background:#FAF7F2; padding:10px 14px; border-radius:10px; border:1px solid #DDD5C7;"></p>
+              </div>
+
+              <div style="margin-bottom:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <label style="font-weight:bold; color:#1C1917;">مُدخلات الاختبار (JSON Arguments):</label>
+                  <button type="button" onclick="adminFillSampleArgs()" style="background:none; border:none; color:#680E23; font-weight:bold; font-size:11px; cursor:pointer; text-decoration:underline;">🪄 ملء تلقائي للبيانات</button>
+                </div>
+                <textarea id="admin-modal-args" rows="4" style="width:100%; padding:10px; border:1px solid #DDD5C7; border-radius:10px; font-family:monospace; font-size:12px; box-sizing:border-box; outline:none; background:#FAF7F2; color:#1C1917;" placeholder="{{}}"></textarea>
+              </div>
+
+              <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:16px;">
+                <button type="button" onclick="adminCloseTestToolModal()" style="padding:8px 16px; border:1px solid #DDD5C7; border-radius:10px; background:#F5EFE6; color:#443D39; font-weight:bold; cursor:pointer;">إلغاء</button>
+                <button type="button" id="btn-admin-modal-run" onclick="adminExecuteToolTest()" style="padding:8px 20px; border:none; border-radius:10px; background:#680E23; color:#fff; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 6px rgba(104,14,35,0.2);">
+                  <span>⚡</span> <span id="btn-admin-modal-run-text">تنفيذ الاستدعاء الحَي</span>
+                </button>
+              </div>
+
+              <!-- Execution Result -->
+              <div id="admin-modal-res-container" style="display:none; border-top:1px solid #EAE3D9; padding-top:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <strong style="color:#1C1917;">نتيجة الاستجابة من الخادم:</strong>
+                  <span id="admin-modal-res-badge" style="padding:3px 10px; border-radius:6px; font-weight:bold; font-size:11px; font-family:monospace;"></span>
+                </div>
+                <pre id="admin-modal-res-output" style="background:#FAF7F2; border:1px solid #DDD5C7; padding:12px; border-radius:10px; font-size:11px; font-family:monospace; max-height:180px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; margin:0; line-height:1.5; color:#1C1917;"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+        (function() {{
+          var currentServerId = null;
+          var currentToolName = null;
+          var currentToolIdx = null;
+          var currentTools = [];
+
+          try {{
+            var el = document.getElementById('mcp-admin-tools-data');
+            if (el) {{
+              currentTools = JSON.parse(el.textContent || '[]');
+            }}
+          }} catch(e) {{}}
+
+          window.adminOpenTestToolModal = function(serverId, toolName, idx) {{
+            currentServerId = serverId;
+            currentToolName = toolName;
+            currentToolIdx = idx;
+
+            var modal = document.getElementById('admin-tool-modal-overlay');
+            var nameEl = document.getElementById('admin-modal-tool-name');
+            var descEl = document.getElementById('admin-modal-tool-desc');
+            var resContainer = document.getElementById('admin-modal-res-container');
+
+            if (resContainer) resContainer.style.display = 'none';
+            if (nameEl) nameEl.innerText = toolName;
+
+            var tool = currentTools[idx - 1] || {{}};
+            if (descEl) descEl.innerText = tool.description || 'بدون وصف توضيحي';
+
+            window.adminFillSampleArgs();
+
+            if (modal) {{
+              modal.style.display = 'flex';
+            }}
+          }};
+
+          window.adminCloseTestToolModal = function() {{
+            var modal = document.getElementById('admin-tool-modal-overlay');
+            if (modal) modal.style.display = 'none';
+          }};
+
+          window.adminFillSampleArgs = function() {{
+            var argsEl = document.getElementById('admin-modal-args');
+            if (!argsEl || currentToolIdx === null) return;
+            var tool = currentTools[currentToolIdx - 1] || {{}};
+            var schema = tool.parameters || {{}};
+            var props = schema.properties || {{}};
+            var required = schema.required || [];
+
+            var sample = {{}};
+            for (var k in props) {{
+              var prop = props[k] || {{}};
+              var pType = (prop.type || 'string').toLowerCase();
+              if (pType === 'string') {{
+                sample[k] = prop.default !== undefined ? prop.default : (required.indexOf(k) !== -1 ? "قيمة تجريبية" : "");
+              }} else if (pType === 'integer' || pType === 'number') {{
+                sample[k] = prop.default !== undefined ? prop.default : 1;
+              }} else if (pType === 'boolean') {{
+                sample[k] = prop.default !== undefined ? prop.default : true;
+              }} else if (pType === 'array') {{
+                sample[k] = [];
+              }} else if (pType === 'object') {{
+                sample[k] = {{}};
+              }} else {{
+                sample[k] = "";
+              }}
+            }}
+            argsEl.value = JSON.stringify(sample, null, 2);
+          }};
+
+          window.adminExecuteToolTest = function() {{
+            var argsEl = document.getElementById('admin-modal-args');
+            var btn = document.getElementById('btn-admin-modal-run');
+            var btnText = document.getElementById('btn-admin-modal-run-text');
+            var resContainer = document.getElementById('admin-modal-res-container');
+            var badge = document.getElementById('admin-modal-res-badge');
+            var output = document.getElementById('admin-modal-res-output');
+
+            var argsVal = {{}};
+            if (argsEl && argsEl.value.trim()) {{
+              try {{
+                argsVal = JSON.parse(argsEl.value.trim());
+              }} catch(e) {{
+                alert('صيغة المُدخلات غير صالحة. يرجى التأكد من كتابة JSON صالح.');
+                return;
+              }}
+            }}
+
+            if (btn) btn.disabled = true;
+            if (btnText) btnText.innerText = 'جاري التنفيذ...';
+            if (resContainer) resContainer.style.display = 'block';
+            if (badge) {{
+              badge.innerText = '⏳ جاري الاستدعاء...';
+              badge.style.background = '#FAF7F2';
+              badge.style.color = '#443D39';
+              badge.style.border = '1px solid #DDD5C7';
+            }}
+            if (output) output.innerText = 'جاري انتظار استجابة خادم MCP...';
+
+            function getCookie(name) {{
+              var value = "; " + document.cookie;
+              var parts = value.split("; " + name + "=");
+              if (parts.length == 2) return parts.pop().split(";").shift();
+              return "";
+            }}
+
+            fetch('/api/agents/mcp/test-tool/', {{
+              method: 'POST',
+              headers: {{
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+              }},
+              body: JSON.stringify({{
+                id: currentServerId,
+                tool_name: currentToolName,
+                arguments: argsVal
+              }})
+            }})
+            .then(function(res) {{ return res.json(); }})
+            .then(function(data) {{
+              if (data.ok) {{
+                if (badge) {{
+                  badge.innerText = '✅ ناجح (' + data.execution_time_ms + ' ms)';
+                  badge.style.background = '#ECFDF5';
+                  badge.style.color = '#065F46';
+                  badge.style.border = '1px solid #A7F3D0';
+                }}
+                if (output) output.innerText = data.result || 'تم التنفيذ بنجاح بدون نص مخرجات.';
+
+                var rowBadge = document.getElementById('status-badge-' + currentToolIdx);
+                if (rowBadge) {{
+                  rowBadge.innerHTML = '<span>🟢 يعمل</span> <small style="color:#047857; font-family:monospace;">(' + data.execution_time_ms + 'ms)</small>';
+                  rowBadge.style.background = '#ECFDF5';
+                  rowBadge.style.color = '#065F46';
+                  rowBadge.style.border = '1px solid #A7F3D0';
+                }}
+              }} else {{
+                var errType = data.error_type || 'error';
+                var errMsg = data.error_message || data.result || 'فشل استدعاء الأداة';
+                if (badge) {{
+                  badge.innerText = '❌ فشل (' + errType + ')';
+                  badge.style.background = '#FEF2F2';
+                  badge.style.color = '#991B1B';
+                  badge.style.border = '1px solid #FECACA';
+                }}
+                if (output) output.innerText = errMsg;
+
+                var rowBadge = document.getElementById('status-badge-' + currentToolIdx);
+                if (rowBadge) {{
+                  rowBadge.innerHTML = '<span>🔴 فشل</span> <small style="color:#B91C1C;">(' + errType + ')</small>';
+                  rowBadge.style.background = '#FEF2F2';
+                  rowBadge.style.color = '#991B1B';
+                  rowBadge.style.border = '1px solid #FECACA';
+                  rowBadge.title = errMsg;
+                }}
+              }}
+            }})
+            .catch(function(err) {{
+              if (badge) {{
+                badge.innerText = '❌ خطأ شبكة';
+                badge.style.background = '#FEF2F2';
+                badge.style.color = '#991B1B';
+                badge.style.border = '1px solid #FECACA';
+              }}
+              if (output) output.innerText = 'حدث خطأ أثناء إرسال الطلب: ' + (err.message || '');
+            }})
+            .finally(function() {{
+              if (btn) btn.disabled = false;
+              if (btnText) btnText.innerText = 'تنفيذ الاستدعاء الحَي';
+            }});
+          }};
+        }})();
+        </script>
+        """
+        return mark_safe(html)
+    tools_preview.short_description = "معاينة واختبار الأدوات المكتشفة"
 
     def get_urls(self):
         urls = super().get_urls()
