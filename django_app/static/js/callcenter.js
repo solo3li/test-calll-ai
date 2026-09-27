@@ -22,6 +22,9 @@ function switchCallcenterSubtab(sub) {
     activeBtn.classList.add('bg-[#680E23]', 'text-white', 'shadow-sm');
     activeBtn.classList.remove('text-[#6E645D]');
   }
+  if (sub === 'recordings') {
+    loadEmployeeCallLogs();
+  }
 }
 
 async function loadEmployees() {
@@ -33,6 +36,7 @@ async function loadEmployees() {
     if (data.status !== 'success') return;
 
     currentEmployees = data.employees || [];
+    populateEmployeeFilter();
     if (currentEmployees.length === 0) {
       tbody.innerHTML = `
         <tr>
@@ -574,9 +578,178 @@ async function endDashboardCall() {
   }
 }
 
+// ── Call Logs & Recordings Management ──────────────────────────────────────────
+
+let logSearchDebounceTimer = null;
+function debounceLogSearch() {
+  clearTimeout(logSearchDebounceTimer);
+  logSearchDebounceTimer = setTimeout(() => {
+    loadEmployeeCallLogs();
+  }, 350);
+}
+
+function populateEmployeeFilter() {
+  const select = document.getElementById('filter-log-employee');
+  if (!select) return;
+  const currentVal = select.value;
+  let html = '<option value="">جميع الموظفين</option>';
+  currentEmployees.forEach(emp => {
+    html += `<option value="${emp.id}" ${currentVal == emp.id ? 'selected' : ''}>${escapeHtml(emp.display_name)} (${escapeHtml(emp.extension)})</option>`;
+  });
+  select.innerHTML = html;
+}
+
+function formatLogDuration(secs) {
+  if (!secs || secs < 1) return '0 ث';
+  if (secs < 60) return `${secs} ث`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  if (m < 60) return s > 0 ? `${m} د ${s} ث` : `${m} د`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return `${h} س ${remM} د`;
+}
+
+async function loadEmployeeCallLogs() {
+  const tbody = document.getElementById('recordings-tbody');
+  if (!tbody) return;
+
+  const empSelect = document.getElementById('filter-log-employee');
+  const typeSelect = document.getElementById('filter-log-type');
+  const recSelect = document.getElementById('filter-log-recording');
+  const searchInput = document.getElementById('filter-log-search');
+
+  const params = new URLSearchParams();
+  if (empSelect && empSelect.value) params.set('employee_id', empSelect.value);
+  if (typeSelect && typeSelect.value) params.set('call_type', typeSelect.value);
+  if (recSelect && recSelect.value) params.set('has_recording', recSelect.value);
+  if (searchInput && searchInput.value.trim()) params.set('search', searchInput.value.trim());
+
+  try {
+    const res = await fetch(`/api/call-center/calls/logs/?${params.toString()}`);
+    const data = await res.json();
+    if (data.status !== 'success') {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-rose-500">حدث خطأ في تحميل السجل: ${escapeHtml(data.message || '')}</td></tr>`;
+      return;
+    }
+
+    const logs = data.logs || [];
+
+    // Calculate Summary Stats
+    const totalCalls = logs.length;
+    let recordedCalls = 0;
+    let totalSecs = 0;
+    let missedCalls = 0;
+
+    logs.forEach(l => {
+      if (l.recording_url) recordedCalls++;
+      totalSecs += (l.duration_secs || 0);
+      if (l.call_type === 'missed') missedCalls++;
+    });
+
+    const statTotalEl = document.getElementById('stat-total-calls');
+    const statRecEl = document.getElementById('stat-recorded-calls');
+    const statDurEl = document.getElementById('stat-total-duration');
+    const statMissEl = document.getElementById('stat-missed-calls');
+
+    if (statTotalEl) statTotalEl.innerText = totalCalls;
+    if (statRecEl) statRecEl.innerText = recordedCalls;
+    if (statDurEl) statDurEl.innerText = formatLogDuration(totalSecs);
+    if (statMissEl) statMissEl.innerText = missedCalls;
+
+    if (logs.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-center py-8 text-[#8C827A]">
+            لا توجد مكالمات تطابق معايير البحث الحالية.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    const typeBadges = {
+      'inbound': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><span>📥</span> واردة</span>',
+      'outbound': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200"><span>📤</span> صادرة</span>',
+      'missed': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200"><span>📵</span> فائتة</span>',
+      'transfer': '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200"><span>🔀</span> محولة</span>'
+    };
+
+    tbody.innerHTML = logs.map(log => {
+      const typeBadge = typeBadges[log.call_type] || `<span class="px-2 py-0.5 rounded bg-gray-100 text-gray-700">${escapeHtml(log.call_type)}</span>`;
+      
+      let recordingCell = '';
+      if (log.recording_url) {
+        recordingCell = `
+          <div class="flex items-center justify-center gap-2">
+            <audio controls preload="none" class="h-8 max-w-[210px]" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.05));">
+              <source src="${escapeHtml(log.recording_url)}" type="audio/mpeg">
+              متصفحك لا يدعم مشغل الصوت.
+            </audio>
+            <a 
+              href="${escapeHtml(log.recording_url)}" 
+              download="recording_${log.id}.mp3" 
+              target="_blank" 
+              class="p-1.5 rounded-lg bg-[#FAF0F2] hover:bg-[#FAF0F2]/80 border border-[#E8CCD2] text-[#680E23] transition flex items-center justify-center"
+              title="تحميل ملف الصوت MP3"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </a>
+          </div>
+        `;
+      } else if (log.call_type === 'missed') {
+        recordingCell = '<span class="text-rose-500 text-[11px] font-medium">مكالمة لم يُرد عليها</span>';
+      } else {
+        recordingCell = '<span class="text-[#8C827A] text-[11px]">غير مسجلة</span>';
+      }
+
+      return `
+        <tr class="hover:bg-[#F5EFE6]/50 transition">
+          <td class="py-3 px-3">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-[#FAF0F2] border border-[#E8CCD2] text-[#680E23] flex items-center justify-center text-xs font-bold shadow-sm">👤</span>
+              <div>
+                <div class="font-bold text-[#1C1917]">${escapeHtml(log.employee_name || 'موظف')}</div>
+                <div class="text-[10px] text-[#680E23] font-mono font-bold">#${escapeHtml(log.employee_ext || '')} ${log.employee_department ? '· ' + escapeHtml(log.employee_department) : ''}</div>
+              </div>
+            </div>
+          </td>
+          <td class="py-3 px-3 font-semibold text-[#2D2825]">
+            <div class="flex items-center gap-1.5">
+              <span>📞</span>
+              <span>${escapeHtml(log.other_party || 'غير محدد')}</span>
+              ${log.extension && log.extension !== log.other_party ? `<span class="text-[10px] text-[#8C827A] font-mono">(${escapeHtml(log.extension)})</span>` : ''}
+            </div>
+          </td>
+          <td class="py-3 px-3 text-center">
+            ${typeBadge}
+          </td>
+          <td class="py-3 px-3 text-[#443D39] font-mono text-[11px]">
+            ${escapeHtml(log.started_at || '')}
+          </td>
+          <td class="py-3 px-3 text-center font-mono font-semibold text-[#1C1917]">
+            ${formatLogDuration(log.duration_secs)}
+          </td>
+          <td class="py-3 px-3 text-center">
+            ${recordingCell}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Error loading employee call logs:', err);
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-rose-500">فشل الاتصال بالخادم لجلب السجلات.</td></tr>`;
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   loadEmployees();
   loadQueues();
+  loadEmployeeCallLogs();
   setInterval(loadQueues, 8000);
   setInterval(loadEmployees, 8000);
 });
+
