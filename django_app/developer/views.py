@@ -220,9 +220,19 @@ class UserSpectacularSchemaView(SpectacularAPIView):
                 if path_key not in spec['paths']:
                     spec['paths'][path_key] = path_data
 
-        for k in ('info', 'servers', 'components'):
+        for k in ('info', 'servers'):
             if k not in spec or not spec[k]:
                 spec[k] = legacy_spec.get(k, {})
+
+        if 'components' not in spec or not spec['components']:
+            spec['components'] = legacy_spec.get('components', {})
+        else:
+            for sub_k in ('schemas', 'securitySchemes', 'responses', 'parameters'):
+                if sub_k in legacy_spec.get('components', {}):
+                    spec['components'].setdefault(sub_k, {})
+                    for item_k, item_v in legacy_spec['components'][sub_k].items():
+                        if item_k not in spec['components'][sub_k]:
+                            spec['components'][sub_k][item_k] = item_v
 
         # Use curated ordered tags from user_openapi_spec
         spec['tags'] = legacy_spec.get('tags', [])

@@ -209,6 +209,7 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                                 "external_reference": "sub_store_9942",
                                 "name": "متجر النور التجريبي" if is_ar else "Al-Noor Store Demo",
                                 "email": "store9942@saas-demo.com",
+                                "password": "OptionalCustomPassword123!",
                                 "spending_cap": 25.0,
                                 "minute_cap": 200
                             }
@@ -226,6 +227,20 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                                     "client_id": 19,
                                     "name": "متجر النور التجريبي" if is_ar else "Al-Noor Store Demo",
                                     "external_reference": "sub_store_9942",
+                                    "partner_code": "PRT-9B1D97E0",
+                                    "credentials": {
+                                        "username": "store_9942",
+                                        "password": "Pass_a1b2c3d4",
+                                        "extension": "101"
+                                    },
+                                    "owner_employee": {
+                                        "id": 12,
+                                        "extension": "101",
+                                        "display_name": "متجر النور التجريبي (المالك)" if is_ar else "Al-Noor Store Demo (Owner)",
+                                        "department": "الإدارة العامة" if is_ar else "General Management",
+                                        "status": "ready",
+                                        "avatar_url": "https://api.dicebear.com/7.x/bottts/png?seed=101"
+                                    },
                                     "spending_cap": 25.0,
                                     "minute_cap": 200
                                 }
@@ -1794,6 +1809,13 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     "external_reference": {"type": "string", "example": "sub_store_9942"},
                     "name": {"type": "string", "example": "متجر النور التجريبي" if is_ar else "Al-Noor Store Demo"},
                     "email": {"type": "string", "format": "email", "example": "store9942@saas-demo.com"},
+                    "password": {
+                        "type": "string",
+                        "description": "كلمة مرور العميل للدخول على تطبيق الموظف (اختياري - يتم توليد كلمة مرور عشوائية قوية تلقائياً في حال عدم إرسالها)"
+                        if is_ar else
+                        "Client password for employee app login (optional - auto-generated if omitted)",
+                        "example": "SecretPass123!"
+                    },
                     "spending_cap": {"type": "number", "default": 10.0, "example": 25.0},
                     "minute_cap": {"type": "integer", "default": 60, "example": 200}
                 }
@@ -1805,6 +1827,31 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     "client_id": {"type": "integer", "example": 19},
                     "name": {"type": "string", "example": "متجر النور التجريبي" if is_ar else "Al-Noor Store Demo"},
                     "external_reference": {"type": "string", "example": "sub_store_9942"},
+                    "partner_code": {"type": "string", "example": "PRT-9B1D97E0"},
+                    "credentials": {
+                        "type": "object",
+                        "description": "بيانات الدخول الفورية لتطبيق الموظف (Username / Extension / Password)"
+                        if is_ar else
+                        "Instant credentials for employee mobile app login",
+                        "properties": {
+                            "username": {"type": "string", "example": "store_9942"},
+                            "password": {"type": "string", "example": "Pass_a1b2c3d4"},
+                            "extension": {"type": "string", "example": "101"}
+                        }
+                    },
+                    "owner_employee": {
+                        "type": "object",
+                        "description": "بروفايل الموظف المالك المنشأ تلقائياً للعميل" if is_ar else "Auto-generated owner employee profile",
+                        "properties": {
+                            "id": {"type": "integer", "example": 12},
+                            "extension": {"type": "string", "example": "101"},
+                            "display_name": {"type": "string", "example": "متجر النور التجريبي (المالك)" if is_ar else "Al-Noor Store Demo (Owner)"},
+                            "department": {"type": "string", "example": "الإدارة العامة" if is_ar else "General Management"},
+                            "status": {"type": "string", "example": "ready"},
+                            "avatar_url": {"type": "string", "example": "https://api.dicebear.com/7.x/bottts/png?seed=101"}
+                        }
+                    },
+                    "client": {"type": "object"},
                     "spending_cap": {"type": "number", "example": 25.0},
                     "minute_cap": {"type": "integer", "example": 200}
                 }
