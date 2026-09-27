@@ -2070,6 +2070,7 @@ class PartnerSpectacularSchemaView(SpectacularAPIView):
         lang = request.GET.get('lang', 'ar').lower().strip()
         if lang not in ('ar', 'en'):
             lang = 'ar'
+        is_ar = (lang == 'ar')
 
         resp = super().get(request, *args, **kwargs)
         spec = resp.data if hasattr(resp, 'data') else {}
@@ -2097,6 +2098,25 @@ class PartnerSpectacularSchemaView(SpectacularAPIView):
         for k in ('info', 'servers', 'components'):
             if k not in spec or not spec[k]:
                 spec[k] = legacy_spec.get(k, {})
+
+        # Ensure Partner security schemes and headers are strictly aligned
+        if 'components' not in spec or not isinstance(spec['components'], dict):
+            spec['components'] = {}
+        spec['components']['securitySchemes'] = {
+            'PartnerKey': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'X-Partner-Key',
+                'description': 'مفتاح الشريك السري (X-Partner-Key)' if is_ar else 'Partner Secret API Key (X-Partner-Key)',
+            },
+            'ApiKeyAuth': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'X-Partner-Key',
+                'description': 'مفتاح الشريك السري (X-Partner-Key أو X-API-Key)',
+            }
+        }
+        spec['security'] = [{'PartnerKey': []}, {'ApiKeyAuth': []}]
 
         # Use curated ordered tags from partner openapi_spec
         spec['tags'] = legacy_spec.get('tags', [])
