@@ -12,22 +12,14 @@ def partner_required(view_func):
     """
     @wraps(view_func)
     def _wrapped(request, *args, **kwargs):
-        api_key = (
-            request.headers.get('X-Partner-Key') or 
-            request.headers.get('X-API-Key') or 
-            request.headers.get('X-Api-Key') or
-            request.META.get('HTTP_X_PARTNER_KEY') or
-            request.META.get('HTTP_X_API_KEY')
-        )
+        api_key = request.headers.get('X-Partner-Key')
         if not api_key:
-            auth_header = request.headers.get('Authorization', '') or request.META.get('HTTP_AUTHORIZATION', '')
+            auth_header = request.headers.get('Authorization', '')
             if auth_header.startswith('Bearer '):
-                api_key = auth_header.split(' ', 1)[1].strip()
-            elif auth_header.startswith('ApiKey ') or auth_header.startswith('Token '):
                 api_key = auth_header.split(' ', 1)[1].strip()
         
         if not api_key:
-            return JsonResponse({"status": "error", "message": "Missing partner API key (X-Partner-Key or X-API-Key header required)"}, status=401)
+            return JsonResponse({"status": "error", "message": "Missing partner API key (X-Partner-Key header required)"}, status=401)
         
         partner = PartnerProfile.objects.filter(api_key=api_key).first()
         if not partner:
