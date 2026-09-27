@@ -71,5 +71,9 @@ urlpatterns = [
 
     # Managed Client Business Hours & Off-Hours Schedule
     path('clients/<int:client_id>/business-hours/', views.api_partner_client_business_hours, name='api_partner_client_business_hours'),
+
+    # Managed Client Structured Live Context API (Real-time in-memory cache)
+    path('clients/<int:client_id>/context/', views.api_partner_client_live_context, name='api_partner_client_live_context'),
 ]
+
 

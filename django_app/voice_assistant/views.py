@@ -41,6 +41,8 @@ from agents.views import (
     delete_mcp_server,
     test_mcp_connection_view,
     test_mcp_tool_view,
+    api_user_live_context_web,
+    api_user_live_context_preview_web,
 )
 from crm.views import (
     list_customers_memory,

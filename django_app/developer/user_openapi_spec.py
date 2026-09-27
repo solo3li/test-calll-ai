@@ -39,7 +39,8 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         {"name": "8. طوابير الانتظار والكول سنتر", "description": "طوابير الكول سنتر واستراتيجيات التوزيع (Round Robin) وإدارة الأعضاء."},
         {"name": "9. حملات الاتصال والعملاء (Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي الصادرة وجدولة الاتصال المتوازي عبر Inngest."},
         {"name": "10. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، الدقائق المفوترة، تكلفة المكالمة، وملخصات المحادثة."},
-        {"name": "11. إشعارات الويبهوك", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من الأحداث الموقعة."}
+        {"name": "11. إشعارات الويبهوك", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من الأحداث الموقعة."},
+        {"name": "12. الذاكرة المنظمة اللحظية للنشاط (Live Context)", "description": "حقن واستبدال فوري لبيانات المطاعم والمنيو والفروع في كاش Redis فائق السرعة (< 2ms) لمنع الهلوسة في المكالمات."}
     ]
 
     tags_en = [
@@ -53,7 +54,8 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         {"name": "8. Call Queues & Routing", "description": "Call center queues, routing strategies (Round Robin), and queue membership."},
         {"name": "9. Outbound Campaigns", "description": "Create and manage automated outbound calling campaigns and dial execution via Inngest."},
         {"name": "10. Call Logs & CDR", "description": "Call detail records (CDR), billed minute deduction, call recordings, and AI conversation summaries."},
-        {"name": "11. Webhooks & Events", "description": "Configure webhook endpoints for call.completed notifications and event payloads."}
+        {"name": "11. Webhooks & Events", "description": "Configure webhook endpoints for call.completed notifications and event payloads."},
+        {"name": "12. Structured Live Context", "description": "Real-time in-memory cache (< 2ms) for dynamic business data (menus, branches, delivery zones, out of stock)."}
     ]
 
     tags = tags_ar if is_ar else tags_en
@@ -69,10 +71,45 @@ def get_user_openapi_spec(server_url: str = "/api/v1", lang: str = "ar") -> dict
         "tag_campaigns": tags[8]["name"],
         "tag_cdr": tags[9]["name"],
         "tag_webhooks": tags[10]["name"],
+        "tag_context": tags[11]["name"],
     }
 
     paths = {
+        "/context/": {
+            "get": {
+                "tags": [tag_map["tag_context"]],
+                "summary": "استعلام الذاكرة المنظمة الحية للنشاط (Get Live Context)" if is_ar else "Get Structured Live Context",
+                "description": "استرجاع الـ JSON المنظم المحفوظ حالياً وحالة الكاش في Redis." if is_ar else "Retrieve currently active structured business context and Redis cache status.",
+                "responses": {"200": {"description": "بيانات الذاكرة المنظمة الحية" if is_ar else "Structured context data"}}
+            },
+            "put": {
+                "tags": [tag_map["tag_context"]],
+                "summary": "تحديث واستبدال الذاكرة المنظمة بالكامل (Atomic Overwrite Live Context)" if is_ar else "Overwrite Structured Live Context",
+                "description": "استبدال كامل وفوري لبيانات النشاط (منيو، فروع، توصيل، نواقص) ومزامنتها في كاش Redis في أقل من 2ms." if is_ar else "Atomically replace structured business data and sync to in-memory Redis.",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "restaurant_name": "مطعم بيسترو إيطاليانو",
+                                "out_of_stock": ["بيتزا باربيكيو دجاج"],
+                                "branches": [{"name": "المعادي", "status": "مفتوح", "hours": "11:00 ص - 02:00 ص"}],
+                                "delivery_zones": [{"zone": "المعادي", "fee": "20 جنيه", "min_order": "100 جنيه"}]
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "تم تحديث الذاكرة المنظمة ومزامنة Redis بنجاح" if is_ar else "Live context updated and synced successfully"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_context"]],
+                "summary": "مسح الذاكرة المنظمة الحية (Clear Live Context)" if is_ar else "Delete Live Context",
+                "description": "مسح البيانات المنظمة من قاعدة البيانات وكاش الـ Redis." if is_ar else "Clear structured live context from database and Redis cache.",
+                "responses": {"200": {"description": "تم مسح البيانات بنجاح" if is_ar else "Context deleted successfully"}}
+            }
+        },
         "/account/": {
+
             "get": {
                 "tags": [tag_map["tag_account"]],
                 "summary": "عرض بيانات الحساب والمحفظة (Get Account)" if is_ar else "Get Account & Wallet Info",

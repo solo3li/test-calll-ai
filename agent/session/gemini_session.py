@@ -155,14 +155,29 @@ async def run_agent_session(
     call_queues = bootstrap.get("call_queues", []) if bootstrap else []
     tools = build_gemini_tools(mcp_tools, call_queues)
 
+    live_context = bootstrap.get("live_context") or {}
+    if not live_context and user_id:
+        try:
+            from agent.config import REDIS_URL
+            import redis.asyncio as aioredis
+            import json
+            r_temp = aioredis.from_url(REDIS_URL, decode_responses=True)
+            cached_ctx = await r_temp.get(f"tenant:{user_id}:live_context")
+            await r_temp.aclose()
+            if cached_ctx:
+                live_context = json.loads(cached_ctx) if isinstance(cached_ctx, str) else cached_ctx
+        except Exception as e:
+            logger.debug(f"Redis live_context fallback error: {e}")
+
     system_instruction_text = build_dynamic_system_instruction(
         active_profile,
         memory_card_text,
         queue_context=queue_context,
         outbound_context=outbound_context,
-        call_queues=call_queues
+        call_queues=call_queues,
+        live_context=live_context
     )
-    logger.info(f"Dynamic system instruction compiled (length={len(system_instruction_text)} chars)")
+    logger.info(f"Dynamic system instruction compiled (length={len(system_instruction_text)} chars, live_context={bool(live_context)})")
 
     live_config = types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],

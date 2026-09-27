@@ -2,6 +2,7 @@
 from typing import Dict, Any, List, Optional
 from .dialects import DIALECT_RULES_MAP
 from .verbosity import VERBOSITY_INSTRUCTIONS
+from .live_context import format_live_context_for_prompt
 
 
 def build_dynamic_system_instruction(
@@ -9,7 +10,8 @@ def build_dynamic_system_instruction(
     memory_card: str = "",
     queue_context: Optional[Dict[str, Any]] = None,
     outbound_context: Optional[Dict[str, Any]] = None,
-    call_queues: Optional[List[Dict[str, Any]]] = None
+    call_queues: Optional[List[Dict[str, Any]]] = None,
+    live_context: Optional[Dict[str, Any]] = None
 ) -> str:
     """Construct dynamic prompt incorporating dialect, gender, role, style, memory, queue fallback context, outbound context, and strict guardrails."""
     gender = profile.get("gender", "female")
@@ -104,6 +106,9 @@ def build_dynamic_system_instruction(
     # 6. Memory context
     memory_text = f"\n8. {memory_card}\nتوجيه للمساعد: وظف الذاكرة السابقة بشكل طبيعي وعفوي في بداية الحديث للتذكير والتواصل الذكي دون قراءتها كقائمة رسمية.\n" if memory_card else ""
 
+    # 7. Structured Live Context (Restaurant menus, branches, delivery zones, out of stock)
+    live_context_text = format_live_context_for_prompt(live_context) if live_context else ""
+
     prompt = f"""أنت مسجل في النظام كبروفايل: {name}.
 {identity_gender}
 {role_text}
@@ -123,7 +128,7 @@ def build_dynamic_system_instruction(
      أ. اعترف للمتصل فوراً وبشكل صريح وواضح بالمشكلة واعتذر له بلباقة شديدة بلهجتك (مثال: 'بعتذر لحضرتك جداً يا فندم، السيستم حالياً فيه مشكلة ومش قادر يسجل الأوردر' أو 'بعتذر لك جداً، للأسف مفيش أوردر مسجل بهذا الرقم في سجلاتنا' أو 'بعتذر لحضرتك، النظام أخد وقت ومردش').
      ب. يُمنع منعاً باتاً وحاسماً أن تدّعي نجاح العملية أو تقول 'تم تسجيل طلبك' أو 'تم تأكيد الأوردر' أو تؤلف وتخترع بيانات وهمية إذا فشلت الأداة أو أرجعت خطأ!
      ج. اعرض على المتصل فوراً الحلول البديلة المتاحة: اقترح عليه إعادة المحاولة لاحقاً، أو عرض تحويل مكالمته لموظف خدمة العملاء إذا توفر قسم متاح.{welcome_text}{custom_text}
-{verbosity_instruction}{memory_text}"""
+{verbosity_instruction}{memory_text}{live_context_text}"""
 
     if call_queues:
         q_lines = []

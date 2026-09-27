@@ -23,4 +23,9 @@ urlpatterns = [
 
     # Internal AI Agent Session Bootstrap API
     path('internal/bootstrap/', views.api_internal_agent_bootstrap, name='api_internal_agent_bootstrap'),
+
+    # Structured Live Context (Fast In-Memory Cache)
+    path('context/', views.api_user_live_context_web, name='user_live_context_web'),
+    path('context/preview/', views.api_user_live_context_preview_web, name='user_live_context_preview_web'),
 ]
+

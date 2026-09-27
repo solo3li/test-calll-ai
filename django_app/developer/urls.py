@@ -72,5 +72,9 @@ urlpatterns = [
 
     # Business Hours & Off-Hours Schedule
     path('business-hours/', views.api_user_business_hours, name='developer_business_hours'),
+
+    # Structured Live Context API (Real-time in-memory cache)
+    path('context/', views.api_user_live_context, name='developer_live_context'),
 ]
+
 

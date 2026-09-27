@@ -42,7 +42,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "9. سجلات المكالمات والفوترة", "description": "استعراض سجلات المكالمات CDR، تفاصيل المكالمة المفردة، التسجيلات الصوتية، الدقائق المفوترة، وملخصات المحادثة."},
         {"name": "10. الويبهوك والتوقيع المشفر", "description": "استقبال إشعارات انتهاء المكالمات والتحقق البرمجي من توقيع HMAC-SHA256."},
         {"name": "11. إدارة خوادم FastMCP للعملاء", "description": "ربط خوادم FastMCP الخارجية لعميل محدد عبر بروتوكول SSE ومزامنة أدوات الذكاء الاصطناعي الحية."},
-        {"name": "12. حملات اتصال العملاء (Client Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي، التحكم بجهات الاتصال الفردية، إعادة المحاولات، والتصدير عبر Inngest."}
+        {"name": "12. حملات اتصال العملاء (Client Campaigns)", "description": "إنشاء وإدارة حملات الاتصال الآلي، التحكم بجهات الاتصال الفردية، إعادة المحاولات، والتصدير عبر Inngest."},
+        {"name": "13. الذاكرة المنظمة الحية للعميل (Client Live Context)", "description": "حقن واستبدال فوري لبيانات المطاعم والمنيو والفروع لعملاء الشريك في كاش Redis فائق السرعة (< 2ms)."}
     ]
 
     tags_en = [
@@ -57,7 +58,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         {"name": "9. Call Logs & CDR", "description": "Call detail records (CDR), single call detail, direct audio recordings, billed minute deduction, and AI summaries."},
         {"name": "10. Webhooks & HMAC Signatures", "description": "Real-time call completion webhook notifications and HMAC-SHA256 signature verification."},
         {"name": "11. Client FastMCP Management", "description": "Manage external FastMCP SSE tool servers per sub-client and synchronize live tool schemas."},
-        {"name": "12. Client Outbound Campaigns", "description": "Create and execute outbound calling campaigns, manage contacts, single dial triggers, and export leads."}
+        {"name": "12. Client Outbound Campaigns", "description": "Create and execute outbound calling campaigns, manage contacts, single dial triggers, and export leads."},
+        {"name": "13. Client Structured Live Context", "description": "Manage sub-client real-time in-memory cache (< 2ms) for dynamic business data (menus, branches, delivery zones, out of stock)."}
     ]
 
     tags = tags_ar if is_ar else tags_en
@@ -74,10 +76,48 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
         "tag_webhooks": tags[9]["name"],
         "tag_mcp": tags[10]["name"],
         "tag_campaigns": tags[11]["name"],
+        "tag_context": tags[12]["name"],
     }
 
     # 3. Path Operations
     paths = {
+        "/clients/{client_id}/context/": {
+            "get": {
+                "tags": [tag_map["tag_context"]],
+                "summary": "استعلام الذاكرة المنظمة الحية للعميل (Get Client Live Context)" if is_ar else "Get Client Structured Live Context",
+                "description": "استرجاع الـ JSON المنظم المحفوظ حالياً للعميل وحالة كاش الـ Redis." if is_ar else "Retrieve currently active structured business context and Redis cache status for sub-client.",
+                "parameters": [{"$ref": "#/components/parameters/ClientId"}],
+                "responses": {"200": {"description": "بيانات الذاكرة المنظمة الحية للعميل" if is_ar else "Client structured context data"}}
+            },
+            "put": {
+                "tags": [tag_map["tag_context"]],
+                "summary": "تحديث واستبدال الذاكرة المنظمة للعميل بالكامل (Atomic Overwrite Client Context)" if is_ar else "Overwrite Client Structured Live Context",
+                "description": "استبدال كامل وفوري لبيانات نشاط العميل (منيو، فروع، توصيل، نواقص) ومزامنتها في كاش Redis في أقل من 2ms." if is_ar else "Atomically replace sub-client structured business data and sync to in-memory Redis.",
+                "parameters": [{"$ref": "#/components/parameters/ClientId"}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "restaurant_name": "مطعم بيسترو إيطاليانو",
+                                "out_of_stock": ["بيتزا باربيكيو دجاج"],
+                                "branches": [{"name": "المعادي", "status": "مفتوح", "hours": "11:00 ص - 02:00 ص"}],
+                                "delivery_zones": [{"zone": "المعادي", "fee": "20 جنيه", "min_order": "100 جنيه"}]
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "تم تحديث الذاكرة المنظمة للعميل ومزامنة Redis بنجاح" if is_ar else "Client live context updated and synced successfully"}}
+            },
+            "delete": {
+                "tags": [tag_map["tag_context"]],
+                "summary": "مسح الذاكرة المنظمة الحية للعميل (Clear Client Live Context)" if is_ar else "Delete Client Live Context",
+                "description": "مسح البيانات المنظمة للعميل من قاعدة البيانات وكاش الـ Redis." if is_ar else "Clear client structured live context from database and Redis cache.",
+                "parameters": [{"$ref": "#/components/parameters/ClientId"}],
+                "responses": {"200": {"description": "تم مسح بيانات العميل بنجاح" if is_ar else "Client context deleted successfully"}}
+            }
+        },
+
         "/wallet/": {
             "get": {
                 "tags": [tag_map["tag_auth"]],

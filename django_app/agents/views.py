@@ -719,6 +719,10 @@ def api_internal_agent_bootstrap(request):
             for q in queues
         ]
 
+        # 5. Structured Live Context (Cached in Redis)
+        from agents.live_context_service import get_user_live_context_cached, format_live_context_for_prompt
+        live_ctx_data = get_user_live_context_cached(user.id)
+
         return JsonResponse({
             "status": "success",
             "user_id": user.id,
@@ -727,9 +731,87 @@ def api_internal_agent_bootstrap(request):
             "mcp_servers": mcp_list,
             "customer_memory": memory_data,
             "partner_info": partner_info,
-            "call_queues": queues_list
+            "call_queues": queues_list,
+            "live_context": live_ctx_data
         })
 
     except Exception as e:
         logger.error(f"Error in api_internal_agent_bootstrap: {e}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@login_required
+@csrf_exempt
+def api_user_live_context_web(request):
+    """Internal Web endpoint for managing user's structured live context from dashboard UI."""
+    from agents.live_context_service import (
+        get_user_live_context_cached,
+        set_user_live_context,
+        delete_user_live_context,
+        get_redis_client,
+        REDIS_KEY_TEMPLATE
+    )
+    user = request.user
+
+    if request.method == 'GET':
+        ctx_obj = TenantLiveContext.objects.filter(user=user).first()
+        r = get_redis_client()
+        redis_key = REDIS_KEY_TEMPLATE.format(user_id=user.id)
+        cached_in_redis = bool(r and r.exists(redis_key))
+        return JsonResponse({
+            "status": "success",
+            "context": ctx_obj.to_dict() if ctx_obj else {"data": {}, "size_bytes": 0, "updated_at": None},
+            "cached_in_redis": cached_in_redis
+        })
+
+    elif request.method in ('POST', 'PUT'):
+        try:
+            body = json.loads(request.body.decode('utf-8')) if request.body else {}
+            # Allow { data: {...} } or direct {...}
+            context_data = body.get('data') if ('data' in body and isinstance(body['data'], dict)) else body
+            if not isinstance(context_data, dict):
+                return JsonResponse({"status": "error", "message": "يجب أن تكون البيانات كائن JSON صالح (Object/Dictionary)"}, status=400)
+
+            result = set_user_live_context(user.id, context_data)
+            return JsonResponse({
+                "status": "success",
+                "message": "تم حفظ واستبدال الذاكرة المنظمة الحية وتحديث كاش الـ Redis بنجاح",
+                "context": result
+            })
+        except ValueError as ve:
+            return JsonResponse({"status": "error", "message": str(ve)}, status=400)
+        except Exception as e:
+            logger.error(f"Error updating live context for user #{user.id}: {e}")
+            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+    elif request.method == 'DELETE':
+        delete_user_live_context(user.id)
+        return JsonResponse({
+            "status": "success",
+            "message": "تم مسح الذاكرة المنظمة الحية من قاعدة البيانات وكاش الـ Redis بنجاح"
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
+@login_required
+@csrf_exempt
+def api_user_live_context_preview_web(request):
+    """Generate compiled prompt preview for how the AI agent reads the structured context."""
+    from agents.live_context_service import format_live_context_for_prompt, get_user_live_context_cached
+    if request.method != 'POST':
+        return JsonResponse({"status": "error", "message": "POST required"}, status=405)
+
+    try:
+        body = json.loads(request.body.decode('utf-8')) if request.body else {}
+        context_data = body.get('data') if ('data' in body and isinstance(body['data'], dict)) else body
+        if not context_data:
+            context_data = get_user_live_context_cached(request.user.id)
+
+        compiled_prompt = format_live_context_for_prompt(context_data or {})
+        return JsonResponse({
+            "status": "success",
+            "preview": compiled_prompt or "لا توجد بيانات منظمة مدخلة حالياً لتوليد التوجيهات."
+        })
+    except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)

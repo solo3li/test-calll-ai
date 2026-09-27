@@ -38,6 +38,10 @@ urlpatterns = [
     path('api/mcp/test-connection/', views.test_mcp_connection_view, name='test_mcp_connection'),
     path('api/mcp/test-tool/', views.test_mcp_tool_view, name='test_mcp_tool'),
 
+    # Structured Live Context APIs
+    path('api/context/', views.api_user_live_context_web, name='api_live_context'),
+    path('api/context/preview/', views.api_user_live_context_preview_web, name='api_live_context_preview'),
+
     # Customer Memory & Call History APIs
     path('api/customers/', views.list_customers_memory, name='list_customers_memory'),
     path('api/memory/', views.get_customer_memory, name='get_customer_memory'),

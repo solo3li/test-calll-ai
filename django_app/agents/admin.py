@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AgentProfile, UserMCPServer, SystemSetting
+from .models import AgentProfile, UserMCPServer, SystemSetting, AgentToolCallLog, TenantLiveContext
 
 @admin.register(SystemSetting)
 class SystemSettingAdmin(admin.ModelAdmin):
@@ -661,3 +661,95 @@ class AgentToolCallLogAdmin(admin.ModelAdmin):
             content = str(raw or "")
         return format_html('<pre style="background:#0f172a;color:#38bdf8;padding:12px;border-radius:8px;font-size:12px;max-height:400px;overflow:auto;">{}</pre>', content)
     formatted_raw_response.short_description = "الرد الكامل (JSON/Raw)"
+
+
+@admin.register(TenantLiveContext)
+class TenantLiveContextAdmin(admin.ModelAdmin):
+    list_display = ('user', 'size_badge', 'redis_status_badge', 'updated_at_formatted', 'created_at_formatted')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('size_badge', 'redis_status_badge', 'created_at', 'updated_at', 'compiled_prompt_preview')
+    actions = ['sync_to_redis_action', 'clear_from_redis_action']
+
+    fieldsets = (
+        ("بيانات العميل والحالة", {
+            'fields': ('user', ('size_badge', 'redis_status_badge'), ('created_at', 'updated_at'))
+        }),
+        ("البيانات المنظمة اللحظية (Structured JSON)", {
+            'fields': ('data',),
+            'description': "أدخل البيانات بصيغة JSON نظيفة (مثل فروع المطعم، المنيو، مناطق ورسوم التوصيل، والأصناف غير المتاحة)."
+        }),
+        ("معاينة توجيهات الذكاء الاصطناعي (Prompt Preview)", {
+            'fields': ('compiled_prompt_preview',),
+            'description': "كيف يتم ترجمة وتحويل هذا الـ JSON إلى توجيهات فورية لنموذج Gemini Live أثناء المكالمة."
+        }),
+    )
+
+    def size_badge(self, obj):
+        kb = round(obj.size_bytes / 1024, 2)
+        color = "#057a55" if obj.size_bytes < 50 * 1024 else "#d97706"
+        return format_html(
+            '<span style="background:{};color:#fff;padding:2px 8px;border-radius:12px;font-weight:bold;font-size:11px;">{} KB ({} بايت)</span>',
+            color, kb, obj.size_bytes
+        )
+    size_badge.short_description = "حجم البيانات"
+
+    def redis_status_badge(self, obj):
+        from .live_context_service import get_redis_client, REDIS_KEY_TEMPLATE
+        r = get_redis_client()
+        redis_key = REDIS_KEY_TEMPLATE.format(user_id=obj.user_id)
+        exists = bool(r and r.exists(redis_key))
+        if exists:
+            return format_html('<span style="color:#057a55;font-weight:bold;">🟢 متزامن في الذاكرة (Redis Active)</span>')
+        return format_html('<span style="color:#6b7280;font-weight:bold;">⚪ غير محمل (Cache Miss / Needs Sync)</span>')
+    redis_status_badge.short_description = "حالة الـ Redis"
+
+    def updated_at_formatted(self, obj):
+        return obj.updated_at.strftime("%Y-%m-%d %H:%M:%S") if obj.updated_at else "—"
+    updated_at_formatted.short_description = "آخر تحديث"
+
+    def created_at_formatted(self, obj):
+        return obj.created_at.strftime("%Y-%m-%d %H:%M:%S") if obj.created_at else "—"
+    created_at_formatted.short_description = "تاريخ الإنشاء"
+
+    def compiled_prompt_preview(self, obj):
+        from .live_context_service import format_live_context_for_prompt
+        compiled = format_live_context_for_prompt(obj.data or {})
+        if not compiled:
+            return format_html('<em style="color:#9ca3af;">لا توجد بيانات منظمة لتوليد التوجيهات</em>')
+        return format_html(
+            '<pre style="background:#1e1e2e;color:#a6e3a1;padding:14px;border-radius:10px;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;max-height:400px;overflow:auto;">{}</pre>',
+            compiled
+        )
+    compiled_prompt_preview.short_description = "معاينة التوجيهات الحية"
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        # Auto-sync to Redis on save
+        from .live_context_service import set_user_live_context
+        try:
+            set_user_live_context(obj.user_id, obj.data or {})
+            self.message_user(request, "تم حفظ البيانات ومزامنتها في كاش الـ Redis فورياً بنجاح.", level=messages.SUCCESS)
+        except Exception as e:
+            self.message_user(request, f"تم حفظ البيانات في DB لكن فشلت مزامنة Redis: {e}", level=messages.WARNING)
+
+    def sync_to_redis_action(self, request, queryset):
+        from .live_context_service import set_user_live_context
+        count = 0
+        for item in queryset:
+            try:
+                set_user_live_context(item.user_id, item.data or {})
+                count += 1
+            except Exception:
+                pass
+        self.message_user(request, f"تمت إعادة مزامنة {count} سجل بنجاح في كاش الـ Redis اللحظي.")
+    sync_to_redis_action.short_description = "⚡ مزامنة السجلات المحددة إلى كاش Redis الآن"
+
+    def clear_from_redis_action(self, request, queryset):
+        from .live_context_service import delete_user_live_context
+        count = 0
+        for item in queryset:
+            delete_user_live_context(item.user_id)
+            count += 1
+        self.message_user(request, f"تم مسح {count} سجل من كاش Redis.")
+    clear_from_redis_action.short_description = "🗑️ مسح السجلات المحددة من كاش Redis"
+

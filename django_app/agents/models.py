@@ -282,3 +282,39 @@ class AgentToolCallLog(models.Model):
         return f"{self.tool_name} [{status_label}] - {self.room_name} ({self.execution_time_ms}ms)"
 
 
+class TenantLiveContext(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='live_context', verbose_name="العميل / الشركة")
+    data = models.JSONField(default=dict, blank=True, verbose_name="البيانات المنظمة اللحظية (Structured JSON)")
+    size_bytes = models.IntegerField(default=0, verbose_name="حجم البيانات (بايت)")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, db_index=True, verbose_name="آخر تحديث")
+
+    class Meta:
+        db_table = 'voice_assistant_tenantlivecontext'
+        verbose_name = "الذاكرة المنظمة الحية (Live Context)"
+        verbose_name_plural = "الذاكرة المنظمة الحية (Live Contexts)"
+
+    def __str__(self):
+        return f"Live Context: {self.user.username} ({self.size_bytes} bytes)"
+
+    def save(self, *args, **kwargs):
+        import json
+        if self.data is not None:
+            try:
+                self.size_bytes = len(json.dumps(self.data, ensure_ascii=False).encode('utf-8'))
+            except Exception:
+                self.size_bytes = 0
+        else:
+            self.data = {}
+            self.size_bytes = 0
+        super().save(*args, **kwargs)
+
+    def to_dict(self):
+        return {
+            "data": self.data or {},
+            "size_bytes": self.size_bytes,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+        }
+
+
+

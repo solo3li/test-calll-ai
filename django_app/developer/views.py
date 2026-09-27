@@ -2767,5 +2767,68 @@ def api_user_campaign_contact_dial(request, campaign_id, contact_id):
     return api_dial_single_contact(request, contact_id)
 
 
+@csrf_exempt
+@user_api_key_required
+def api_user_live_context(request):
+    """
+    GET, PUT, POST, DELETE /api/v1/context/
+    Structured Live Context API for real-time restaurant/business data (menus, branches, delivery zones, out of stock).
+    - GET: Retrieve current structured context and Redis cache status.
+    - PUT/POST: Atomically overwrite and save structured context into PostgreSQL and Redis.
+    - DELETE: Atomically clear structured context.
+    """
+    from agents.live_context_service import (
+        get_user_live_context_cached,
+        set_user_live_context,
+        delete_user_live_context,
+        get_redis_client,
+        REDIS_KEY_TEMPLATE
+    )
+    from agents.models import TenantLiveContext
+
+    if request.method == 'GET':
+        ctx_obj = TenantLiveContext.objects.filter(user=request.user).first()
+        r = get_redis_client()
+        redis_key = REDIS_KEY_TEMPLATE.format(user_id=request.user.id)
+        cached_in_redis = bool(r and r.exists(redis_key))
+        return JsonResponse({
+            "status": "success",
+            "user_id": request.user.id,
+            "context": ctx_obj.to_dict() if ctx_obj else {"data": {}, "size_bytes": 0, "updated_at": None},
+            "cached_in_redis": cached_in_redis
+        })
+
+    elif request.method in ('PUT', 'POST'):
+        try:
+            body = json.loads(request.body.decode('utf-8')) if request.body else {}
+            context_data = body.get('data') if ('data' in body and isinstance(body['data'], dict)) else body
+            if not isinstance(context_data, dict):
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Payload must be a JSON object containing your structured data."
+                }, status=400)
+
+            result = set_user_live_context(request.user.id, context_data)
+            return JsonResponse({
+                "status": "success",
+                "message": "Structured live context updated and synced to in-memory Redis successfully.",
+                "context": result
+            })
+        except ValueError as ve:
+            return JsonResponse({"status": "error", "message": str(ve)}, status=400)
+        except Exception as e:
+            logger.error(f"Error in api_user_live_context: {e}")
+            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+    elif request.method == 'DELETE':
+        delete_user_live_context(request.user.id)
+        return JsonResponse({
+            "status": "success",
+            "message": "Structured live context deleted successfully from database and Redis."
+        })
+
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+
 
 
