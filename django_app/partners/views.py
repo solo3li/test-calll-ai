@@ -308,6 +308,9 @@ def api_partner_register_client(request):
     email = str(data.get('email', '')).strip()
     spending_cap = data.get('spending_cap')
     minute_cap = data.get('minute_cap')
+    raw_password = str(data.get('password', '')).strip()
+    if not raw_password:
+        raw_password = f"Pass_{secrets.token_hex(4)}"
 
     # Check if already registered under this partner with external_ref
     if external_ref:
@@ -316,12 +319,18 @@ def api_partner_register_client(request):
             external_reference=external_ref
         ).first()
         if existing_rel:
+            existing_owner = EmployeeProfile.objects.filter(user=existing_rel.client).first()
             return JsonResponse({
                 "status": "success",
-                "message": "Client already registered",
+                "message": "Client already registered (existing credentials preserved)",
                 "client_id": existing_rel.client_id,
                 "name": existing_rel.client.first_name or existing_rel.client.username,
                 "partner_code": request.partner.partner_code,
+                "credentials": {
+                    "username": existing_rel.client.username,
+                    "extension": existing_owner.extension if existing_owner else "101"
+                },
+                "owner_employee": existing_owner.to_dict() if existing_owner else None,
                 "client": existing_rel.to_dict(),
             })
 
@@ -340,8 +349,26 @@ def api_partner_register_client(request):
         first_name=name[:30],
         email=email or f"{username}@partner.internal"
     )
-    client_user.set_unusable_password()
+    client_user.set_password(raw_password)
     client_user.save()
+
+    # Determine unique extension starting from 101 for this client
+    ext_num = 101
+    while EmployeeProfile.objects.filter(employer=client_user, extension=str(ext_num), is_active=True).exists():
+        ext_num += 1
+    owner_extension = str(ext_num)
+
+    # Auto-create Owner Employee Profile
+    owner_employee = EmployeeProfile.objects.create(
+        user=client_user,
+        employer=client_user,
+        extension=owner_extension,
+        display_name=f"{name} (المالك)",
+        department="الإدارة العامة",
+        status="ready",
+        avatar_url=f"https://api.dicebear.com/7.x/bottts/png?seed={owner_extension}",
+        is_active=True
+    )
 
     # Create relationship record
     client_rel = PartnerClientRelationship.objects.create(
@@ -369,6 +396,7 @@ def api_partner_register_client(request):
         "external_reference": external_ref,
         "name": name,
         "username": username,
+        "extension": owner_employee.extension,
         "spending_cap": float(client_rel.spending_cap) if client_rel.spending_cap else None,
     })
 
@@ -378,6 +406,12 @@ def api_partner_register_client(request):
         "external_reference": external_ref,
         "name": name,
         "partner_code": request.partner.partner_code,
+        "credentials": {
+            "username": client_user.username,
+            "password": raw_password,
+            "extension": owner_employee.extension
+        },
+        "owner_employee": owner_employee.to_dict(),
         "client": client_rel.to_dict()
     }, status=201)
 
@@ -2094,9 +2128,45 @@ class PartnerSpectacularSchemaView(SpectacularAPIView):
                 if path_key not in spec['paths']:
                     spec['paths'][path_key] = path_data
 
-        for k in ('info', 'servers', 'components'):
+        is_ar = (lang == 'ar')
+        for k in ('info', 'servers'):
             if k not in spec or not spec[k]:
                 spec[k] = legacy_spec.get(k, {})
+
+        if 'components' not in spec or not spec['components']:
+            spec['components'] = legacy_spec.get('components', {})
+        else:
+            for sub_k in ('schemas', 'responses', 'parameters'):
+                if sub_k in legacy_spec.get('components', {}):
+                    spec['components'].setdefault(sub_k, {})
+                    for item_k, item_v in legacy_spec['components'][sub_k].items():
+                        if item_k not in spec['components'][sub_k]:
+                            spec['components'][sub_k][item_k] = item_v
+
+        # Ensure Partner security schemes support both X-Partner-Key and X-API-Key seamlessly
+        if 'components' not in spec or not isinstance(spec['components'], dict):
+            spec['components'] = {}
+        spec['components']['securitySchemes'] = {
+            'PartnerKey': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'X-Partner-Key',
+                'description': 'مفتاح الشريك السري (X-Partner-Key)' if is_ar else 'Partner Secret API Key (X-Partner-Key)',
+            },
+            'ApiKeyAuth': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'X-API-Key',
+                'description': 'مفتاح الشريك (X-API-Key أو X-Partner-Key)' if is_ar else 'Partner API Key (X-API-Key or X-Partner-Key)',
+            },
+            'BearerAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+                'description': 'Bearer Token للوصول المصرح' if is_ar else 'Bearer Token'
+            }
+        }
+        spec['security'] = [{'PartnerKey': []}, {'ApiKeyAuth': []}, {'BearerAuth': []}]
 
         # Use curated ordered tags from partner openapi_spec
         spec['tags'] = legacy_spec.get('tags', [])
