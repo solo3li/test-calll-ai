@@ -19,7 +19,6 @@ from .django_client import (
     lookup_customer_memory_sync,
 )
 from .mcp_client import execute_mcp_tool_call, fetch_user_mcp_servers_sync
-from .inngest_client import dispatch_tool_log_to_inngest, emit_inngest_event_async
 
 fetch_user_mcp_server_sync = fetch_user_mcp_servers_sync
 
@@ -46,6 +45,4 @@ __all__ = [
     "execute_mcp_tool_call",
     "fetch_user_mcp_servers_sync",
     "fetch_user_mcp_server_sync",
-    "dispatch_tool_log_to_inngest",
-    "emit_inngest_event_async",
 ]

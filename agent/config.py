@@ -21,8 +21,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 DJANGO_API_URL = os.getenv("DJANGO_API_URL", "http://django:8000")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "voice-internal-secret-token-key-12345")
-INNGEST_EVENT_URL = os.getenv("INNGEST_EVENT_URL", "http://inngest:8288/e/voice_assistant_app")
-
 
 # Audio Pipeline Standard Constants
 IN_SAMPLE_RATE = 16000          # Gemini input sample rate

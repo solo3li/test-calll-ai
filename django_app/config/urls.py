@@ -8,14 +8,12 @@ from crm.inngest_jobs import all_inngest_functions as crm_inngest_functions
 from call_center.inngest_jobs import all_call_center_inngest_functions
 from knowledge.inngest_jobs import all_knowledge_inngest_functions
 from partners.inngest_jobs import all_partner_inngest_functions
-from agents.inngest_jobs import all_agent_inngest_functions
 
 combined_inngest_functions = (
     list(crm_inngest_functions)
     + list(all_call_center_inngest_functions)
     + list(all_knowledge_inngest_functions)
     + list(all_partner_inngest_functions)
-    + list(all_agent_inngest_functions)
 )
 
 urlpatterns = [

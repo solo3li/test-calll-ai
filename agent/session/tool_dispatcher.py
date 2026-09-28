@@ -88,6 +88,16 @@ def clean_gemini_schema(raw):
         elif isinstance(raw["items"], list) and raw["items"]:
             cleaned["items"] = clean_gemini_schema(raw["items"][0])
 
+    # Safety Firewall for Gemini Live: OBJECT types in arrays MUST have properties defined
+    if cleaned.get("type") == "ARRAY" and isinstance(cleaned.get("items"), dict):
+        item_dict = cleaned["items"]
+        if item_dict.get("type") == "OBJECT" and not item_dict.get("properties"):
+            item_dict["properties"] = {
+                "name": {"type": "STRING", "description": "اسم العنصر أو الصنف"},
+                "quantity": {"type": "INTEGER", "description": "الكمية"}
+            }
+            item_dict["required"] = ["name"]
+
     return cleaned
 
 
