@@ -44,7 +44,7 @@ jobs:
       - name: 📦 Install Linux Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libfuse2 wget imagemagick
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libfuse2 wget
 
       - name: 📂 Install Python & Flet Requirements
         working-directory: ./local_gsm_gateway
@@ -59,27 +59,27 @@ jobs:
 
       - name: 📦 Package into AppImage
         run: |
-          # Locate build output directory
-          EXE_PATH=$(find local_gsm_gateway/build -type f -executable -name "*dongle*" | head -n 1)
-          if [ -n "$EXE_PATH" ]; then
-            BUNDLE_DIR=$(dirname "$EXE_PATH")
-          else
-            BUNDLE_DIR=$(find local_gsm_gateway/build/linux -type d -name "bundle" | head -n 1)
-          fi
+          # 1. Locate the correct release bundle directory (avoiding intermediate compiler folders)
+          BUNDLE_DIR=$(find local_gsm_gateway/build/linux -type d -name "bundle" | head -n 1)
           if [ -z "$BUNDLE_DIR" ]; then
-            BUNDLE_DIR="local_gsm_gateway/build/linux"
+            if [ -f "local_gsm_gateway/build/linux/dongle_gateway" ]; then
+              BUNDLE_DIR="local_gsm_gateway/build/linux"
+            else
+              EXE_PATH=$(find local_gsm_gateway/build/linux -not -path "*/intermediates_do_not_run/*" -type f -executable -name "*dongle*" | head -n 1)
+              BUNDLE_DIR=$(dirname "$EXE_PATH")
+            fi
           fi
-          echo "Using bundle directory: $BUNDLE_DIR"
+          echo "Using release bundle directory: $BUNDLE_DIR"
           ls -la "$BUNDLE_DIR"
 
-          # Clean and prepare AppDir
+          # 2. Clean and prepare AppDir
           rm -rf AppDir
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r "$BUNDLE_DIR"/* AppDir/usr/bin/
 
-          # Desktop launcher
+          # 3. Create desktop launcher entry
           cat << 'EOF' > AppDir/dongle-gateway.desktop
           [Desktop Entry]
           Name=Dongle AI Gateway
@@ -91,24 +91,23 @@ jobs:
           EOF
           cp AppDir/dongle-gateway.desktop AppDir/usr/share/applications/
 
-          # Application icon
-          convert -size 256x256 xc:"#680E23" -fill white -gravity center -pointsize 42 -draw "text 0,0 '4G AI'" AppDir/dongle-gateway.png
-          cp AppDir/dongle-gateway.png AppDir/usr/share/icons/hicolor/256x256/apps/
-          cp AppDir/dongle-gateway.png AppDir/.DirIcon
+          # 4. Copy pre-generated branding icons (avoiding ImageMagick font errors)
+          cp local_gsm_gateway/assets/icon.png AppDir/dongle-gateway.png
+          cp local_gsm_gateway/assets/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/dongle-gateway.png
+          cp local_gsm_gateway/assets/icon.png AppDir/.DirIcon
 
-          # AppRun execution entrypoint
+          # 5. Create AppRun launcher entrypoint
           cat << 'EOF' > AppDir/AppRun
           #!/bin/sh
           SELF=$(readlink -f "$0")
           HERE=${SELF%/*}
           export PATH="${HERE}/usr/bin:${PATH}"
           export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${HERE}/usr/bin:${LD_LIBRARY_PATH}"
-          EXEC=$(find "${HERE}/usr/bin" -maxdepth 1 -type f -executable | head -n 1)
-          exec "${EXEC}" "$@"
+          exec "${HERE}/usr/bin/dongle_gateway" "$@"
           EOF
           chmod +x AppDir/AppRun
 
-          # Download and execute appimagetool
+          # 6. Package using official appimagetool
           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
           ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir DongleGateway-x86_64.AppImage
@@ -121,10 +120,10 @@ jobs:
           path: DongleGateway-x86_64.AppImage
 
   # -------------------------------------------------------------------------
-  # 2. Windows Build (.exe in Zip)
+  # 2. Windows Build (.exe Setup Installer ONLY)
   # -------------------------------------------------------------------------
   build-windows:
-    name: 🪟 Build Windows Executable
+    name: 🪟 Build Windows Setup Installer (.exe)
     runs-on: windows-latest
 
     steps:
@@ -153,30 +152,66 @@ jobs:
         run: |
           flet build windows --project dongle_gateway --product "Dongle AI Gateway" --yes --no-rich-output
 
-      - name: 📦 Package Windows Zip
+      - name: 📦 Compile Setup Installer (.exe) with Inno Setup
         shell: pwsh
         run: |
-          $Exe = Get-ChildItem -Path "local_gsm_gateway\build" -Recurse -Filter "*.exe" | Select-Object -First 1
-          if ($null -ne $Exe) {
-            $ReleasePath = $Exe.Directory
-          } else {
-            $ReleasePath = Get-Item "local_gsm_gateway\build\windows"
-          }
-          Write-Host "Zipping Windows release from: $($ReleasePath.FullName)"
-          Compress-Archive -Path "$($ReleasePath.FullName)\*" -DestinationPath "DongleGateway-Windows-x64.zip" -Force
-          Get-Item DongleGateway-Windows-x64.zip
+          # 1. Install Inno Setup
+          choco install innosetup --no-progress -y
 
-      - name: 📤 Upload Windows Artifact
+          # 2. Locate the final release build directory
+          $Exe = Get-ChildItem -Path "local_gsm_gateway\build\windows" -Recurse -Filter "*.exe" | Where-Object { $_.FullName -notmatch "intermediates_do_not_run" } | Select-Object -First 1
+          if ($null -ne $Exe) {
+            $ReleaseDir = $Exe.Directory.FullName
+          } else {
+            $ReleaseDir = (Get-Item "local_gsm_gateway\build\windows").FullName
+          }
+          Write-Host "Creating Inno Setup installer for release directory: $ReleaseDir"
+
+          # 3. Generate Inno Setup script
+          @(
+            '[Setup]',
+            'AppName=Dongle AI Voice Gateway',
+            'AppVersion=1.0.0',
+            'DefaultDirName={autopf}\DongleAIGateway',
+            'DefaultGroupName=Dongle AI Voice Gateway',
+            'OutputDir=.',
+            'OutputBaseFilename=DongleGateway-Windows-Setup',
+            'Compression=lzma2',
+            'SolidCompression=yes',
+            'ArchitecturesInstallIn64BitMode=x64',
+            'SetupIconFile=local_gsm_gateway\assets\icon.ico',
+            'UninstallDisplayIcon={app}\dongle_gateway.exe',
+            '',
+            '[Tasks]',
+            'Name: desktopicon; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"',
+            '',
+            '[Files]',
+            "Source: ""$ReleaseDir\*""; DestDir: ""{app}""; Flags: ignoreversion recursesubdirs createallsubdirs",
+            '',
+            '[Icons]',
+            'Name: "{group}\Dongle AI Voice Gateway"; Filename: "{app}\dongle_gateway.exe"',
+            'Name: "{group}\{cm:UninstallProgram,Dongle AI Voice Gateway}"; Filename: "{uninstallexe}"',
+            'Name: "{autodesktop}\Dongle AI Voice Gateway"; Filename: "{app}\dongle_gateway.exe"; Tasks: desktopicon',
+            '',
+            '[Run]',
+            'Filename: "{app}\dongle_gateway.exe"; Description: "{cm:LaunchProgram,Dongle AI Voice Gateway}"; Flags: nowait postinstall skipifsilent'
+          ) | Set-Content -Path "installer.iss"
+
+          # 4. Compile into single .exe installer
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          Get-Item DongleGateway-Windows-Setup.exe
+
+      - name: 📤 Upload Windows Setup (.exe) Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DongleGateway-Windows-Zip
-          path: DongleGateway-Windows-x64.zip
+          name: DongleGateway-Windows-Setup
+          path: DongleGateway-Windows-Setup.exe
 
   # -------------------------------------------------------------------------
-  # 3. macOS Build (.app in Zip)
+  # 3. macOS Build (.dmg Apple Disk Image ONLY)
   # -------------------------------------------------------------------------
   build-macos:
-    name: 🍏 Build macOS Application
+    name: 🍏 Build macOS Disk Image (.dmg)
     runs-on: macos-latest
 
     steps:
@@ -205,25 +240,29 @@ jobs:
         run: |
           flet build macos --project dongle_gateway --product "Dongle AI Gateway" --yes --no-rich-output
 
-      - name: 📦 Package macOS Zip
+      - name: 📦 Package into Apple Disk Image (.dmg)
         run: |
           APP_PATH=$(find local_gsm_gateway/build/macos -name "*.app" -type d | head -n 1)
           echo "Found macOS App: $APP_PATH"
-          APP_DIR=$(dirname "$APP_PATH")
-          APP_NAME=$(basename "$APP_PATH")
-          cd "$APP_DIR"
-          zip -r -y "$GITHUB_WORKSPACE/DongleGateway-macOS.zip" "$APP_NAME"
-          cd "$GITHUB_WORKSPACE"
-          ls -la DongleGateway-macOS.zip
 
-      - name: 📤 Upload macOS Artifact
+          # Prepare DMG root directory with Applications drag-and-drop shortcut
+          rm -rf dmg_staging
+          mkdir -p dmg_staging
+          cp -r "$APP_PATH" dmg_staging/
+          ln -s /Applications dmg_staging/Applications
+
+          # Create compressed .dmg using native macOS hdiutil
+          hdiutil create -volname "Dongle AI Gateway" -srcfolder dmg_staging -ov -format UDZO DongleGateway-macOS.dmg
+          ls -la DongleGateway-macOS.dmg
+
+      - name: 📤 Upload macOS (.dmg) Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DongleGateway-macOS-Zip
-          path: DongleGateway-macOS.zip
+          name: DongleGateway-macOS-DMG
+          path: DongleGateway-macOS.dmg
 
   # -------------------------------------------------------------------------
-  # 4. Android Build (.apk)
+  # 4. Android Build (.apk ONLY)
   # -------------------------------------------------------------------------
   build-android:
     name: 🤖 Build Android APK
@@ -284,7 +323,7 @@ jobs:
           path: DongleGateway-Android.apk
 
   # -------------------------------------------------------------------------
-  # 5. Create GitHub Release & Publish All 4 Executables
+  # 5. Create GitHub Release & Publish All 4 Single-File Executables
   # -------------------------------------------------------------------------
   publish-release:
     name: 🚀 Publish GitHub Release
@@ -301,16 +340,16 @@ jobs:
           name: DongleGateway-Linux-AppImage
           path: ./release-assets
 
-      - name: 📥 Download Windows Zip
+      - name: 📥 Download Windows Setup (.exe)
         uses: actions/download-artifact@v4
         with:
-          name: DongleGateway-Windows-Zip
+          name: DongleGateway-Windows-Setup
           path: ./release-assets
 
-      - name: 📥 Download macOS Zip
+      - name: 📥 Download macOS (.dmg)
         uses: actions/download-artifact@v4
         with:
-          name: DongleGateway-macOS-Zip
+          name: DongleGateway-macOS-DMG
           path: ./release-assets
 
       - name: 📥 Download Android APK
@@ -347,13 +386,13 @@ jobs:
           body: |
             ## 🎙️ GSM USB Dongle AI Voice Gateway - Release (${{ steps.release_meta.outputs.tag }})
 
-            Cross-platform executable builds for physical cellular USB dongle voice routing to LiveKit & Gemini AI.
+            Cross-platform single-file executable releases for physical cellular USB dongle voice routing to LiveKit & Gemini AI.
 
-            ### 📦 Download Packages:
-            * 🐧 **Linux**: `DongleGateway-x86_64.AppImage` *(Standalone single-file AppImage - run on any Linux distro)*
-            * 🪟 **Windows**: `DongleGateway-Windows-x64.zip` *(Contains executable and dependencies)*
-            * 🍏 **macOS**: `DongleGateway-macOS.zip` *(Standalone application bundle)*
-            * 🤖 **Android**: `DongleGateway-Android.apk` *(Install directly on your phone)*
+            ### 📦 Download Packages (Native Single Files):
+            * 🐧 **Linux**: `DongleGateway-x86_64.AppImage` *(Standalone AppImage - double click to run on any Linux distro)*
+            * 🪟 **Windows**: `DongleGateway-Windows-Setup.exe` *(Setup installer wizard with desktop & start menu shortcuts)*
+            * 🍏 **macOS**: `DongleGateway-macOS.dmg` *(Apple Disk Image with drag-and-drop to Applications)*
+            * 🤖 **Android**: `DongleGateway-Android.apk` *(Direct install APK for mobile phones)*
 
             ### ✨ Key Features:
             - **Strict Owner Login**: Authenticates exclusively via `username` and `password` (No email needed).
@@ -362,8 +401,8 @@ jobs:
             - **Zero Calling Minutes Cost**: Bypasses VoIP minute costs by leveraging standard cellular unlimited minute plans.
           files: |
             release-assets/DongleGateway-x86_64.AppImage
-            release-assets/DongleGateway-Windows-x64.zip
-            release-assets/DongleGateway-macOS.zip
+            release-assets/DongleGateway-Windows-Setup.exe
+            release-assets/DongleGateway-macOS.dmg
             release-assets/DongleGateway-Android.apk
           draft: false
           prerelease: false
