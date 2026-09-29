@@ -59,16 +59,25 @@ jobs:
 
       - name: 📦 Package into AppImage
         run: |
-          BUNDLE_DIR=$(find local_gsm_gateway/build/linux -type d -name "bundle" | head -n 1)
+          # Locate build output directory
+          EXE_PATH=$(find local_gsm_gateway/build -type f -executable -name "*dongle*" | head -n 1)
+          if [ -n "$EXE_PATH" ]; then
+            BUNDLE_DIR=$(dirname "$EXE_PATH")
+          else
+            BUNDLE_DIR=$(find local_gsm_gateway/build/linux -type d -name "bundle" | head -n 1)
+          fi
           if [ -z "$BUNDLE_DIR" ]; then
-            echo "Bundle directory not found, searching for executable..."
-            BUNDLE_DIR=$(dirname $(find local_gsm_gateway/build/linux -type f -executable | head -n 1))
+            BUNDLE_DIR="local_gsm_gateway/build/linux"
           fi
           echo "Using bundle directory: $BUNDLE_DIR"
+          ls -la "$BUNDLE_DIR"
 
+          # Clean and prepare AppDir
+          rm -rf AppDir
           mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp -r $BUNDLE_DIR/* AppDir/usr/bin/
+          cp -r "$BUNDLE_DIR"/* AppDir/usr/bin/
 
           # Desktop launcher
           cat << 'EOF' > AppDir/dongle-gateway.desktop
@@ -80,7 +89,7 @@ jobs:
           Categories=Utility;Telephony;
           Terminal=false
           EOF
-          cp AppDir/dongle-gateway.desktop AppDir/
+          cp AppDir/dongle-gateway.desktop AppDir/usr/share/applications/
 
           # Application icon
           convert -size 256x256 xc:"#680E23" -fill white -gravity center -pointsize 42 -draw "text 0,0 '4G AI'" AppDir/dongle-gateway.png
@@ -93,8 +102,9 @@ jobs:
           SELF=$(readlink -f "$0")
           HERE=${SELF%/*}
           export PATH="${HERE}/usr/bin:${PATH}"
-          export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${LD_LIBRARY_PATH}"
-          exec "${HERE}/usr/bin/dongle_gateway" "$@"
+          export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${HERE}/usr/bin:${LD_LIBRARY_PATH}"
+          EXEC=$(find "${HERE}/usr/bin" -maxdepth 1 -type f -executable | head -n 1)
+          exec "${EXEC}" "$@"
           EOF
           chmod +x AppDir/AppRun
 
@@ -146,12 +156,14 @@ jobs:
       - name: 📦 Package Windows Zip
         shell: pwsh
         run: |
-          $ReleasePath = Get-ChildItem -Path "local_gsm_gateway\build\windows" -Recurse -Directory -Filter "Release" | Select-Object -First 1
-          if ($null -eq $ReleasePath) {
-            $ReleasePath = "local_gsm_gateway\build\windows\x64\runner\Release"
+          $Exe = Get-ChildItem -Path "local_gsm_gateway\build" -Recurse -Filter "*.exe" | Select-Object -First 1
+          if ($null -ne $Exe) {
+            $ReleasePath = $Exe.Directory
+          } else {
+            $ReleasePath = Get-Item "local_gsm_gateway\build\windows"
           }
           Write-Host "Zipping Windows release from: $($ReleasePath.FullName)"
-          Compress-Archive -Path "$($ReleasePath.FullName)\*" -DestinationPath "DongleGateway-Windows-x64.zip"
+          Compress-Archive -Path "$($ReleasePath.FullName)\*" -DestinationPath "DongleGateway-Windows-x64.zip" -Force
           Get-Item DongleGateway-Windows-x64.zip
 
       - name: 📤 Upload Windows Artifact
