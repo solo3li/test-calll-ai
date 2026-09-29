@@ -55,7 +55,7 @@ jobs:
       - name: 🔨 Build Linux Executable Bundle
         working-directory: ./local_gsm_gateway
         run: |
-          flet build linux --project-name dongle_gateway --product "Dongle AI Gateway"
+          flet build linux --project dongle_gateway --product "Dongle AI Gateway" --yes --no-rich-output
 
       - name: 📦 Package into AppImage
         run: |
@@ -141,7 +141,7 @@ jobs:
       - name: 🔨 Build Windows Application
         working-directory: ./local_gsm_gateway
         run: |
-          flet build windows --project-name dongle_gateway --product "Dongle AI Gateway"
+          flet build windows --project dongle_gateway --product "Dongle AI Gateway" --yes --no-rich-output
 
       - name: 📦 Package Windows Zip
         shell: pwsh
@@ -191,7 +191,7 @@ jobs:
       - name: 🔨 Build macOS Application
         working-directory: ./local_gsm_gateway
         run: |
-          flet build macos --project-name dongle_gateway --product "Dongle AI Gateway"
+          flet build macos --project dongle_gateway --product "Dongle AI Gateway" --yes --no-rich-output
 
       - name: 📦 Package macOS Zip
         run: |
@@ -256,7 +256,7 @@ jobs:
       - name: 🔨 Build Android APK
         working-directory: ./local_gsm_gateway
         run: |
-          flet build apk --project-name dongle_gateway --product "Dongle AI Gateway" --org com.aivoice
+          flet build apk --project dongle_gateway --product "Dongle AI Gateway" --org com.aivoice --yes --no-rich-output
 
       - name: 📦 Locate and Rename APK
         run: |
