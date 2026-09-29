@@ -7,6 +7,7 @@ Also provides a simulation mode for testing when no physical dongle is attached.
 """
 import time
 import logging
+import sys
 import threading
 from typing import Callable, Optional, List, Dict
 
@@ -23,7 +24,8 @@ logger = logging.getLogger(__name__)
 def list_available_ports() -> List[Dict[str, str]]:
     """Scan and list all detected USB Serial and COM ports."""
     ports = []
-    if SERIAL_AVAILABLE:
+    # On Android, physical tty ports cannot be enumerated via standard posix scan
+    if sys.platform != "android" and SERIAL_AVAILABLE:
         try:
             for p in serial.tools.list_ports.comports():
                 desc = p.description or "Generic Serial Port"

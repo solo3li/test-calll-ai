@@ -54,4 +54,9 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    if hasattr(ft, "run"):
+        ft.run(main)
+    elif hasattr(ft, "app"):
+        ft.app(target=main)
+    else:
+        raise RuntimeError("No app runner found in flet module")

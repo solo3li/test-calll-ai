@@ -31,7 +31,7 @@ from views.dashboard_view import DashboardView
 class TestDongleGatewayClientE2E(unittest.TestCase):
     SERVER_URL = "https://app.169.58.32.179.nip.io"
     OWNER_USERNAME = "dongle_owner_user"
-    OWNER_PASSWORD = "DongleSecurePass2026!"
+    OWNER_PASSWORD = "OwnerSecretPassword123!"
 
     def setUp(self):
         # Clean up any existing session file
