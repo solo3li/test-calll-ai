@@ -31,7 +31,7 @@ class SmsUssdView:
         # SMS Components
         self.sms_phone_input = ft.TextField(
             label="رقم الهاتف المستلم",
-            hint_text="+201012345678",
+            hint_text="مثال: +201000000000",
             border_radius=10,
             text_size=12,
             border_color=COLOR_BORDER,
@@ -55,8 +55,8 @@ class SmsUssdView:
         # USSD Components
         self.ussd_input = ft.TextField(
             label="كود الشبكة (USSD Code)",
-            value="*888#",
-            hint_text="مثال: *888# أو *100#",
+            value="",
+            hint_text="مثال: *888# أو *100# أو *1#",
             border_radius=10,
             text_size=13,
             border_color=COLOR_BORDER,
@@ -82,12 +82,22 @@ class SmsUssdView:
     def _load_sms_messages(self):
         self.sms_list_col.controls.clear()
         messages = self.storage.get_sms_messages(limit=15)
-        if not messages:
-            # Load initial ones from modem
+        if not messages and self.modem.is_connected and not ("SIMULATED" in getattr(self.modem, "port", "")):
+            # Only poll real hardware SIM when connected
             modem_msgs = self.modem.read_all_sms()
             for m in modem_msgs:
-                self.storage.add_sms(m["sender"], m["text"], direction="inbound", dongle_port=self.modem.port)
+                self.storage.add_sms(m.get("sender", ""), m.get("text", ""), direction="inbound", dongle_port=self.modem.port)
             messages = self.storage.get_sms_messages(limit=15)
+
+        if not messages:
+            self.sms_list_col.controls.append(
+                ft.Container(
+                    padding=16,
+                    alignment=ft.Alignment(0, 0),
+                    content=ft.Text("لا توجد رسائل SMS مسجلة حتى الآن", size=12, color=COLOR_TEXT_MUTED),
+                )
+            )
+            return
 
         for m in messages:
             is_out = m.get("direction") == "outbound"
@@ -146,9 +156,9 @@ class SmsUssdView:
 
     def build(self) -> ft.Control:
         quick_ussd = [
-            ("*888#", "رصيد فودافون"),
-            ("*100#", "رصيد أورنج"),
             ("*1#", "معرفة رقم الخط"),
+            ("*100#", "خدمات الشبكة"),
+            ("*888#", "استعلام الرصيد"),
             ("*60#", "باقة الإنترنت"),
         ]
 

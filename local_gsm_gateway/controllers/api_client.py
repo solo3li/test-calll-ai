@@ -8,10 +8,20 @@ import json
 import logging
 from typing import Dict, Any, Optional
 import requests
+import tempfile
+
+try:
+    from controllers.app_paths import get_writable_file_path
+except ImportError:
+    try:
+        from app_paths import get_writable_file_path
+    except ImportError:
+        def get_writable_file_path(name: str) -> str:
+            return os.path.join(tempfile.gettempdir(), name)
 
 logger = logging.getLogger(__name__)
 
-SESSION_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "session.json")
+SESSION_FILE = get_writable_file_path("session.json")
 DEFAULT_SERVER_URL = "https://app.169.58.32.179.nip.io"
 
 

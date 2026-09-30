@@ -152,7 +152,7 @@ class DashboardView:
         # 2. Active Call Hero Card with Dynamic Waveform
         self.call_badge_text = ft.Text("📞 مكالمة واردة نشطة", size=11, color=COLOR_BURGUNDY, weight=ft.FontWeight.BOLD)
         self.call_timer_text = ft.Text("00:00", size=13, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
-        self.caller_number_text = ft.Text("+201012345678", size=18, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.caller_number_text = ft.Text("—", size=18, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
 
         # Dynamic Waveform Bars (Heights animated via AudioBridge RMS callbacks)
         self.waveform_bars = [
@@ -225,8 +225,11 @@ class DashboardView:
         )
 
         # 3. Telemetry Metric Cards
-        self.signal_val_text = ft.Text(f"{self.modem.signal_strength}% ممتازة", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
-        self.signal_sub_text = ft.Text(f"{self.modem.operator_name} ({self.modem.signal_dbm} dBm)", size=10, color=COLOR_TEXT_SECONDARY)
+        op_display = self.modem.operator_name or ("غير متصل" if not self.modem.is_connected else "شريحة نشطة")
+        sig_pct = self.modem.signal_strength
+        sig_display = f"{sig_pct}%" if sig_pct > 0 else "0% (لا توجد إشارة)"
+        self.signal_val_text = ft.Text(sig_display, size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.signal_sub_text = ft.Text(f"{op_display} ({self.modem.signal_dbm} dBm)" if self.modem.signal_dbm else op_display, size=10, color=COLOR_TEXT_SECONDARY)
         self.signal_card = self._build_telemetry_card(
             icon=ft.Icons.NETWORK_CELL_ROUNDED,
             title="إشارة الشبكة (4G)",
@@ -234,8 +237,10 @@ class DashboardView:
             sub_ctrl=self.signal_sub_text,
         )
 
-        self.sim_status_text = ft.Text("جاهزة للاستقبال", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
-        self.sim_sub_text = ft.Text(f"IMEI: ...{self.modem.imei[-4:]}", size=10, color=COLOR_TEXT_SECONDARY)
+        sim_status_label = "جاهزة للاستقبال" if self.modem.is_connected else "غير متصلة"
+        imei_sub = f"IMEI: ...{self.modem.imei[-4:]}" if self.modem.imei else "IMEI: —"
+        self.sim_status_text = ft.Text(sim_status_label, size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.sim_sub_text = ft.Text(imei_sub, size=10, color=COLOR_TEXT_SECONDARY)
         self.sim_card = self._build_telemetry_card(
             icon=ft.Icons.SIM_CARD_OUTLINED,
             title="حالة الشريحة",
@@ -243,7 +248,7 @@ class DashboardView:
             sub_ctrl=self.sim_sub_text,
         )
 
-        self.latency_val_text = ft.Text("24 ms", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.latency_val_text = ft.Text("— ms", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
         self.latency_card = self._build_telemetry_card(
             icon=ft.Icons.BOLT_ROUNDED,
             title="زمن الاستجابة الحقيقي",
@@ -275,8 +280,8 @@ class DashboardView:
         )
 
         self.sim_caller_input = ft.TextField(
-            hint_text="+201012345678",
-            value="+201012345678",
+            hint_text="مثال: +201000000000",
+            value="",
             label="رقم اختبار ورود المكالمة",
             border_radius=10,
             text_size=12,
@@ -541,7 +546,12 @@ class DashboardView:
             self.on_logout()
 
     def _trigger_simulated_call(self, e):
-        phone = (self.sim_caller_input.value or "+201012345678").strip()
+        phone = (self.sim_caller_input.value or "").strip()
+        if not phone:
+            self.page.snack_bar = ft.SnackBar(ft.Text("يرجى إدخال رقم هاتف للمحاكاة أولاً"), bgcolor=COLOR_BURGUNDY)
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
         self.modem.simulate_incoming_call(phone)
 
     def _on_pool_incoming_call(self, caller_number: str, dongle_port: str):

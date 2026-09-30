@@ -51,9 +51,9 @@ def list_available_ports() -> List[Dict[str, str]]:
         except Exception as e:
             logger.warning(f"Error enumerating serial ports: {e}")
     if not ports:
-        # Default virtual entries for simulation / testing
-        ports.append({"device": "SIMULATED_1", "description": "مودم 1 (فودافون - افتراضي)", "manufacturer": "Huawei Virtual"})
-        ports.append({"device": "SIMULATED_2", "description": "مودم 2 (أورنج - افتراضي)", "manufacturer": "ZTE Virtual"})
+        # Default virtual entries for simulation / testing when no physical USB modems are plugged in
+        ports.append({"device": "SIMULATED_1", "description": "مودم 1 (محاكاة)", "manufacturer": "Virtual"})
+        ports.append({"device": "SIMULATED_2", "description": "مودم 2 (محاكاة)", "manufacturer": "Virtual"})
     return ports
 
 
@@ -80,15 +80,16 @@ class ModemController:
         self.is_connected = False
         self.is_in_call = False
         self.current_call_number = ""
+        self._simulated_sms: List[Dict[str, str]] = []
 
-        # Live Telemetry State
-        self.signal_strength = 92  # Percentage 0-100
-        self.signal_dbm = -65      # dBm
-        self.operator_name = "Vodafone EG" if "1" in port else "Orange EG"
-        self.sim_status = "READY"
-        self.imei = "864201045982134"
-        self.imsi = "602021008745129"
-        self.network_type = "4G LTE"
+        # Live Telemetry State (empty until connected to live hardware or simulated session)
+        self.signal_strength = 0
+        self.signal_dbm = 0
+        self.operator_name = ""
+        self.sim_status = "NOT_CONNECTED"
+        self.imei = ""
+        self.imsi = ""
+        self.network_type = ""
 
     def connect(self, port: Optional[str] = None) -> bool:
         """Open serial connection to the USB dongle."""
@@ -189,16 +190,18 @@ class ModemController:
             logger.warning(f"Error refreshing telemetry: {e}")
 
     def _query_simulated_telemetry(self):
-        """Generate authentic simulated telemetry."""
+        """Generate simulated telemetry for virtual ports without hardcoding live state."""
         if "2" in self.port:
-            self.operator_name = "Orange EG"
+            self.operator_name = "Orange (محاكاة)"
             self.signal_strength = 88
             self.signal_dbm = -70
         else:
-            self.operator_name = "Vodafone EG"
-            self.signal_strength = 94
-            self.signal_dbm = -62
+            self.operator_name = "Vodafone (محاكاة)"
+            self.signal_strength = 92
+            self.signal_dbm = -64
         self.sim_status = "READY"
+        if not self.imei:
+            self.imei = "864201045982134"
         if self.on_signal_update:
             self.on_signal_update(self.signal_strength, self.operator_name)
 
@@ -233,7 +236,7 @@ class ModemController:
         resp = self._send_at("ATH")
         return "OK" in resp
 
-    def simulate_incoming_call(self, caller_number: str = "+201012345678"):
+    def simulate_incoming_call(self, caller_number: str = "+201000000000"):
         """Trigger simulated incoming call for testing without a physical dongle."""
         logger.info(f"Simulating incoming call from {caller_number} on {self.port}")
         self.current_call_number = caller_number
@@ -246,6 +249,11 @@ class ModemController:
         """Send SMS via AT commands."""
         logger.info(f"Modem on {self.port} sending SMS to {phone_number}: {message}")
         if "SIMULATED" in self.port or not self.ser or not self.ser.is_open:
+            self._simulated_sms.append({
+                "sender": phone_number,
+                "text": message,
+                "time": time.strftime("%Y-%m-%d %H:%M")
+            })
             return True
         try:
             self._send_at("AT+CMGF=1")
@@ -262,10 +270,7 @@ class ModemController:
     def read_all_sms(self) -> List[Dict[str, str]]:
         """Read all SMS messages stored on SIM card."""
         if "SIMULATED" in self.port or not self.ser or not self.ser.is_open:
-            return [
-                {"sender": "Vodafone", "text": "تم تجديد باقة فليكس بنجاح. رصيدك الحالي 45 جنيهاً.", "time": "2026-09-30 11:15"},
-                {"sender": "+201099887766", "text": "السلام عليكم، هل متاح حجز طاولة اليوم الساعة ٨ مساءً؟", "time": "2026-09-30 13:40"}
-            ]
+            return list(self._simulated_sms)
         try:
             resp = self._send_at('AT+CMGL="ALL"')
             messages = []
@@ -286,12 +291,8 @@ class ModemController:
         """Send USSD query e.g. *888# or *100# and receive network response."""
         logger.info(f"Modem on {self.port} executing USSD code: {code}")
         if "SIMULATED" in self.port or not self.ser or not self.ser.is_open:
-            time.sleep(0.4)
-            if "888" in code or "1" in code:
-                return f"رصيدك الحالي هو 42.50 جنيهاً مصرياً. متبقي 1,420 وحدة فليكس تنتهي في 2026-10-15."
-            elif "100" in code:
-                return "خدمات أورنج مصر: 1 للرصيد، 2 للباقات والعروض، 3 للإنترنت المنزلي."
-            return f"تم استلام طلبك لـ ({code}). سيصلك تقرير مفصل برسالة نصية فوراً."
+            time.sleep(0.3)
+            return f"استجابة الشبكة: تم التحقق من رصيدك وخدمات الكود ({code}) بنجاح."
 
         try:
             # AT+CUSD=1,"<code>",15

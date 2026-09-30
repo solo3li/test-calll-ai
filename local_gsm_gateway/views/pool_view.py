@@ -34,6 +34,15 @@ class PoolView:
         self.pool.auto_discover_modems()
         self.devices_column.controls.clear()
         modems = self.pool.get_all_modems()
+        if not modems:
+            self.devices_column.controls.append(
+                ft.Container(
+                    padding=20,
+                    alignment=ft.Alignment(0, 0),
+                    content=ft.Text("لم يتم العثور على أجهزة مودم USB متصلة حالياً", size=12, color=COLOR_TEXT_MUTED),
+                )
+            )
+            return
 
         for m in modems:
             port = m["port"]
