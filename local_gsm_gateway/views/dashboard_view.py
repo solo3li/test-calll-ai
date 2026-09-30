@@ -40,10 +40,11 @@ from views.pool_view import PoolView
 
 
 class DashboardView:
-    def __init__(self, page: ft.Page, api_client: DongleApiClient, on_logout):
+    def __init__(self, page: ft.Page, api_client: DongleApiClient, on_logout=None, tray_manager=None):
         self.page = page
         self.api_client = api_client
         self.on_logout = on_logout
+        self.tray_manager = tray_manager
 
         # Storage & Audio Managers
         self.storage = StorageManager()
@@ -536,8 +537,15 @@ class DashboardView:
     def _on_signal_update(self, signal_pct: int, operator_name: str):
         """Update live cellular signal and operator telemetry."""
         self.signal_header_text.value = f"{signal_pct}%"
-        self.signal_val_text.value = f"{signal_pct}% ممتازة"
-        self.signal_sub_text.value = f"{operator_name} ({self.modem.signal_dbm} dBm)"
+        self.signal_val_text.value = f"{signal_pct}% ممتازة" if signal_pct > 0 else "0% (لا توجد إشارة)"
+        self.signal_sub_text.value = f"{operator_name} ({self.modem.signal_dbm} dBm)" if self.modem.signal_dbm else operator_name
+        if self.tray_manager:
+            self.tray_manager.update_status(
+                operator=operator_name,
+                signal=signal_pct,
+                is_in_call=self.is_in_call,
+                caller=self.current_caller
+            )
         try:
             self.page.update()
         except Exception:
@@ -601,13 +609,30 @@ class DashboardView:
         # 3. Start Live Audio Pipeline & Waveform
         self.audio_bridge.start_pipeline(self.current_room, self.api_client.livekit_url)
 
-        # 4. Update UI
+        # 4. Update UI & Tray Notification
         self.call_badge_text.value = "📞 مكالمة واردة نشطة عبر الشريحة"
         self.caller_number_text.value = self.current_caller
         self.call_timer_text.value = "00:01"
         self.active_call_card.visible = True
         self._switch_tab(0)  # Return to Home tab to show Hero call card
         self.nav_bar.selected_index = 0
+
+        if self.tray_manager:
+            self.tray_manager.update_status(
+                operator=self.modem.operator_name,
+                signal=self.modem.signal_strength,
+                is_in_call=True,
+                caller=caller_number
+            )
+            # Dispatch notification if window is minimized or hidden in tray
+            window_ctrl = getattr(self.page, "window", None)
+            is_hidden = not getattr(window_ctrl, "visible", True) or getattr(window_ctrl, "minimized", False)
+            if is_hidden:
+                self.tray_manager.show_notification(
+                    "📞 مكالمة هاتفية واردة",
+                    f"اتصال من الرقم {caller_number} — جارٍ ربط المكالمة بالذكاء الاصطناعي."
+                )
+
         self.page.update()
 
     def _handle_dialpad_call(self, destination_number: str, target: str):
@@ -688,11 +713,32 @@ class DashboardView:
         self.calls_count_text.value = f"{total_today} مكالمة"
         self._render_recent_calls()
 
-        # Reset UI
+        # Reset UI & Tray
         self.is_in_call = False
         self.active_call_card.visible = False
         self.dialpad_tab.set_calling_state(False)
+
+        if self.tray_manager:
+            self.tray_manager.update_status(
+                operator=self.modem.operator_name,
+                signal=self.modem.signal_strength,
+                is_in_call=False,
+                caller=""
+            )
+
         self.page.update()
+
+    def cleanup(self):
+        """Clean up audio pipeline and disconnect hardware safely on app exit."""
+        try:
+            self.audio_bridge.stop_pipeline()
+            self.audio_bridge.stop_ping_monitor()
+            self.modem.disconnect()
+            if hasattr(self, "dongle_pool"):
+                for m in self.dongle_pool.modems.values():
+                    m.disconnect()
+        except Exception:
+            pass
 
     def build(self) -> ft.Control:
         return ft.Container(
