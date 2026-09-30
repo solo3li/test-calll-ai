@@ -434,6 +434,7 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                                 "persona_role": "sales_advisor",
                                 "speaking_style": "friendly",
                                 "custom_instructions": "أنت مستشار مبيعات ودود تتحدث باللهجة السعودية البيضاء وتقدم عروض المتجر." if is_ar else "You are a friendly sales advisor speaking Saudi dialect.",
+                                "off_topic_response": "بعتذر جداً يا فندم، أنا بساعدك بس في خدمات المتجر، تحب تطلب حاجة؟" if is_ar else "Sorry, I can only help with store services. Would you like to order something?",
                                 "is_active": True
                             }
                         }
@@ -482,7 +483,8 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                                 "name": "مستشار الدعم الفني المصري" if is_ar else "Egyptian Tech Consultant",
                                 "dialect": "egyptian",
                                 "voice_name": "Fenrir",
-                                "speaking_style": "formal"
+                                "speaking_style": "formal",
+                                "off_topic_response": "بعتذر، تخصصي محدود في دعم منتجات شركتك، تحب تسأل عن منتج معين؟" if is_ar else "Sorry, my expertise is limited to your company's products. Can I help with a specific product?"
                             }
                         }
                     }
