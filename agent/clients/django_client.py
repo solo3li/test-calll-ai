@@ -90,7 +90,8 @@ def parse_active_profile_from_bootstrap(bootstrap: dict) -> dict:
         "verbosity": "balanced",
         "welcome_message": "",
         "is_welcome_message_enabled": True,
-        "custom_instructions": ""
+        "custom_instructions": "",
+        "off_topic_response": ""
     }
     if not bootstrap:
         return default_profile
@@ -107,6 +108,7 @@ def parse_active_profile_from_bootstrap(bootstrap: dict) -> dict:
             "welcome_message": prof.get("welcome_message") or "",
             "is_welcome_message_enabled": prof.get("is_welcome_message_enabled", True) if prof.get("is_welcome_message_enabled") is not None else True,
             "custom_instructions": prof.get("custom_instructions") or "",
+            "off_topic_response": prof.get("off_topic_response") or "",
             "name": prof.get("name") or "المساعد"
         }
     return default_profile

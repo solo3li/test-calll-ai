@@ -659,6 +659,7 @@ def api_internal_agent_bootstrap(request):
             "welcome_message": "",
             "is_welcome_message_enabled": True,
             "custom_instructions": "",
+            "off_topic_response": "",
             "is_active": True
         }
 
