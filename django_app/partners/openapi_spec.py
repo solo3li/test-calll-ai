@@ -1920,6 +1920,21 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة بكتابة حرة", "example": "ودود ولطيف ومرح"},
                     "verbosity": {"type": "string", "enum": ["concise", "balanced", "detailed"], "default": "balanced", "description": "مستوى الإيجاز وسرعة الرد: concise (مختصر), balanced (متوازن), detailed (مفصل)", "example": "concise"},
                     "custom_instructions": {"type": "string", "example": "أنت مستشار مبيعات ودود تتحدث باللهجة السعودية البيضاء." if is_ar else "You are a friendly sales advisor speaking in Saudi dialect."},
+                    "off_topic_response": {
+                        "type": "string",
+                        "description": (
+                            "الرسالة التي يرددها المساعد لما يسأله العميل سؤالاً خارج نطاق عمل المساعد. "
+                            "إذا تُرك فارغاً، يعتذر باختصار ويعيد توجيه العميل تلقائياً."
+                            if is_ar else
+                            "The message the assistant says when the customer asks something outside its scope. "
+                            "If empty, the assistant apologies briefly and redirects automatically."
+                        ),
+                        "example": (
+                            "بعتذر جداً يا فندم، أنا بساعدك بس في خدمات المتجر، تحب تطلب حاجة؟"
+                            if is_ar else
+                            "Sorry, I can only assist with store services. Would you like to order something?"
+                        )
+                    },
                     "is_active": {"type": "boolean", "default": True}
                 }
             },
@@ -1935,6 +1950,14 @@ def get_partner_openapi_spec(server_url: str = "/api/partner/v1", lang: str = "a
                     "speaking_style": {"type": "string", "description": "أسلوب الإلقاء والنبرة بكتابة حرة"},
                     "verbosity": {"type": "string", "enum": ["concise", "balanced", "detailed"], "description": "مستوى الإيجاز وسرعة الرد"},
                     "custom_instructions": {"type": "string"},
+                    "off_topic_response": {
+                        "type": "string",
+                        "description": (
+                            "رسالة الرد عند الأسئلة خارج النطاق (فارغة = رد افتراضي آمن)"
+                            if is_ar else
+                            "Off-topic reply message (empty = safe automatic apology)"
+                        )
+                    },
                     "is_active": {"type": "boolean"}
                 }
             },
