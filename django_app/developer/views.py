@@ -411,7 +411,7 @@ def api_user_profile_detail(request, profile_id):
         except Exception:
             return JsonResponse({"status": "error", "message": "Invalid JSON body"}, status=400)
 
-        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity', 'custom_instructions', 'welcome_message']:
+        for field in ['name', 'voice_name', 'gender', 'language', 'dialect', 'persona_role', 'speaking_style', 'verbosity', 'custom_instructions', 'welcome_message', 'off_topic_response']:
             if field in data:
                 setattr(profile, field, str(data[field]).strip())
         if 'is_welcome_message_enabled' in data:

@@ -562,11 +562,24 @@
             </div>
           </div>
 
-          <!-- Custom Instructions & Action Buttons -->
+          <!-- Custom Instructions -->
           <div class="space-y-2 text-xs">
             <label class="block font-semibold text-[#443D39]" data-i18n="field_custom_instructions">تعليمات وتوجيهات خاصة إضافية للشخصية (Custom Prompt Instructions - اختياري):</label>
             <textarea id="field-custom" rows="2" placeholder="مثال: ناديني دائماً بـ 'يا باشا'، وركز على تشجيعي لتجربة المنتجات الجديدة..." class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23] focus:ring-[#680E23]"></textarea>
           </div>
+
+          <!-- Off-Topic Response -->
+          <div class="space-y-2 text-xs">
+            <label class="block font-semibold text-[#443D39]" data-i18n="field_off_topic_response">
+              رسالة الرد خارج النطاق
+              <span class="font-normal text-[#6E645D]">(اختياري — ماذا يقول المساعد لو سُئل عن شيء خارج عمله؟)</span>
+            </label>
+            <textarea id="field-off-topic" rows="2"
+              placeholder='مثال: "بعتذر جداً يا فندم، أنا بساعدك بس في طلبات المطعم، تحب تطلب حاجة؟"'
+              class="w-full px-3 py-2 bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl text-[#1C1917] focus:outline-none focus:border-[#680E23] focus:ring-[#680E23]"></textarea>
+            <p class="text-[#8A7F79] text-[11px]">💡 لو تركتها فارغة، سيعتذر المساعد باختصار ثم يعيد توجيه العميل لنطاق الخدمة تلقائياً.</p>
+          </div>
+
 
           <div class="flex flex-wrap justify-between items-center gap-3 pt-3 border-t border-[#EAE3D9]">
             <div id="profile-status-msg" class="text-xs text-[#6E645D]"></div>
@@ -4808,6 +4821,8 @@
         fieldVerbosity.value = p.verbosity || 'balanced';
       }
       fieldCustom.value = p.custom_instructions || '';
+      const fieldOffTopic = document.getElementById('field-off-topic');
+      if (fieldOffTopic) fieldOffTopic.value = p.off_topic_response || '';
       updateVoiceTag();
       profileStatusMsg.innerText = `البروفايل المطبق: "${p.name}" (${p.voice_name} / ${p.dialect_display || p.dialect})`;
       profileStatusMsg.className = 'text-xs text-[#680E23] font-semibold';
@@ -4848,7 +4863,8 @@
         persona_role: fieldRole.value,
         speaking_style: fieldStyle.value,
         verbosity: fieldVerbosity ? fieldVerbosity.value : 'balanced',
-        custom_instructions: fieldCustom.value.trim()
+        custom_instructions: fieldCustom.value.trim(),
+        off_topic_response: (document.getElementById('field-off-topic')?.value || '').trim()
       };
 
       try {

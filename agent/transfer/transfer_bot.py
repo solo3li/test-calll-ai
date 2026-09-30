@@ -59,7 +59,18 @@ async def execute_ai_transfer_and_hold(
         # 3. Wait until human employee answers and joins room or customer leaves
         start_time = time.time()
         max_wait = 330  # Support up to 5.5 minutes of queue hold music
+        MIN_HOLD_SECONDS = 2.0  # Guard: ensure audio track is fully negotiated before polling
+
         while (time.time() - start_time) < max_wait:
+            elapsed = time.time() - start_time
+
+            # Always honour the minimum hold time so the WebRTC negotiation fully
+            # completes before we check for participants (fixes the race condition
+            # where Inngest dispatches an employee faster than publish_track settles).
+            if elapsed < MIN_HOLD_SECONDS:
+                await asyncio.sleep(0.1)
+                continue
+
             remote_parts = list(room.remote_participants.values())
             customer_present = any(
                 not p.identity.startswith("transfer-")

@@ -93,6 +93,16 @@ class AgentProfile(models.Model):
     speaking_style = models.TextField(blank=True, default='ودود ولطيف ومرح')
     verbosity = models.CharField(max_length=20, choices=VERBOSITY_CHOICES, default='balanced')
     custom_instructions = models.TextField(blank=True, default='')
+    off_topic_response = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="رسالة الرد خارج النطاق",
+        help_text=(
+            "الرسالة التي يرددها المساعد عندما يسأله العميل سؤالاً خارج نطاق عمله. "
+            "مثال: «بعتذر جداً يا فندم، أنا بساعدك بس في طلبات مطعم ضيافة، تحب تطلب حاجة؟» "
+            "— إذا تُركت فارغة يُستخدم رد افتراضي."
+        ),
+    )
     welcome_message = models.TextField(
         blank=True,
         default='',
@@ -164,6 +174,7 @@ class AgentProfile(models.Model):
             "verbosity": self.verbosity or "balanced",
             "verbosity_display": self.get_verbosity_display(),
             "custom_instructions": self.custom_instructions,
+            "off_topic_response": self.off_topic_response or "",
             "welcome_message": self.welcome_message or "",
             "is_welcome_message_enabled": self.is_welcome_message_enabled,
             "is_active": self.is_active,
