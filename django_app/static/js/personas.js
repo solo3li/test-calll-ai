@@ -21,6 +21,7 @@ let fieldWelcome = null;
 let fieldWelcomeEnabled = null;
 let welcomeToggleStatus = null;
 let fieldCustom = null;
+let fieldOffTopic = null;
 let voiceTagBadge = null;
 let profileStatusMsg = null;
 
@@ -32,6 +33,7 @@ let newProfDialect = null;
 let newProfVerbosity = null;
 let newProfWelcome = null;
 let newProfWelcomeEnabled = null;
+let newProfOffTopic = null;
 
 function toggleWelcomeInput(target) {
   if (target === 'active') {
@@ -131,6 +133,14 @@ function renderProfileCards() {
               ${p.is_welcome_message_enabled !== false ? (p.welcome_message ? `💬 "${escapeHtml(p.welcome_message.substring(0, 30))}${p.welcome_message.length > 30 ? '...' : ''}"` : '✨ ترحيب تلقائي ذكي') : '🤫 انتظار المتصل أولاً'}
             </span>
           </div>
+          ${p.off_topic_response ? `
+            <div class="flex justify-between items-center">
+              <span class="text-[#8C827A]">الرد خارج النطاق:</span>
+              <span class="text-[11px] font-medium text-[#680E23] truncate max-w-[200px]" title="${escapeHtml(p.off_topic_response)}">
+                🛡️ "${escapeHtml(p.off_topic_response)}"
+              </span>
+            </div>
+          ` : ''}
           ${p.custom_instructions ? `
             <div class="pt-1.5 border-t border-[#EAE3D9] text-[11px] text-[#6E645D] italic line-clamp-2">
               "${escapeHtml(p.custom_instructions)}"
@@ -259,6 +269,7 @@ function populateProfileForm(p) {
   if (fieldWelcome) fieldWelcome.value = p.welcome_message || '';
   toggleWelcomeInput('active');
   if (fieldCustom) fieldCustom.value = p.custom_instructions || '';
+  if (fieldOffTopic) fieldOffTopic.value = p.off_topic_response || '';
   updateVoiceTag();
 
   if (profileStatusMsg) {
@@ -340,7 +351,8 @@ async function saveActiveProfileChanges() {
     verbosity: fieldVerbosity ? fieldVerbosity.value : 'balanced',
     welcome_message: fieldWelcome ? fieldWelcome.value.trim() : '',
     is_welcome_message_enabled: fieldWelcomeEnabled ? fieldWelcomeEnabled.checked : true,
-    custom_instructions: fieldCustom ? fieldCustom.value.trim() : ''
+    custom_instructions: fieldCustom ? fieldCustom.value.trim() : '',
+    off_topic_response: fieldOffTopic ? fieldOffTopic.value.trim() : ''
   };
 
   try {
@@ -379,6 +391,7 @@ function openNewProfileModal() {
   syncNewProfileVoices();
   if (newProfWelcomeEnabled) newProfWelcomeEnabled.checked = true;
   if (newProfWelcome) newProfWelcome.value = '';
+  if (newProfOffTopic) newProfOffTopic.value = '';
   toggleWelcomeInput('new');
   if (profileModal) profileModal.classList.remove('hidden');
 }
@@ -399,6 +412,7 @@ async function createNewProfile(e) {
   const verbosity = newProfVerbosity ? newProfVerbosity.value : 'balanced';
   const welcome_message = newProfWelcome ? newProfWelcome.value.trim() : '';
   const is_welcome_message_enabled = newProfWelcomeEnabled ? newProfWelcomeEnabled.checked : true;
+  const off_topic_response = newProfOffTopic ? newProfOffTopic.value.trim() : '';
 
   const btn = document.getElementById('btn-create-prof');
   if (btn) {
@@ -424,6 +438,7 @@ async function createNewProfile(e) {
         verbosity,
         welcome_message,
         is_welcome_message_enabled,
+        off_topic_response,
         is_active: true
       })
     });
@@ -483,6 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fieldWelcomeEnabled = document.getElementById('field-welcome-enabled');
   welcomeToggleStatus = document.getElementById('welcome-toggle-status');
   fieldCustom = document.getElementById('field-custom');
+  fieldOffTopic = document.getElementById('field-off-topic');
   voiceTagBadge = document.getElementById('voice-tag-badge');
   profileStatusMsg = document.getElementById('profile-status-msg');
 
@@ -494,6 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
   newProfVerbosity = document.getElementById('new-prof-verbosity');
   newProfWelcome = document.getElementById('new-prof-welcome');
   newProfWelcomeEnabled = document.getElementById('new-prof-welcome-enabled');
+  newProfOffTopic = document.getElementById('new-prof-off-topic');
 
   loadProfiles();
 });

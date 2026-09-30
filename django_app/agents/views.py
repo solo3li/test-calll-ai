@@ -160,6 +160,7 @@ def create_profile(request):
         custom_instructions = data.get('custom_instructions', '').strip()
         welcome_message = str(data.get('welcome_message', '')).strip()
         is_welcome_message_enabled = bool(data.get('is_welcome_message_enabled', True))
+        off_topic_response = str(data.get('off_topic_response', '')).strip()
         is_active = bool(data.get('is_active', True))
 
         profile = AgentProfile.objects.create(
@@ -175,6 +176,7 @@ def create_profile(request):
             custom_instructions=custom_instructions,
             welcome_message=welcome_message,
             is_welcome_message_enabled=is_welcome_message_enabled,
+            off_topic_response=off_topic_response,
             is_active=is_active
         )
         return JsonResponse({
@@ -217,6 +219,8 @@ def update_profile(request, profile_id):
             profile.welcome_message = str(data['welcome_message']).strip()
         if 'is_welcome_message_enabled' in data:
             profile.is_welcome_message_enabled = bool(data['is_welcome_message_enabled'])
+        if 'off_topic_response' in data:
+            profile.off_topic_response = str(data['off_topic_response']).strip()
         if 'is_active' in data:
             profile.is_active = bool(data['is_active'])
 

@@ -1405,6 +1405,15 @@
             </select>
           </div>
 
+          <!-- Off-Topic Response in Modal -->
+          <div class="bg-[#FAF7F2] border border-[#DDD5C7] rounded-xl p-3 space-y-2">
+            <label for="new-prof-off-topic" class="font-semibold text-[#443D39] text-xs flex items-center gap-1.5">
+              <span>🛡️</span> رسالة الرد خارج النطاق (اختياري)
+            </label>
+            <textarea id="new-prof-off-topic" rows="2" placeholder='مثال: "بعتذر لحضرتك، أنا مخصص فقط لخدمات المتجر، أقدر أساعدك في إيه بخصوص طلباتك؟"' class="w-full px-2.5 py-1.5 bg-white border border-[#DDD5C7] rounded-lg text-[#1C1917] text-xs focus:outline-none focus:border-[#680E23]"></textarea>
+            <p class="text-[10px] text-[#8C827A]">الرسالة التي ينطقها المساعد إذا سأله العميل عن موضوع خارج اختصاصه أو عمله.</p>
+          </div>
+
           <div class="flex justify-end gap-2 pt-2 border-t border-[#EAE3D9]">
             <button type="button" onclick="closeNewProfileModal()" class="px-4 py-2 rounded-xl bg-[#F5EFE6] hover:bg-[#EAE3D9] text-[#443D39] transition">إلغاء</button>
             <button type="submit" id="btn-create-prof" class="px-4 py-2 rounded-xl bg-[#680E23] hover:bg-[#7E152F] text-white font-semibold transition">حفظ البروفايل</button>
@@ -4917,6 +4926,7 @@
       const persona_role = document.getElementById('new-prof-role').value;
       const speaking_style = document.getElementById('new-prof-style').value;
       const verbosity = newProfVerbosity ? newProfVerbosity.value : 'balanced';
+      const off_topic_response = (document.getElementById('new-prof-off-topic')?.value || '').trim();
 
       const btn = document.getElementById('btn-create-prof');
       btn.disabled = true;
@@ -4938,6 +4948,7 @@
             persona_role,
             speaking_style,
             verbosity,
+            off_topic_response,
             is_active: true
           })
         });
