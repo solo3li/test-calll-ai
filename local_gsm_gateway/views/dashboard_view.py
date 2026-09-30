@@ -97,12 +97,30 @@ class DashboardView:
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 controls=[
-                    # Title & Owner
-                    ft.Column(
-                        spacing=2,
+                    # Title & Owner with Brand Icon
+                    ft.Row(
+                        spacing=8,
                         controls=[
-                            ft.Text("بوابة الاتصال الخلوي الذكية", color=COLOR_WHITE, size=14, weight=ft.FontWeight.BOLD),
-                            ft.Text(f"المالك: {owner_name} • {self.modem.operator_name}", color=COLOR_BURGUNDY_LIGHT, size=10),
+                            ft.Container(
+                                width=34,
+                                height=34,
+                                border_radius=10,
+                                clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                                content=ft.Image(
+                                    src="logo.png",
+                                    width=34,
+                                    height=34,
+                                    fit="cover",
+                                    error_content=ft.Icon(ft.Icons.SIM_CARD_ROUNDED, color=COLOR_WHITE, size=20),
+                                ),
+                            ),
+                            ft.Column(
+                                spacing=2,
+                                controls=[
+                                    ft.Text("بوابة الاتصال الخلوي الذكية", color=COLOR_WHITE, size=13, weight=ft.FontWeight.BOLD),
+                                    ft.Text(f"المالك: {owner_name} • {self.modem.operator_name or 'نشط'}", color=COLOR_BURGUNDY_LIGHT, size=10),
+                                ],
+                            ),
                         ],
                     ),
                     # Badges

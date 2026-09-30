@@ -149,14 +149,24 @@ class LoginView:
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         tight=True,
                         controls=[
-                            # Brand Icon
+                            # Brand Logo (Modern 3D SIM & Voice AI emblem)
                             ft.Container(
-                                width=64,
-                                height=64,
-                                border_radius=32,
-                                bgcolor=COLOR_BURGUNDY,
-                                alignment=ft.Alignment.CENTER,
-                                content=ft.Icon(ft.Icons.ROUTER_ROUNDED, color=COLOR_WHITE, size=32),
+                                width=76,
+                                height=76,
+                                border_radius=20,
+                                clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                                shadow=ft.BoxShadow(blur_radius=14, color="#7A152633", offset=ft.Offset(0, 4)),
+                                content=ft.Image(
+                                    src="logo.png",
+                                    width=76,
+                                    height=76,
+                                    fit="cover",
+                                    error_content=ft.Container(
+                                        bgcolor=COLOR_BURGUNDY,
+                                        alignment=ft.Alignment.CENTER,
+                                        content=ft.Icon(ft.Icons.SIM_CARD_ROUNDED, color=COLOR_WHITE, size=36),
+                                    ),
+                                ),
                             ),
                             # Titles
                             ft.Text(

@@ -54,9 +54,10 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
+    assets_dir = os.path.join(current_dir, "assets")
     if hasattr(ft, "run"):
-        ft.run(main)
+        ft.run(main, assets_dir=assets_dir)
     elif hasattr(ft, "app"):
-        ft.app(target=main)
+        ft.app(target=main, assets_dir=assets_dir)
     else:
         raise RuntimeError("No app runner found in flet module")
