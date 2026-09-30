@@ -27,6 +27,29 @@ def main(page: ft.Page):
     page.bgcolor = COLOR_CREAM
     page.padding = 0
 
+    # Ensure Windows taskbar groups and shows the custom app icon
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("voiceai.dongle.gateway.v1")
+        except Exception:
+            pass
+
+    # Set Window & Taskbar Icon
+    try:
+        window = getattr(page, "window", None)
+        if window:
+            icon_ico = os.path.join(current_dir, "assets", "icon.ico")
+            icon_png = os.path.join(current_dir, "assets", "icon.png")
+            if os.path.exists(icon_ico):
+                window.icon = icon_ico
+            elif os.path.exists(icon_png):
+                window.icon = icon_png
+            else:
+                window.icon = "assets/icon.ico"
+    except Exception:
+        pass
+
     # Active dashboard tracker
     active_dashboard = None
 
