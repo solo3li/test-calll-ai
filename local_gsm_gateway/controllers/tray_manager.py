@@ -64,12 +64,25 @@ class TrayManager:
         if Image is None:
             return None
 
-        if self.icon_path and os.path.exists(self.icon_path):
-            try:
-                img = Image.open(self.icon_path)
-                return img.resize((64, 64))
-            except Exception as e:
-                logger.warning(f"Could not load icon from '{self.icon_path}': {e}")
+        candidate_paths = [
+            self.icon_path,
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icon.png"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png"),
+            os.path.join(os.getcwd(), "assets", "icon.png"),
+            os.path.join(os.getcwd(), "assets", "logo.png"),
+            os.path.join(os.getcwd(), "local_gsm_gateway", "assets", "icon.png"),
+        ]
+
+        if hasattr(sys, "_MEIPASS"):
+            candidate_paths.insert(0, os.path.join(sys._MEIPASS, "assets", "icon.png"))
+
+        for path in candidate_paths:
+            if path and os.path.exists(path):
+                try:
+                    img = Image.open(path)
+                    return img.convert("RGBA").resize((64, 64))
+                except Exception as e:
+                    logger.debug(f"Could not load icon from '{path}': {e}")
 
         # Fallback generated icon (Burgundy circle with gold inner dot)
         img = Image.new("RGBA", (64, 64), color=(0, 0, 0, 0))
@@ -113,7 +126,7 @@ class TrayManager:
     def start(self) -> bool:
         """Initialize and run system tray icon in a dedicated daemon thread."""
         if not self.is_supported:
-            logger.info("TrayManager: System tray not supported in this environment (headless mode).")
+            logger.warning("TrayManager: System tray not supported or pystray/Pillow not available in runtime.")
             return False
 
         if self.is_running:
@@ -122,6 +135,7 @@ class TrayManager:
         try:
             image = self._create_image()
             if not image:
+                logger.warning("TrayManager: Could not create image for system tray.")
                 return False
 
             menu = self._build_menu()
@@ -138,7 +152,7 @@ class TrayManager:
             logger.info("TrayManager: System tray service started successfully.")
             return True
         except Exception as e:
-            logger.warning(f"TrayManager failed to start: {e}")
+            logger.error(f"TrayManager failed to start: {e}", exc_info=True)
             self.is_running = False
             return False
 
@@ -146,9 +160,10 @@ class TrayManager:
         """Main loop for pystray icon."""
         try:
             if self.tray_icon:
+                logger.info("TrayManager: Running pystray message loop...")
                 self.tray_icon.run()
         except Exception as e:
-            logger.warning(f"TrayManager loop terminated: {e}")
+            logger.error(f"TrayManager message loop error: {e}", exc_info=True)
         finally:
             self.is_running = False
 
