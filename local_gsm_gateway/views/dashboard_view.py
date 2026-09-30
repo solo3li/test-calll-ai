@@ -1,11 +1,14 @@
-"""Dashboard View for Local GSM USB Dongle Gateway App.
+"""Comprehensive Dashboard View for Local GSM USB Dongle AI Voice Gateway.
 
-Implements the approved 'Dynamic Cards' design:
-- Top Burgundy Header (#680E23) with LiveKit Online Pill and 4G Signal
-- Active Inbound Call Hero Card (NO Live Transcript bubbles for zero latency!)
-- 2x2 Telemetry Cards Grid (4G Signal, SIM Card, WebRTC Latency, Total Calls)
-- Hardware Port & Audio Selector with Test Simulation Call Trigger
-- Recent Calls History Log
+Features:
+1. Bottom Navigation Bar with 4 Integrated Tabs:
+   - [0] الرئيسية والمكالمات (Dashboard & Active Hero Card with Dynamic Audio Visualizer)
+   - [1] لوحة الاتصال الصادر (DialpadView)
+   - [2] الرسائل والرصيد (SmsUssdView)
+   - [3] مجمع الفلاشات والشرائح (PoolView)
+2. Live Dynamic Waveform Visualizer (Real-time Audio RMS Levels via AudioBridge).
+3. Real RTT Latency Ping Monitor & Live Hardware Telemetry (AT+CSQ, AT+COPS).
+4. Local SQLite Persistence for Call Records via StorageManager.
 """
 import time
 import flet as ft
@@ -28,7 +31,12 @@ from theme import (
     COLOR_RED_BG,
 )
 from controllers.api_client import DongleApiClient
-from controllers.modem_controller import ModemController, list_available_ports
+from controllers.modem_controller import ModemController, DonglePool, list_available_ports
+from controllers.storage_manager import StorageManager
+from controllers.audio_bridge import AudioBridge
+from views.dialpad_view import DialpadView
+from views.sms_ussd_view import SmsUssdView
+from views.pool_view import PoolView
 
 
 class DashboardView:
@@ -37,8 +45,16 @@ class DashboardView:
         self.api_client = api_client
         self.on_logout = on_logout
 
+        # Storage & Audio Managers
+        self.storage = StorageManager()
+        self.audio_bridge = AudioBridge(
+            on_audio_level=self._on_audio_energy,
+            on_latency_update=self._on_latency_update
+        )
+
         # State Variables
         self.is_in_call = False
+        self.call_direction = "inbound"  # "inbound" or "outbound"
         self.current_caller = ""
         self.current_room = ""
         self.current_session_id = None
@@ -46,26 +62,38 @@ class DashboardView:
         self.is_muted = False
         self.total_calls_today = 0
         self.recent_calls = []
+        self.active_tab_index = 0
 
-        # Modem Controller
-        self.modem = ModemController(
-            port="SIMULATED",
+        # Multi-SIM Dongle Pool
+        self.dongle_pool = DonglePool(on_global_incoming=self._on_pool_incoming_call)
+
+        # Primary Modem Controller
+        self.modem = self.dongle_pool.get_idle_modem() or ModemController(
+            port="SIMULATED_1",
             on_incoming_call=self._on_modem_incoming_call,
-            on_call_ended=self._on_modem_call_ended
+            on_call_ended=self._on_modem_call_ended,
+            on_signal_update=self._on_signal_update
         )
+        self.modem.on_incoming_call = self._on_modem_incoming_call
+        self.modem.on_call_ended = self._on_modem_call_ended
+        self.modem.on_signal_update = self._on_signal_update
 
-        # UI Components
+        # Build UI Components
         self._build_components()
 
-        # Connect modem automatically
+        # Connect Primary Modem & Start Monitors
         self.modem.connect()
+        self.audio_bridge.start_ping_monitor(self.api_client.server_url)
 
     def _build_components(self):
         # 1. Header (Brand Burgundy)
         owner_name = (self.api_client.user_data or {}).get("name") or "المالك"
+        self.latency_pill_text = ft.Text("24 ms", color=COLOR_WHITE, size=10, weight=ft.FontWeight.BOLD)
+        self.signal_header_text = ft.Text(f"{self.modem.signal_strength}%", color=COLOR_WHITE, size=10, weight=ft.FontWeight.BOLD)
+
         self.header = ft.Container(
             bgcolor=COLOR_BURGUNDY,
-            padding=ft.Padding.symmetric(horizontal=16, vertical=12),
+            padding=ft.Padding.symmetric(horizontal=14, vertical=10),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 controls=[
@@ -73,40 +101,45 @@ class DashboardView:
                     ft.Column(
                         spacing=2,
                         controls=[
-                            ft.Text("بوابة الاتصال الذكية", color=COLOR_WHITE, size=15, weight=ft.FontWeight.BOLD),
-                            ft.Text(f"المالك: {owner_name}", color=COLOR_BURGUNDY_LIGHT, size=11),
+                            ft.Text("بوابة الاتصال الخلوي الذكية", color=COLOR_WHITE, size=14, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"المالك: {owner_name} • {self.modem.operator_name}", color=COLOR_BURGUNDY_LIGHT, size=10),
                         ],
                     ),
                     # Badges
                     ft.Row(
-                        spacing=8,
+                        spacing=6,
                         controls=[
-                            # LiveKit Online Badge
+                            # Live Latency Badge
                             ft.Container(
                                 content=ft.Row(
                                     spacing=4,
                                     controls=[
-                                        ft.Icon(ft.Icons.CIRCLE, color=COLOR_GREEN, size=8),
-                                        ft.Text("متصل LiveKit", color=COLOR_WHITE, size=10, weight=ft.FontWeight.BOLD),
+                                        ft.Icon(ft.Icons.BOLT_ROUNDED, color=COLOR_GREEN, size=10),
+                                        self.latency_pill_text,
                                     ],
                                 ),
                                 bgcolor="#FFFFFF22",
-                                padding=ft.Padding.symmetric(horizontal=8, vertical=4),
-                                border_radius=12,
+                                padding=ft.Padding.symmetric(horizontal=6, vertical=3),
+                                border_radius=10,
                             ),
                             # 4G Signal
-                            ft.Row(
-                                spacing=2,
-                                controls=[
-                                    ft.Icon(ft.Icons.SIGNAL_CELLULAR_ALT_ROUNDED, color=COLOR_WHITE, size=16),
-                                    ft.Text("4G", color=COLOR_WHITE, size=10, weight=ft.FontWeight.BOLD),
-                                ],
+                            ft.Container(
+                                content=ft.Row(
+                                    spacing=3,
+                                    controls=[
+                                        ft.Icon(ft.Icons.NETWORK_CELL_ROUNDED, color=COLOR_WHITE, size=12),
+                                        self.signal_header_text,
+                                    ],
+                                ),
+                                bgcolor="#FFFFFF22",
+                                padding=ft.Padding.symmetric(horizontal=6, vertical=3),
+                                border_radius=10,
                             ),
-                            # Logout Button
+                            # Logout button
                             ft.IconButton(
                                 icon=ft.Icons.LOGOUT_ROUNDED,
                                 icon_color=COLOR_WHITE,
-                                icon_size=18,
+                                icon_size=16,
                                 tooltip="تسجيل الخروج",
                                 on_click=self._handle_logout,
                             ),
@@ -116,56 +149,62 @@ class DashboardView:
             ),
         )
 
-        # 2. Active Call Hero Card (Hidden by default, shown during call)
-        self.caller_number_text = ft.Text("+20 10 ...", size=20, weight=ft.FontWeight.BOLD, color=COLOR_BURGUNDY)
-        self.call_timer_text = ft.Text("00:00", size=13, weight=ft.FontWeight.W_600, color=COLOR_TEXT_MUTED)
+        # 2. Active Call Hero Card with Dynamic Waveform
+        self.call_badge_text = ft.Text("📞 مكالمة واردة نشطة", size=11, color=COLOR_BURGUNDY, weight=ft.FontWeight.BOLD)
+        self.call_timer_text = ft.Text("00:00", size=13, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.caller_number_text = ft.Text("+201012345678", size=18, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
 
-        # Audio Waveform Representation (Smooth animated bars)
+        # Dynamic Waveform Bars (Heights animated via AudioBridge RMS callbacks)
+        self.waveform_bars = [
+            ft.Container(width=4, height=12, bgcolor=COLOR_BURGUNDY, border_radius=2)
+            for _ in range(14)
+        ]
         self.waveform_row = ft.Row(
             alignment=ft.MainAxisAlignment.CENTER,
-            spacing=3,
-            controls=[
-                ft.Container(width=3, height=h, bgcolor=COLOR_BURGUNDY, border_radius=2)
-                for h in [8, 14, 24, 32, 18, 28, 36, 20, 12, 26, 34, 16, 8]
-            ],
+            spacing=4,
+            controls=self.waveform_bars,
         )
 
-        self.mute_btn = ft.IconButton(
-            icon=ft.Icons.MIC_ROUNDED,
-            icon_color=COLOR_BURGUNDY,
-            bgcolor=COLOR_BURGUNDY_LIGHT,
-            icon_size=20,
-            tooltip="كتم الصوت",
+        self.mute_btn = ft.FilledButton(
+            content="كتم الصوت",
+            icon=ft.Icons.MIC_OFF_ROUNDED,
+            style=ft.ButtonStyle(
+                color=COLOR_TEXT_PRIMARY,
+                bgcolor=COLOR_BORDER_LIGHT,
+                shape=ft.RoundedRectangleBorder(radius=12),
+            ),
             on_click=self._toggle_mute,
         )
 
-        self.hangup_btn = ft.IconButton(
+        self.hangup_btn = ft.FilledButton(
+            content="إنهاء المكالمة",
             icon=ft.Icons.CALL_END_ROUNDED,
-            icon_color=COLOR_WHITE,
-            bgcolor=COLOR_RED,
-            icon_size=22,
-            tooltip="إنهاء المكالمة",
-            on_click=lambda _: self._end_call(),
+            style=ft.ButtonStyle(
+                color=COLOR_WHITE,
+                bgcolor=COLOR_RED,
+                shape=ft.RoundedRectangleBorder(radius=12),
+            ),
+            on_click=lambda e: self._end_call(),
         )
 
         self.active_call_card = ft.Card(
             visible=False,
             elevation=3,
             bgcolor=COLOR_WHITE,
-            shape=ft.RoundedRectangleBorder(radius=18),
+            shape=ft.RoundedRectangleBorder(radius=16),
             content=ft.Container(
-                padding=16,
+                padding=14,
                 border=ft.Border.all(1.5, COLOR_BURGUNDY_BORDER),
-                border_radius=18,
+                border_radius=16,
                 content=ft.Column(
-                    spacing=10,
+                    spacing=8,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     controls=[
                         ft.Row(
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                             controls=[
                                 ft.Container(
-                                    content=ft.Text("📞 مكالمة واردة نشطة عبر الشريحة", size=11, color=COLOR_BURGUNDY, weight=ft.FontWeight.BOLD),
+                                    content=self.call_badge_text,
                                     bgcolor=COLOR_BURGUNDY_LIGHT,
                                     padding=ft.Padding.symmetric(horizontal=8, vertical=3),
                                     border_radius=8,
@@ -177,7 +216,7 @@ class DashboardView:
                         self.waveform_row,
                         ft.Row(
                             alignment=ft.MainAxisAlignment.CENTER,
-                            spacing=20,
+                            spacing=14,
                             controls=[self.mute_btn, self.hangup_btn],
                         ),
                     ],
@@ -185,58 +224,47 @@ class DashboardView:
             ),
         )
 
-        # 3. 2x2 Telemetry Metric Cards
-        self.signal_card = self._build_metric_card(
-            icon=ft.Icons.SPEED_ROUNDED,
+        # 3. Telemetry Metric Cards
+        self.signal_val_text = ft.Text(f"{self.modem.signal_strength}% ممتازة", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.signal_sub_text = ft.Text(f"{self.modem.operator_name} ({self.modem.signal_dbm} dBm)", size=10, color=COLOR_TEXT_SECONDARY)
+        self.signal_card = self._build_telemetry_card(
+            icon=ft.Icons.NETWORK_CELL_ROUNDED,
             title="إشارة الشبكة (4G)",
-            value="95% ممتازة",
-            subtitle="فودافون مصر",
+            value_ctrl=self.signal_val_text,
+            sub_ctrl=self.signal_sub_text,
         )
 
-        self.sim_card = self._build_metric_card(
+        self.sim_status_text = ft.Text("جاهزة للاستقبال", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.sim_sub_text = ft.Text(f"IMEI: ...{self.modem.imei[-4:]}", size=10, color=COLOR_TEXT_SECONDARY)
+        self.sim_card = self._build_telemetry_card(
             icon=ft.Icons.SIM_CARD_OUTLINED,
             title="حالة الشريحة",
-            value="جاهزة للاستقبال",
-            subtitle="صوت وبيانات نشطة",
+            value_ctrl=self.sim_status_text,
+            sub_ctrl=self.sim_sub_text,
         )
 
-        self.latency_card = self._build_metric_card(
+        self.latency_val_text = ft.Text("24 ms", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.latency_card = self._build_telemetry_card(
             icon=ft.Icons.BOLT_ROUNDED,
-            title="سرعة الاستجابة",
-            value="24 ms",
-            subtitle="WebRTC سحابي فائق",
+            title="زمن الاستجابة الحقيقي",
+            value_ctrl=self.latency_val_text,
+            sub_ctrl=ft.Text("WebRTC سحابي فائق", size=10, color=COLOR_TEXT_SECONDARY),
         )
 
-        self.calls_count_text = ft.Text("0 مكالمة", size=16, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
-        self.calls_card = ft.Card(
-            expand=True,
-            elevation=1,
-            bgcolor=COLOR_WHITE,
-            shape=ft.RoundedRectangleBorder(radius=14),
-            content=ft.Container(
-                padding=12,
-                content=ft.Column(
-                    spacing=4,
-                    controls=[
-                        ft.Row(
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                            controls=[
-                                ft.Text("إجمالي المكالمات", size=11, color=COLOR_TEXT_MUTED, weight=ft.FontWeight.W_600),
-                                ft.Icon(ft.Icons.CALL_ROUNDED, color=COLOR_BURGUNDY, size=16),
-                            ],
-                        ),
-                        self.calls_count_text,
-                        ft.Text("تمت معالجتها بالـ AI اليوم", size=10, color=COLOR_TEXT_SECONDARY),
-                    ],
-                ),
-            ),
+        total_today = self.storage.get_total_calls_today()
+        self.calls_count_text = ft.Text(f"{total_today} مكالمة", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
+        self.calls_card = self._build_telemetry_card(
+            icon=ft.Icons.CALL_ROUNDED,
+            title="مكالمات اليوم",
+            value_ctrl=self.calls_count_text,
+            sub_ctrl=ft.Text("سجل محلي SQLite", size=10, color=COLOR_TEXT_SECONDARY),
         )
 
-        # 4. Port & Hardware Drawer
+        # 4. Hardware Port & Simulation Drawer
         ports = list_available_ports()
         self.port_dropdown = ft.Dropdown(
-            label="منفذ المودم (USB Port)",
-            value="SIMULATED" if not ports else ports[0]["device"],
+            label="منفذ المودم النشط",
+            value=self.modem.port if self.modem.port else "SIMULATED_1",
             options=[ft.dropdown.Option(p["device"], p["description"]) for p in ports],
             border_radius=10,
             text_size=12,
@@ -249,103 +277,137 @@ class DashboardView:
         self.sim_caller_input = ft.TextField(
             hint_text="+201012345678",
             value="+201012345678",
-            dense=True,
+            label="رقم اختبار ورود المكالمة",
             border_radius=10,
             text_size=12,
             border_color=COLOR_BORDER,
             focused_border_color=COLOR_BURGUNDY,
-            width=160,
+            dense=True,
         )
 
         self.hardware_card = ft.Card(
             elevation=1,
             bgcolor=COLOR_WHITE,
-            shape=ft.RoundedRectangleBorder(radius=14),
+            shape=ft.RoundedRectangleBorder(radius=12),
             content=ft.Container(
                 padding=12,
                 content=ft.Column(
                     spacing=8,
                     controls=[
-                        ft.Row(
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                            controls=[
-                                ft.Text("إعدادات الفلاشة والمحاكاة", size=12, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
-                                ft.Icon(ft.Icons.USB_ROUNDED, color=COLOR_BURGUNDY, size=16),
-                            ],
-                        ),
+                        ft.Text("إعدادات المودم والمحاكاة", size=11, weight=ft.FontWeight.BOLD, color=COLOR_BURGUNDY),
                         self.port_dropdown,
-                        ft.Row(
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                            controls=[
-                                self.sim_caller_input,
-                                ft.FilledButton(
-                                    content=ft.Text("تجربة اتصال وارد", size=11, weight=ft.FontWeight.BOLD, color=COLOR_WHITE),
-                                    bgcolor=COLOR_BURGUNDY,
-                                    style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
-                                    on_click=self._trigger_simulated_call,
-                                ),
-                            ],
+                        self.sim_caller_input,
+                        ft.FilledButton(
+                            content="محاكاة ورود مكالمة من الشريحة",
+                            icon=ft.Icons.SIM_CARD_ALERT_ROUNDED,
+                            bgcolor=COLOR_BURGUNDY_LIGHT,
+                            color=COLOR_BURGUNDY,
+                            height=38,
+                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
+                            on_click=self._trigger_simulated_call,
                         ),
                     ],
                 ),
             ),
         )
 
-        # 5. Recent Calls Log Table
-        self.calls_list_column = ft.Column(spacing=6)
+        # 5. Recent Calls History
+        self.recent_calls_column = ft.Column(spacing=6)
         self._render_recent_calls()
 
         self.calls_history_card = ft.Card(
             elevation=1,
             bgcolor=COLOR_WHITE,
-            shape=ft.RoundedRectangleBorder(radius=14),
+            shape=ft.RoundedRectangleBorder(radius=12),
             content=ft.Container(
                 padding=12,
                 content=ft.Column(
                     spacing=8,
                     controls=[
-                        ft.Text("سجل المكالمات الأخيرة", size=12, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
-                        self.calls_list_column,
+                        ft.Row(
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            controls=[
+                                ft.Text("سجل المكالمات الأخير (SQLite)", size=11, weight=ft.FontWeight.BOLD, color=COLOR_BURGUNDY),
+                                ft.Icon(ft.Icons.HISTORY_ROUNDED, color=COLOR_BURGUNDY, size=15),
+                            ],
+                        ),
+                        self.recent_calls_column,
                     ],
                 ),
             ),
         )
 
-    def _build_metric_card(self, icon, title: str, value: str, subtitle: str) -> ft.Card:
+        # 6. Child Tab Views
+        self.dialpad_tab = DialpadView(
+            self.page,
+            on_dial=self._handle_dialpad_call,
+            on_hangup=self._end_call
+        )
+        self.sms_ussd_tab = SmsUssdView(self.page, self.modem, self.storage)
+        self.pool_tab = PoolView(
+            self.page,
+            self.dongle_pool,
+            on_select_primary=self._on_pool_select_primary
+        )
+
+        # 7. Bottom Navigation Bar
+        self.nav_bar = ft.NavigationBar(
+            selected_index=0,
+            bgcolor=COLOR_WHITE,
+            indicator_color=COLOR_BURGUNDY_LIGHT,
+            on_change=self._on_nav_change,
+            destinations=[
+                ft.NavigationBarDestination(icon=ft.Icons.DASHBOARD_OUTLINED, selected_icon=ft.Icons.DASHBOARD, label="الرئيسية"),
+                ft.NavigationBarDestination(icon=ft.Icons.DIALPAD_OUTLINED, selected_icon=ft.Icons.DIALPAD, label="الاتصال"),
+                ft.NavigationBarDestination(icon=ft.Icons.SMS_OUTLINED, selected_icon=ft.Icons.SMS, label="الرسائل والرصيد"),
+                ft.NavigationBarDestination(icon=ft.Icons.HUB_OUTLINED, selected_icon=ft.Icons.HUB, label="مجمع الشرائح"),
+            ],
+        )
+
+        # Tab Content Container
+        self.tab_content = ft.Container(expand=True)
+        self._switch_tab(0)
+
+    def _build_telemetry_card(self, icon, title: str, value_ctrl: ft.Control, sub_ctrl: ft.Control) -> ft.Card:
         return ft.Card(
             expand=True,
             elevation=1,
             bgcolor=COLOR_WHITE,
-            shape=ft.RoundedRectangleBorder(radius=14),
+            shape=ft.RoundedRectangleBorder(radius=12),
             content=ft.Container(
-                padding=12,
+                padding=10,
                 content=ft.Column(
-                    spacing=4,
+                    spacing=3,
                     controls=[
                         ft.Row(
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                             controls=[
-                                ft.Text(title, size=11, color=COLOR_TEXT_MUTED, weight=ft.FontWeight.W_600),
-                                ft.Icon(icon, color=COLOR_BURGUNDY, size=16),
+                                ft.Text(title, size=10, color=COLOR_TEXT_MUTED, weight=ft.FontWeight.W_600),
+                                ft.Icon(icon, color=COLOR_BURGUNDY, size=15),
                             ],
                         ),
-                        ft.Text(value, size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
-                        ft.Text(subtitle, size=10, color=COLOR_TEXT_SECONDARY),
+                        value_ctrl,
+                        sub_ctrl,
                     ],
                 ),
             ),
         )
 
     def _render_recent_calls(self):
-        self.calls_list_column.controls.clear()
-        if not self.recent_calls:
-            self.calls_list_column.controls.append(
-                ft.Text("لا توجد مكالمات مسجلة بعد، البوابة في وضع الاستعداد", size=11, color=COLOR_TEXT_MUTED, italic=True)
+        self.recent_calls_column.controls.clear()
+        calls = self.storage.get_recent_calls(limit=6)
+        if not calls:
+            self.recent_calls_column.controls.append(
+                ft.Text("لا توجد مكالمات مسجلة بعد اليوم.", size=11, color=COLOR_TEXT_MUTED)
             )
             return
 
-        for c in reversed(self.recent_calls[-5:]):
-            self.calls_list_column.controls.append(
+        for c in calls:
+            is_out = c.get("direction") == "outbound"
+            dir_icon = ft.Icons.PHONE_FORWARDED_ROUNDED if is_out else ft.Icons.PHONE_IN_TALK_ROUNDED
+            dir_text = "صادرة" if is_out else "واردة"
+
+            self.recent_calls_column.controls.append(
                 ft.Container(
                     padding=ft.Padding.symmetric(horizontal=8, vertical=6),
                     bgcolor=COLOR_BORDER_LIGHT,
@@ -356,16 +418,17 @@ class DashboardView:
                             ft.Row(
                                 spacing=6,
                                 controls=[
-                                    ft.Icon(ft.Icons.PHONE_IN_TALK_ROUNDED, size=14, color=COLOR_BURGUNDY),
-                                    ft.Text(c["phone"], size=12, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
+                                    ft.Icon(dir_icon, size=14, color=COLOR_BURGUNDY),
+                                    ft.Text(c["caller_phone"], size=12, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
+                                    ft.Text(f"({dir_text})", size=10, color=COLOR_TEXT_MUTED),
                                 ],
                             ),
                             ft.Row(
                                 spacing=6,
                                 controls=[
-                                    ft.Text(f"{c['duration']} ثانية", size=11, color=COLOR_TEXT_MUTED),
+                                    ft.Text(f"{c['duration']}ث", size=11, color=COLOR_TEXT_MUTED),
                                     ft.Container(
-                                        content=ft.Text("تمت بنجاح", size=9, color=COLOR_GREEN_TEXT, weight=ft.FontWeight.BOLD),
+                                        content=ft.Text("ناجحة", size=9, color=COLOR_GREEN_TEXT, weight=ft.FontWeight.BOLD),
                                         bgcolor=COLOR_GREEN_BG,
                                         padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                                         border_radius=6,
@@ -377,7 +440,85 @@ class DashboardView:
                 )
             )
 
-    # ------------------ Event Handlers ------------------
+    # ------------------ Navigation & Tabs ------------------
+
+    def _on_nav_change(self, e):
+        idx = e.control.selected_index
+        self._switch_tab(idx)
+
+    def _switch_tab(self, idx: int):
+        self.active_tab_index = idx
+        if idx == 0:
+            # Home Dashboard Tab
+            self.tab_content.content = ft.Container(
+                padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                content=ft.Column(
+                    spacing=10,
+                    scroll=ft.ScrollMode.AUTO,
+                    controls=[
+                        self.active_call_card,
+                        # 2x2 Telemetry
+                        ft.Row(spacing=8, controls=[self.signal_card, self.sim_card]),
+                        ft.Row(spacing=8, controls=[self.latency_card, self.calls_card]),
+                        # Hardware & Simulation Card
+                        self.hardware_card,
+                        # Recent Calls Card
+                        self.calls_history_card,
+                    ],
+                ),
+            )
+        elif idx == 1:
+            # Outbound Dialpad Tab
+            self.tab_content.content = self.dialpad_tab.build()
+        elif idx == 2:
+            # SMS & USSD Tab
+            self.tab_content.content = self.sms_ussd_tab.build()
+        elif idx == 3:
+            # Multi-SIM Pool Tab
+            self.tab_content.content = self.pool_tab.build()
+
+        self.page.update()
+
+    # ------------------ Dynamic Call Handling & Audio ------------------
+
+    def _on_audio_energy(self, caller_level: float, ai_level: float):
+        """Update waveform bar heights dynamically according to speech energy."""
+        if not self.is_in_call:
+            return
+        for i, bar in enumerate(self.waveform_bars):
+            # Alternate weighting between caller and AI
+            lvl = caller_level if i % 2 == 0 else ai_level
+            h = int(8 + (lvl * 32 * ((i + 1) % 4 + 1) / 4))
+            bar.height = min(40, max(8, h))
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _on_latency_update(self, rtt_ms: int):
+        """Update live RTT metric and colors."""
+        self.latency_pill_text.value = f"{rtt_ms} ms"
+        self.latency_val_text.value = f"{rtt_ms} ms"
+        if rtt_ms < 60:
+            self.latency_val_text.color = COLOR_GREEN_TEXT
+        elif rtt_ms < 150:
+            self.latency_val_text.color = COLOR_TEXT_PRIMARY
+        else:
+            self.latency_val_text.color = COLOR_RED
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _on_signal_update(self, signal_pct: int, operator_name: str):
+        """Update live cellular signal and operator telemetry."""
+        self.signal_header_text.value = f"{signal_pct}%"
+        self.signal_val_text.value = f"{signal_pct}% ممتازة"
+        self.signal_sub_text.value = f"{operator_name} ({self.modem.signal_dbm} dBm)"
+        try:
+            self.page.update()
+        except Exception:
+            pass
 
     def _on_port_change(self, e):
         new_port = self.port_dropdown.value
@@ -386,7 +527,14 @@ class DashboardView:
         self.page.snack_bar.open = True
         self.page.update()
 
+    def _on_pool_select_primary(self, port: str):
+        if port in self.dongle_pool.modems:
+            self.modem = self.dongle_pool.modems[port]
+            self.port_dropdown.value = port
+            self.page.update()
+
     def _handle_logout(self, e):
+        self.audio_bridge.stop_pipeline()
         self.modem.disconnect()
         self.api_client.clear_session()
         if self.on_logout:
@@ -396,39 +544,95 @@ class DashboardView:
         phone = (self.sim_caller_input.value or "+201012345678").strip()
         self.modem.simulate_incoming_call(phone)
 
+    def _on_pool_incoming_call(self, caller_number: str, dongle_port: str):
+        logger.info(f"Incoming call via Pool on {dongle_port}: {caller_number}")
+        self._on_modem_incoming_call(caller_number)
+
     def _on_modem_incoming_call(self, caller_number: str):
-        """Called when modem detects RING from the SIM card."""
+        """Incoming cellular call ring detected."""
         if self.is_in_call:
             return
 
         self.is_in_call = True
+        self.call_direction = "inbound"
         self.current_caller = caller_number
         self.call_start_time = time.time()
 
         # 1. Answer modem call via ATA
         self.modem.answer_call()
 
-        # 2. Request LiveKit Room from Django Cloud API
+        # 2. Request LiveKit Room from Cloud API
         res = self.api_client.init_call(caller_phone=caller_number, dongle_id=self.modem.port)
         if res.get("success"):
             data = res.get("data", {})
             self.current_room = data.get("room_name", "")
             self.current_session_id = data.get("session_id")
         else:
-            self.current_room = f"offline_room_{int(time.time())}"
+            self.current_room = f"gsm_room_{int(time.time())}"
 
-        # 3. Update UI to Active Call State
+        # 3. Start Live Audio Pipeline & Waveform
+        self.audio_bridge.start_pipeline(self.current_room, self.api_client.livekit_url)
+
+        # 4. Update UI
+        self.call_badge_text.value = "📞 مكالمة واردة نشطة عبر الشريحة"
         self.caller_number_text.value = self.current_caller
         self.call_timer_text.value = "00:01"
         self.active_call_card.visible = True
+        self._switch_tab(0)  # Return to Home tab to show Hero call card
+        self.nav_bar.selected_index = 0
         self.page.update()
 
+    def _handle_dialpad_call(self, destination_number: str, target: str):
+        """Outbound call initiated from DialpadView."""
+        if self.is_in_call:
+            return
+
+        self.is_in_call = True
+        self.call_direction = "outbound"
+        self.current_caller = destination_number
+        self.call_start_time = time.time()
+
+        # 1. Dial modem call via ATD
+        self.modem.dial_call(destination_number)
+
+        # 2. Request LiveKit Room from Cloud API
+        res = self.api_client.init_call(caller_phone=destination_number, dongle_id=self.modem.port)
+        if res.get("success"):
+            data = res.get("data", {})
+            self.current_room = data.get("room_name", "")
+            self.current_session_id = data.get("session_id")
+        else:
+            self.current_room = f"outbound_gsm_{int(time.time())}"
+
+        # 3. Start Audio Bridge
+        self.audio_bridge.start_pipeline(self.current_room, self.api_client.livekit_url)
+
+        # 4. Update UI
+        self.call_badge_text.value = "📤 مكالمة صادرة نشطة عبر الشريحة"
+        self.caller_number_text.value = destination_number
+        self.call_timer_text.value = "00:01"
+        self.active_call_card.visible = True
+        self.dialpad_tab.set_calling_state(True, "المكالمة متصلة الآن")
+        self.page.update()
+
+    def _toggle_mute(self, e):
+        self.is_muted = not self.is_muted
+        self.audio_bridge.set_mute(self.is_muted)
+        self.mute_btn.content = "إلغاء الكتم" if self.is_muted else "كتم الصوت"
+        self.mute_btn.icon = ft.Icons.MIC_ROUNDED if self.is_muted else ft.Icons.MIC_OFF_ROUNDED
+        self.page.update()
+
+    def _on_modem_call_ended(self):
+        self._end_call()
+
     def _end_call(self):
-        """Terminate the call and report duration to cloud backend."""
+        """Terminate call, stop audio bridge, and persist to SQLite."""
         if not self.is_in_call:
             return
 
+        self.is_in_call = False
         duration = int(time.time() - self.call_start_time) if self.call_start_time else 0
+        self.audio_bridge.stop_pipeline()
         self.modem.hangup_call()
 
         # Report to Cloud API
@@ -439,64 +643,40 @@ class DashboardView:
                 session_id=self.current_session_id
             )
 
+        # Persist to local SQLite
+        self.storage.add_call_log(
+            caller_phone=self.current_caller,
+            direction=self.call_direction,
+            duration=max(duration, 1),
+            status="completed",
+            room_name=self.current_room,
+            dongle_port=self.modem.port
+        )
+
         # Update stats
         self.total_calls_today += 1
-        self.calls_count_text.value = f"{self.total_calls_today} مكالمة"
         self.recent_calls.append({"phone": self.current_caller, "duration": max(duration, 1)})
+        total_today = self.storage.get_total_calls_today()
+        self.calls_count_text.value = f"{total_today} مكالمة"
         self._render_recent_calls()
 
         # Reset UI
         self.is_in_call = False
-        self.current_caller = ""
-        self.current_room = ""
         self.active_call_card.visible = False
-        self.page.update()
-
-    def _on_modem_call_ended(self):
-        """Called when remote party closes connection."""
-        self._end_call()
-
-    def _toggle_mute(self, e):
-        self.is_muted = not self.is_muted
-        self.mute_btn.icon = ft.Icons.MIC_OFF_ROUNDED if self.is_muted else ft.Icons.MIC_ROUNDED
-        self.mute_btn.icon_color = COLOR_RED if self.is_muted else COLOR_BURGUNDY
+        self.dialpad_tab.set_calling_state(False)
         self.page.update()
 
     def build(self) -> ft.Control:
         return ft.Container(
-            expand=True,
             bgcolor=COLOR_CREAM,
+            expand=True,
             content=ft.Column(
                 spacing=0,
                 expand=True,
                 controls=[
                     self.header,
-                    ft.Container(
-                        expand=True,
-                        padding=14,
-                        content=ft.ListView(
-                            spacing=12,
-                            controls=[
-                                self.active_call_card,
-                                ft.Row(
-                                    spacing=10,
-                                    controls=[
-                                        self.signal_card,
-                                        self.sim_card,
-                                    ],
-                                ),
-                                ft.Row(
-                                    spacing=10,
-                                    controls=[
-                                        self.latency_card,
-                                        self.calls_card,
-                                    ],
-                                ),
-                                self.hardware_card,
-                                self.calls_history_card,
-                            ],
-                        ),
-                    ),
+                    self.tab_content,
+                    self.nav_bar,
                 ],
             ),
         )
