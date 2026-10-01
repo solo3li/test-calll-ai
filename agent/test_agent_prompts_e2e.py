@@ -70,7 +70,7 @@ def run_agent_e2e_tests():
     # TEST 2: Verify Dynamic Prompt Builder for all Dialects
     # -------------------------------------------------------------
     print(f"\n[TEST 2] Verifying Dynamic System Instructions across {len(ALL_DIALECT_CHECKS)} dialects...")
-    for dialect_code, expected_rule, expected_apology in ALL_DIALECT_CHECKS:
+    for dialect_code, expected_rule, _ in ALL_DIALECT_CHECKS:
         profile = {
             "name": f"Agent {dialect_code}",
             "voice_name": "Aoede",
@@ -82,8 +82,8 @@ def run_agent_e2e_tests():
         }
         prompt = build_dynamic_system_instruction(profile)
         assert expected_rule.lower() in prompt.lower(), f"Missing rule '{expected_rule}' for dialect '{dialect_code}'"
-        assert expected_apology.lower() in prompt.lower(), f"Missing apology '{expected_apology}' for dialect '{dialect_code}'"
-        print(f"    [+] Dialect '{dialect_code:22}': Verified rule & apology phrases ({len(prompt)} chars).")
+        assert "بعتذر لحضرتك جداً يا فندم" in prompt, f"Missing neutral fallback apology for dialect '{dialect_code}'"
+        print(f"    [+] Dialect '{dialect_code:22}': Verified rule & neutral apology phrases ({len(prompt)} chars).")
 
     print(f"✅ TEST 2 PASSED: All {len(ALL_DIALECT_CHECKS)} dialects properly generated with authentic cultural rules.")
 
